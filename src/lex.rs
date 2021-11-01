@@ -10,20 +10,20 @@ pub struct Lexer<'a> {
     col: usize,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Token {
-    token_type: TokenType,
-    location: Location,
+    pub token_type: TokenType,
+    pub location: Location,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     Identifier(String),
-    OpenParen(char),
-    CloseParen(char),
     Str(String),
+    OpenParen,
+    CloseParen,
+    Comma,
+    Semicolon,
     Char(char),
 }
 
@@ -50,6 +50,19 @@ impl<'a> Lexer<'a> {
         Location::new(self.label, self.row, self.col)
     }
 
+    fn expect<F>(&mut self, func: F) -> char
+    where
+        F: FnOnce(&char) -> bool,
+    {
+        assert!(func(self.chars.peek().unwrap()));
+        self.col += 1;
+        self.chars.next().unwrap()
+    }
+
+    fn expect_char(&mut self, c: char) -> char {
+        self.expect(|ch| ch == &c)
+    }
+
     fn identifier(&mut self) -> TokenType {
         use TokenType::Identifier;
         let mut chars: Vec<char> = Vec::new();
@@ -69,21 +82,68 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        self.col += chars.len();
         return Identifier(String::from_iter(chars));
+    }
+
+    fn str(&mut self) -> TokenType {
+        use TokenType::Str;
+        self.expect_char('"');
+        let mut chars: Vec<char> = Vec::new();
+        while let Some(c) = self.chars.next() {
+            chars.push(if c == '\\' {
+                if let Some(c) = self.chars.next() {
+                    match c {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '0' => '\0',
+                        _ => c,
+                    }
+                } else {
+                    panic!("Unexpected End of File");
+                }
+            } else if c == '"' {
+                break;
+            } else {
+                c
+            });
+        }
+        self.col += chars.len() + 2;
+        Str(String::from_iter(chars))
+    }
+
+    fn eat_ret<F>(&mut self, rtn: F) -> F {
+        self.chars.next();
+        rtn
     }
 
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
-        Some(Token {
-            token_type: match self.chars.peek()? {
-                '(' => OpenParen(self.chars.next()?),
-                ')' => CloseParen(self.chars.next()?),
-                'a'..='z' => self.identifier(),
-                'A'..='Z' => self.identifier(),
-                '_' => self.identifier(),
-                _ => Char(self.chars.next()?),
-            },
-            location: self.location(),
-        })
+        loop {
+            break Some(Token {
+                token_type: match self.chars.peek()? {
+                    '(' => self.eat_ret(OpenParen),
+                    ')' => self.eat_ret(CloseParen),
+                    ',' => self.eat_ret(Comma),
+                    ';' => self.eat_ret(Semicolon),
+                    'a'..='z' => self.identifier(),
+                    'A'..='Z' => self.identifier(),
+                    '_' => self.identifier(),
+                    '"' => self.str(),
+                    '\n' => {
+                        self.col = 1;
+                        self.row += 1;
+                        self.chars.next();
+                        continue;
+                    }
+                    _ => {
+                        self.col += 1;
+                        Char(self.chars.next()?)
+                    }
+                },
+                location: self.location(),
+            });
+        }
     }
 }

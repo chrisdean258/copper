@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone)]
 pub struct Location {
     pub label: String,
@@ -13,8 +15,10 @@ impl Location {
             column,
         }
     }
-    #[allow(dead_code)]
-    pub fn into_string(&self) -> String {
-        format!("{}:{}:{}", self.label, self.line, self.column)
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}:{}", self.label, self.line, self.column)
     }
 }

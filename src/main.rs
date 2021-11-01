@@ -1,5 +1,7 @@
+mod copper_type;
 mod lex;
 mod location;
+mod parser;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -9,9 +11,15 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = args[1].clone();
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
-    let tokens = lex::Lexer::new(&filename, &mut lines);
-    for token in tokens {
-        println!("{:?}", token);
+    let lexer = lex::Lexer::new(&filename, &mut lines);
+    let mut parser = parser::Parser::new(lexer);
+    match parser.parse() {
+        Ok(parsetree) => {
+            println!("{:?}", parsetree);
+        }
+        Err(s) => {
+            println!("{}", s);
+        }
     }
 }
 
