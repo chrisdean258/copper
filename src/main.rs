@@ -1,4 +1,6 @@
+mod builtins;
 mod copper_type;
+mod eval;
 mod lex;
 mod location;
 mod parser;
@@ -10,17 +12,16 @@ use std::path::Path;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = args[1].clone();
+    eval_file(&filename);
+}
+
+fn eval_file(filename: &str) {
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
     let lexer = lex::Lexer::new(&filename, &mut lines);
     let mut parser = parser::Parser::new(lexer);
-    match parser.parse() {
-        Ok(parsetree) => {
-            println!("{:?}", parsetree);
-        }
-        Err(s) => {
-            println!("{}", s);
-        }
-    }
+    let tree = parser.parse().unwrap();
+    let mut evaluator = eval::Evaluator::new();
+    evaluator.eval(&tree).unwrap();
 }
 
 fn read_lines<P>(filename: &P) -> io::Lines<io::BufReader<File>>
@@ -45,7 +46,7 @@ mod tests {
         for path in paths {
             let s = path.unwrap().file_name().into_string().unwrap();
             if s.ends_with(".cu") {
-                assert!(check_output(&s, &format!("{}.out", &s)));
+                assert!(check_output(&s, &format!("tests/{}.out", &s)));
             }
         }
     }
