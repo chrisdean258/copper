@@ -4,6 +4,7 @@ mod eval;
 mod lex;
 mod location;
 mod parser;
+mod reiter;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};

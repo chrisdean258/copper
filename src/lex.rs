@@ -2,14 +2,14 @@ use crate::location::Location;
 use std::iter::Peekable;
 mod chariter;
 use chariter::CharIter;
+use std::rc::Rc;
 
-pub struct Lexer<'a> {
-    label: &'a str,
-    chars: Peekable<<CharIter<'a> as IntoIterator>::IntoIter>,
+pub struct Lexer<T: Iterator<Item = String>> {
+    label: Rc<String>,
+    chars: Peekable<<CharIter<T> as IntoIterator>::IntoIter>,
     row: usize,
     col: usize,
 }
-
 #[derive(Debug)]
 pub struct Token {
     pub token_type: TokenType,
@@ -20,6 +20,8 @@ pub struct Token {
 pub enum TokenType {
     Identifier(String),
     Str(String),
+    Int(i64),
+    Float(f64),
     OpenParen,
     CloseParen,
     Comma,
@@ -27,7 +29,7 @@ pub enum TokenType {
     Char(char),
 }
 
-impl Iterator for Lexer<'_> {
+impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -35,10 +37,10 @@ impl Iterator for Lexer<'_> {
     }
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(label: &'a str, lines: &'a mut dyn Iterator<Item = String>) -> Lexer<'a> {
+impl<T: Iterator<Item = String>> Lexer<T> {
+    pub fn new(label: &str, lines: T) -> Lexer<T> {
         Lexer {
-            label,
+            label: Rc::new(label.into()),
             chars: CharIter::new(lines).into_iter().peekable(),
             row: 1,
             col: 0,
@@ -47,7 +49,7 @@ impl<'a> Lexer<'a> {
 
     #[allow(dead_code)]
     fn location(&self) -> Location {
-        Location::new(self.label, self.row, self.col)
+        Location::new(self.label.clone(), self.row, self.col)
     }
 
     fn expect<F>(&mut self, func: F) -> char
@@ -61,6 +63,36 @@ impl<'a> Lexer<'a> {
 
     fn expect_char(&mut self, c: char) -> char {
         self.expect(|ch| ch == &c)
+    }
+
+    fn num(&mut self) -> TokenType {
+        use TokenType::{Float, Int};
+        let mut chars = Vec::new();
+        loop {
+            match self.chars.peek() {
+                Some(c) => match c {
+                    '0'..='9' => chars.push(self.chars.next().unwrap()),
+                    _ => break,
+                },
+                None => break,
+            }
+        }
+        if self.chars.next() != Some('.') {
+            let s: String = chars.into_iter().collect();
+            return Int(s.parse().unwrap());
+        }
+        chars.push('.');
+        loop {
+            match self.chars.peek() {
+                Some(c) => match c {
+                    '0'..='9' => chars.push(self.chars.next().unwrap()),
+                    _ => break,
+                },
+                None => break,
+            }
+        }
+        let s: String = chars.into_iter().collect();
+        return Float(s.parse().unwrap());
     }
 
     fn identifier(&mut self) -> TokenType {
@@ -131,8 +163,14 @@ impl<'a> Lexer<'a> {
                     'A'..='Z' => self.identifier(),
                     '_' => self.identifier(),
                     '"' => self.str(),
+                    '0'..='9' => self.num(),
                     '\n' => {
                         self.col = 1;
+                        self.row += 1;
+                        self.chars.next();
+                        continue;
+                    }
+                    ' ' => {
                         self.row += 1;
                         self.chars.next();
                         continue;
