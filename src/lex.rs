@@ -1,12 +1,13 @@
 use crate::location::Location;
-use std::iter::Peekable;
+use crate::reiter::{ReIter, ReIterable};
+use std::borrow::Borrow;
 mod chariter;
 use chariter::CharIter;
 use std::rc::Rc;
 
 pub struct Lexer<T: Iterator<Item = String>> {
     label: Rc<String>,
-    chars: Peekable<<CharIter<T> as IntoIterator>::IntoIter>,
+    chars: ReIterable<<CharIter<T> as IntoIterator>::IntoIter>,
     row: usize,
     col: usize,
 }
@@ -33,6 +34,10 @@ impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let borrowed: &CharIter<T> = self.chars.borrow();
+        let (row, col) = borrowed.location();
+        self.row = row;
+        self.col = col;
         self.lex_token()
     }
 }
@@ -41,7 +46,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     pub fn new(label: &str, lines: T) -> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
-            chars: CharIter::new(lines).into_iter().peekable(),
+            chars: CharIter::new(lines).into_iter().reiter(),
             row: 1,
             col: 0,
         }
@@ -56,7 +61,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     where
         F: FnOnce(&char) -> bool,
     {
-        assert!(func(self.chars.peek().unwrap()));
+        assert!(func(&self.chars.peek().unwrap()));
         self.col += 1;
         self.chars.next().unwrap()
     }
@@ -77,10 +82,11 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 None => break,
             }
         }
-        if self.chars.next() != Some('.') {
+        if self.chars.peek() != Some('.') {
             let s: String = chars.into_iter().collect();
             return Int(s.parse().unwrap());
         }
+        self.chars.next();
         chars.push('.');
         loop {
             match self.chars.peek() {
