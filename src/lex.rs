@@ -28,6 +28,7 @@ pub enum TokenType {
     Comma,
     Semicolon,
     Char(char),
+    ErrChar(char),
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
@@ -124,6 +125,33 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         return Identifier(String::from_iter(chars));
     }
 
+    fn chr(&mut self) -> TokenType {
+        use TokenType::Char;
+        self.expect_char('\'');
+        let c: char;
+        if let Some(cc) = self.chars.next() {
+            c = if cc == '\\' {
+                if let Some(ccc) = self.chars.next() {
+                    match ccc {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '0' => '\0',
+                        _ => ccc,
+                    }
+                } else {
+                    panic!("Unexpected End of File");
+                }
+            } else {
+                cc
+            }
+        } else {
+            panic!("Unexpected End of File");
+        }
+        self.expect_char('\'');
+        return Char(c);
+    }
+
     fn str(&mut self) -> TokenType {
         use TokenType::Str;
         self.expect_char('"');
@@ -147,7 +175,6 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 c
             });
         }
-        self.col += chars.len() + 2;
         Str(String::from_iter(chars))
     }
 
@@ -169,6 +196,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     'A'..='Z' => self.identifier(),
                     '_' => self.identifier(),
                     '"' => self.str(),
+                    '\'' => self.chr(),
                     '0'..='9' => self.num(),
                     '\n' => {
                         self.col = 1;
@@ -183,7 +211,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     }
                     _ => {
                         self.col += 1;
-                        Char(self.chars.next()?)
+                        ErrChar(self.chars.next()?)
                     }
                 },
                 location: self.location(),
