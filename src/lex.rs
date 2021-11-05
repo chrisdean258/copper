@@ -11,7 +11,8 @@ pub struct Lexer<T: Iterator<Item = String>> {
     row: usize,
     col: usize,
 }
-#[derive(Debug)]
+
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub location: Location,
@@ -26,6 +27,8 @@ pub enum TokenType {
     OpenParen,
     CloseParen,
     Comma,
+    Dot,
+    Equal,
     Semicolon,
     Char(char),
     ErrChar(char),
@@ -191,7 +194,9 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     '(' => self.eat_ret(OpenParen),
                     ')' => self.eat_ret(CloseParen),
                     ',' => self.eat_ret(Comma),
+                    '.' => self.eat_ret(Dot),
                     ';' => self.eat_ret(Semicolon),
+                    '=' => self.eat_ret(Equal),
                     'a'..='z' => self.identifier(),
                     'A'..='Z' => self.identifier(),
                     '_' => self.identifier(),
