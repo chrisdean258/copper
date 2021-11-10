@@ -19,7 +19,7 @@ fn main() {
 fn eval_file(filename: &str) {
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
     let lexer = lex::Lexer::new(&filename, &mut lines);
-    let mut parser = parser::Parser::new(lexer);
+    let parser = parser::Parser::new(lexer);
     let tree = parser.parse().unwrap();
     let mut evaluator = eval::Evaluator::new();
     evaluator.eval(&tree).unwrap();
