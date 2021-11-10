@@ -29,6 +29,11 @@ if [ $# -eq 0 ]; then
 		fi
 	done
 	echo "Passed $num_passed/$num_tests"
+else 
+	for t in "$@"; do 
+		file="$(ls tests/*.cu | grep "$t" | head -n 1)"
+		run-test "$file" 1
+	done
 fi
 
 

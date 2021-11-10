@@ -5,7 +5,8 @@ use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub enum Value {
-    BuiltinFunc(fn(&mut Vec<Value>, Vec<usize>) -> Value),
+    BuiltinFunc(fn(&mut Evaluator, Vec<usize>) -> Value),
+    Reference(usize),
     Str(String),
     Int(i64),
     Float(f64),
@@ -23,6 +24,7 @@ impl Debug for Value {
             Int(i) => f.write_fmt(format_args!("Int({:?})", i))?,
             Float(d) => f.write_fmt(format_args!("Float({:?})", d))?,
             Char(c) => f.write_fmt(format_args!("Char({:?})", c))?,
+            Reference(u) => f.write_fmt(format_args!("Reference({:?})", u))?,
             Null => f.write_str("null")?,
         };
         Ok(())
@@ -31,7 +33,7 @@ impl Debug for Value {
 
 pub struct Evaluator {
     scopes: Vec<HashMap<String, usize>>,
-    values: Vec<Value>,
+    pub values: Vec<Value>,
     free: Vec<u64>,
 }
 
@@ -54,11 +56,32 @@ impl Evaluator {
         eval
     }
 
+    fn openscope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn closescope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn insert_scope(&mut self, key: String, val: usize) {
+        self.scopes.last_mut().unwrap().insert(key, val);
+    }
+
+    // pub fn alloc(&mut self) -> usize {
+    // let rv = self._alloc();
+    // println!("first num {:x}", self.free[0]);
+    // println!("allocing {}", rv);
+    // rv
+    // }
+
     pub fn alloc(&mut self) -> usize {
         let mut index: usize = 0;
         while index < self.free.len() {
             if self.free[index] != 0 {
-                return index * 64 + self.free[index].leading_zeros() as usize;
+                let rtnidx = self.free[index].trailing_zeros() as usize;
+                self.free[index] &= !(1 << rtnidx);
+                return index * 64 + rtnidx;
             }
             index += 1
         }
@@ -84,9 +107,11 @@ impl Evaluator {
     }
 
     pub fn eval(&mut self, tree: &ParseTree) -> Result<(), String> {
+        self.openscope();
         for statement in tree.statements.iter() {
             self.eval_statement(&statement)?;
         }
+        self.closescope();
         Ok(())
     }
 
@@ -104,7 +129,19 @@ impl Evaluator {
             CallExpr(callexpr) => self.eval_call_expr(&callexpr)?,
             RefExpr(refexpr) => self.eval_ref_expr(&refexpr)?,
             Immediate(immediate) => self.eval_immediate(&immediate)?,
-            _ => todo!(),
+            EqualExpr(equalexpr) => match &*equalexpr.lhs {
+                RefExpr(r) => {
+                    let idx = self.eval_ref_expr_or_alloc(&r)?;
+                    let rhs = self.eval_expr(&equalexpr.rhs)?;
+                    self.values[idx] = Value::Reference(rhs);
+                    idx
+                }
+                _ => todo!(),
+            },
+            // e => {
+            // println!("{:#?}", e);
+            // todo!()
+            // }
         })
     }
 
@@ -116,10 +153,33 @@ impl Evaluator {
             args.push(self.eval_expr(arg)?);
         }
         let rtn = match func {
-            Value::BuiltinFunc(f) => f(&mut self.values, args),
-            _ => unreachable!(),
+            Value::BuiltinFunc(f) => f(self, args),
+            Value::Reference(u) => {
+                let val = self.lookup_reference(u);
+                println!("{:#?}", self.values[val]);
+                todo!()
+            }
+            f => {
+                println!("{:#?}", f);
+                unreachable!();
+            }
         };
         Ok(self.add_val(rtn))
+    }
+
+    fn lookup_reference(&self, idx: usize) -> usize {
+        let mut i = idx;
+        loop {
+            match self.values[i] {
+                Value::Reference(u) => {
+                    i = u;
+                }
+                _ => return i,
+            }
+            if i == idx {
+                panic!("Refernce loop")
+            }
+        }
     }
 
     fn eval_ref_expr(&mut self, expr: &RefExpr) -> Result<usize, String> {
@@ -130,6 +190,22 @@ impl Evaluator {
                 _ => Err(format!("{}: No such name in scope...", s)),
             },
             _ => Err("Unexpected...".into()),
+        }
+    }
+
+    fn eval_ref_expr_or_alloc(&mut self, expr: &RefExpr) -> Result<usize, String> {
+        use crate::lex::TokenType::*;
+        match self.eval_ref_expr(expr) {
+            Ok(v) => return Ok(v),
+            _ => (),
+        };
+        match &expr.value.token_type {
+            Identifier(s) => {
+                let new_val = self.alloc();
+                self.insert_scope(s.clone(), new_val);
+                Ok(new_val)
+            }
+            _ => todo!(),
         }
     }
 

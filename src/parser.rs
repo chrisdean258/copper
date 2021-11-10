@@ -5,12 +5,12 @@ pub struct Parser<T: Iterator<Item = String>> {
     lexer: Lexer<T>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     CallExpr(CallExpr),
     RefExpr(RefExpr),
@@ -18,24 +18,24 @@ pub enum Expression {
     EqualExpr(EqualExpr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EqualExpr {
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RefExpr {
     pub value: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Immediate {
     pub value: Token,
 }
@@ -148,7 +148,11 @@ impl ParseTree {
             TokenType::OpenParen => self.parse_call_args(lexer, lhs)?,
             TokenType::Equal => self.parse_equal_expr(lexer, lhs)?,
             TokenType::Semicolon => lhs,
-            _ => todo!(),
+            TokenType::CloseParen => lhs,
+            t => {
+                println!("{:?}", t);
+                todo!()
+            }
         })
     }
 

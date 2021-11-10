@@ -1,16 +1,25 @@
-use crate::eval::Value;
+use crate::eval::{Evaluator, Value};
 
-pub fn copper_print(vars: &mut Vec<Value>, args: Vec<usize>) -> Value {
+pub fn copper_print(ctx: &mut Evaluator, args: Vec<usize>) -> Value {
     for idx in args {
-        let val = vars[idx].clone();
-        match val {
-            Value::Str(s) => print!("{}", s),
-            Value::Int(i) => print!("{}", i),
-            Value::Float(f) => print!("{}", f),
-            Value::Char(c) => print!("{}", c),
-            Value::Null => print!("null"),
-            _ => unreachable!(),
-        }
+        let mut val = idx;
+        let printable = loop {
+            match &ctx.values[val] {
+                Value::Str(s) => break format!("{}", s),
+                Value::Int(i) => break format!("{}", i),
+                Value::Float(f) => break format!("{}", f),
+                Value::Char(c) => break format!("{}", c),
+                Value::Null => break format!("null"),
+                Value::Reference(u) => {
+                    val = *u;
+                    if val == idx {
+                        panic!("refernce loop in print");
+                    }
+                }
+                _ => unreachable!(),
+            }
+        };
+        print!("{}", printable);
     }
     print!("\n");
     Value::Null
