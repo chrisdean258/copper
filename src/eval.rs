@@ -83,14 +83,12 @@ impl Evaluator {
     }
 
     fn scope_search(&mut self, key: &str) -> Option<&mut usize> {
-        let mut rv = None;
         for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(key) {
-                rv = scope.get_mut(key);
-                break;
+            if let Some(val) = scope.get_mut(key) {
+                return Some(val);
             }
         }
-        rv
+        None
     }
 
     fn insert_scope(&mut self, key: &str, val: usize) {
@@ -167,25 +165,15 @@ impl Evaluator {
     }
 
     fn eval_expr(&mut self, expr: &Expression) -> Result<usize, String> {
-        use crate::lex::TokenType;
         use crate::parser::Expression::*;
         Ok(match expr {
             CallExpr(callexpr) => self.eval_call_expr(&callexpr)?,
             RefExpr(refexpr) => self.eval_ref_expr(&refexpr)?,
             Immediate(immediate) => self.eval_immediate(&immediate)?,
-            EqualExpr(equalexpr) => match &*equalexpr.lhs {
-                RefExpr(r) => match &r.value.token_type {
-                    TokenType::Identifier(s) => {
-                        let rhs = self.eval_expr(&equalexpr.rhs)?;
-                        self.insert_scope(s, rhs);
-                        rhs
-                    }
-                    _ => todo!(),
-                },
-                _ => todo!(),
-            },
             BlockExpr(blockexpr) => self.eval_block(blockexpr)?,
             BinOp(_) => todo!(),
+            PreUnOp(_) => todo!(),
+            PostUnOp(_) => todo!(),
         })
     }
 

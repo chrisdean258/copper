@@ -18,7 +18,6 @@ pub struct Token {
     pub location: Location,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TokenType {
     Identifier(String),
@@ -49,10 +48,13 @@ pub enum TokenType {
     Semicolon,
     OpenBrace,
     CloseBrace,
+    OpenBracket,
+    CloseBracket,
     Char(char),
     ErrChar(char),
     Keyword(Keyword),
     CmpEqual,
+    CmpNotEqual,
     CmpGE,
     CmpGT,
     CmpLE,
@@ -61,8 +63,10 @@ pub enum TokenType {
     BoolOr,
     BitAnd,
     BoolAnd,
+    BitNot,
     BitXor,
     BoolXor,
+    BoolNot,
     BitShiftRight,
     BitShiftLeft,
 }
@@ -226,6 +230,11 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         rtn
     }
 
+    fn eat_peek(&mut self) -> Option<char> {
+        self.chars.next();
+        self.chars.peek()
+    }
+
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
         loop {
@@ -235,6 +244,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     ')' => self.eat_ret(CloseParen),
                     '{' => self.eat_ret(OpenBrace),
                     '}' => self.eat_ret(CloseBrace),
+                    '[' => self.eat_ret(OpenBracket),
+                    ']' => self.eat_ret(CloseBracket),
                     ',' => self.eat_ret(Comma),
                     '.' => self.eat_ret(Dot),
                     ';' => self.eat_ret(Semicolon),
@@ -260,34 +271,38 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                         self.chars.next();
                         continue;
                     }
-                    '=' => match self.eat_ret(self.chars.peek()) {
+                    '=' => match self.eat_peek() {
                         Some('=') => self.eat_ret(CmpEqual),
                         _ => Equal,
                     },
-                    '|' => match self.eat_ret(self.chars.peek()) {
+                    '|' => match self.eat_peek() {
                         Some('|') => self.eat_ret(BoolOr),
                         _ => BitOr,
                     },
-                    '&' => match self.eat_ret(self.chars.peek()) {
+                    '&' => match self.eat_peek() {
                         Some('&') => self.eat_ret(BoolAnd),
                         Some('=') => self.eat_ret(AndEq),
                         _ => BitAnd,
                     },
-                    '^' => match self.eat_ret(self.chars.peek()) {
+                    '^' => match self.eat_peek() {
                         Some('^') => self.eat_ret(BoolXor),
                         Some('=') => self.eat_ret(XorEq),
                         _ => BitXor,
                     },
-                    '>' => match self.eat_ret(self.chars.peek()) {
-                        Some('>') => match self.eat_ret(self.chars.peek()) {
+                    '!' => match self.eat_peek() {
+                        Some('=') => self.eat_ret(CmpNotEqual),
+                        _ => BoolNot,
+                    },
+                    '>' => match self.eat_peek() {
+                        Some('>') => match self.eat_peek() {
                             Some('=') => self.eat_ret(BitShiftRightEq),
                             _ => BitShiftRight,
                         },
                         Some('=') => self.eat_ret(CmpGE),
                         _ => CmpGT,
                     },
-                    '<' => match self.eat_ret(self.chars.peek()) {
-                        Some('<') => match self.eat_ret(self.chars.peek()) {
+                    '<' => match self.eat_peek() {
+                        Some('<') => match self.eat_peek() {
                             Some('=') => self.eat_ret(BitShiftLeftEq),
                             _ => BitShiftLeft,
                         },
@@ -295,32 +310,33 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                         _ => CmpLT,
                     },
 
-                    '+' => match self.eat_ret(self.chars.peek()) {
+                    '+' => match self.eat_peek() {
                         Some('+') => self.eat_ret(Inc),
                         Some('=') => self.eat_ret(PlusEq),
                         _ => Plus,
                     },
 
-                    '-' => match self.eat_ret(self.chars.peek()) {
+                    '-' => match self.eat_peek() {
                         Some('-') => self.eat_ret(Dec),
                         Some('=') => self.eat_ret(MinusEq),
                         _ => Minus,
                     },
 
-                    '%' => match self.eat_ret(self.chars.peek()) {
+                    '%' => match self.eat_peek() {
                         Some('=') => self.eat_ret(ModEq),
                         _ => Mod,
                     },
 
-                    '*' => match self.eat_ret(self.chars.peek()) {
+                    '*' => match self.eat_peek() {
                         Some('=') => self.eat_ret(TimesEq),
                         _ => Times,
                     },
 
-                    '/' => match self.eat_ret(self.chars.peek()) {
+                    '/' => match self.eat_peek() {
                         Some('=') => self.eat_ret(DivEq),
                         _ => Div,
                     },
+                    '~' => self.eat_ret(BitNot),
 
                     _ => {
                         self.col += 1;

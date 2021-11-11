@@ -1,6 +1,7 @@
 use crate::lex::*;
 use crate::reiter::ReIter;
 use crate::reiter::ReIterable;
+
 pub struct Parser<T: Iterator<Item = String>> {
     lexer: Lexer<T>,
 }
@@ -17,6 +18,8 @@ pub enum Expression {
     Immediate(Immediate),
     BlockExpr(BlockExpr),
     BinOp(BinOp),
+    PreUnOp(PreUnOp),
+    PostUnOp(PostUnOp),
 }
 
 #[derive(Debug, Clone)]
@@ -52,18 +55,24 @@ pub struct BinOp {
     pub rhs: Box<Expression>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreUnOp {
+    pub op: Token,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PostUnOp {
+    pub lhs: Box<Expression>,
+    pub op: Token,
+}
+
 fn err_msg(token: &Token, reason: &str) -> String {
     format!("{}: {}", token.location, reason)
 }
 
-fn unexpected(unexpected: &Token, expected: Vec<TokenType>) -> String {
-    let expected_str = expected
-        .iter()
-        .map(|t| format!("{:?}", t))
-        .reduce(|a, b| format!("{}, {}", a, b))
-        .unwrap();
-    let reason = format!("Expected one of ({}), found {:?}", expected_str, unexpected);
-    err_msg(unexpected, &reason)
+fn unexpected(token: &Token) -> String {
+    panic!("{}", format!("{}: Unexpected {:?}", token.location, token))
 }
 
 macro_rules! binop {
@@ -95,30 +104,24 @@ macro_rules! binop {
         }
     }
 }
+macro_rules! expect {
+    ( $lexer:ident, $token:path ) => {
+        if let Some(token) = $lexer.peek() {
+            match &token.token_type {
+                $token => $lexer.next(),
+                _ => return Err(unexpected(&token)),
+            }
+        } else {
+            return Err("Unexpected EOF".into());
+        }
+    };
+}
 
 impl ParseTree {
     pub fn new() -> ParseTree {
         ParseTree {
             statements: Vec::new(),
         }
-    }
-
-    pub fn expect<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
-        expected: Vec<TokenType>,
-    ) -> Result<(), String> {
-        use std::mem::discriminant;
-        let token = lexer.peek().unwrap();
-        let disc = discriminant(&token.token_type);
-        for v in expected.clone() {
-            if disc == discriminant(&v) {
-                lexer.next();
-                return Ok(());
-            }
-        }
-
-        Err(unexpected(&token, expected))
     }
 
     pub fn parse_statements<T: Iterator<Item = String>>(
@@ -138,7 +141,7 @@ impl ParseTree {
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Statement, String> {
         use crate::lex::TokenType::*;
-        use std::mem::discriminant;
+        use std::mem::discriminant as disc;
         let token = lexer.peek().unwrap();
         let rv = Ok(Statement::Expr(match &token.token_type {
             CloseParen => return Err(err_msg(&token, "Unexpected closing paren")),
@@ -156,8 +159,13 @@ impl ParseTree {
             ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
             Keyword(_) => todo!(),
             CloseBrace => todo!(),
+            _ => todo!(),
         }));
-        lexer.next_if(|t| discriminant(&t.token_type) == discriminant(&Semicolon));
+        // eat all the semicolons
+        while lexer
+            .next_if(|t| disc(&t.token_type) == disc(&Semicolon))
+            .is_some()
+        {}
         rv
     }
 
@@ -167,12 +175,7 @@ impl ParseTree {
     ) -> Result<Expression, String> {
         use std::mem::discriminant as disc;
         let mut rv = Vec::new();
-        if lexer
-            .next_if(|t| disc(&TokenType::OpenBrace) == disc(&t.token_type))
-            .is_none()
-        {
-            unreachable!();
-        }
+        expect!(lexer, TokenType::OpenBrace);
 
         while lexer
             .next_if(|t| disc(&TokenType::CloseBrace) == disc(&t.token_type))
@@ -184,48 +187,127 @@ impl ParseTree {
         Ok(Expression::BlockExpr(BlockExpr { statements: rv }))
     }
 
-    fn parse_expr_id<T: Iterator<Item = String>>(
+    binop! {parse_eq, parse_boolean_op, Equal, AndEq, XorEq, PlusEq, MinusEq, TimesEq, DivEq, ModEq}
+    binop! {parse_boolean_op, parse_bitwise_or, BoolOr, BoolXor, BoolAnd}
+    binop! {parse_bitwise_or, parse_bitwise_xor, BitOr}
+    binop! {parse_bitwise_xor, parse_bitwise_and, BitXor}
+    binop! {parse_bitwise_and, parse_comparision, BitAnd}
+
+    // Todo: Comparision operator chaining
+    binop! {parse_comparision, parse_bitshift, CmpEqual, CmpGE, CmpGT, CmpLE, CmpLT }
+
+    binop! {parse_bitshift, parse_additive, BitShiftLeft, BitShiftRight}
+    binop! {parse_additive, parse_multiplicative, Minus, Plus}
+    binop! {parse_multiplicative, parse_pre_unary, Times, Mod, Div}
+
+    fn parse_pre_unary<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        lexer.record();
-        let idtoken = lexer.next().unwrap();
-        let token = lexer.peek();
-        if token.is_none() {
-            lexer.commit();
-            return Ok(Expression::RefExpr(RefExpr { value: idtoken }));
-        }
-        lexer.rollback();
-        let token = token.unwrap();
-        match &token.token_type {
-            TokenType::Identifier(_) => todo!(),
-            _ => (),
-        }
-
-        let lhs = self.parse_ref(lexer)?;
-        let token = match lexer.peek() {
-            None => return Ok(lhs),
-            Some(t) => t,
-        };
-        Ok(match &token.token_type {
-            TokenType::OpenParen => self.parse_call_args(lexer, lhs)?,
-            TokenType::Equal => todo!(),
-            TokenType::Semicolon => lhs,
-            TokenType::CloseParen => lhs,
-            t => {
-                println!("{:?}", t);
-                todo!()
+        if let Some(token) = lexer.peek() {
+            match token.token_type {
+                TokenType::BoolNot => (),
+                TokenType::BitNot => (),
+                TokenType::Minus => (),
+                TokenType::Plus => (),
+                _ => return self.parse_post_unary(lexer),
             }
-        })
+            lexer.next();
+            let rhs = self.parse_post_unary(lexer)?;
+            Ok(Expression::PreUnOp(PreUnOp {
+                op: lexer.next().unwrap(),
+                rhs: Box::new(rhs),
+            }))
+        } else {
+            self.parse_post_unary(lexer)
+        }
     }
 
-    binop! {parse_eq, parse_boolean_op, Equal}
-    binop! {parse_boolean_op, parse_bitwise_or, Equal}
-    binop! {parse_bitwise_or, parse_bitwise_xor, Equal}
-    binop! {parse_bitwise_xor, parse_bitwise_and, Equal}
-    binop! {parse_bitwise_and, parse_comparision, Equal}
+    fn parse_post_unary<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let lhs = self.parse_ref(lexer)?;
+        if let Some(token) = lexer.peek() {
+            match token.token_type {
+                TokenType::Inc => (),
+                TokenType::Dec => (),
+                TokenType::OpenParen => {
+                    let args = self.parse_paren_cse(lexer)?;
+                    return Ok(Expression::CallExpr(CallExpr {
+                        function: Box::new(lhs),
+                        args,
+                    }));
+                }
+                TokenType::OpenBracket => todo!(),
+                _ => return Ok(lhs),
+            }
+            lexer.next();
+            Ok(Expression::PostUnOp(PostUnOp {
+                lhs: Box::new(lhs),
+                op: lexer.next().unwrap(),
+            }))
+        } else {
+            Ok(lhs)
+        }
+    }
 
-    fn parse_comparision<T: Iterator<Item = String>>(
+    fn parse_paren_cse<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Vec<Expression>, String> {
+        expect!(lexer, TokenType::OpenParen);
+        let cse = self.parse_cse(lexer)?;
+        expect!(lexer, TokenType::CloseParen);
+        Ok(cse)
+    }
+
+    fn parse_cse<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Vec<Expression>, String> {
+        use std::mem::discriminant as disc;
+        let mut rv = Vec::new();
+        rv.push(self.parse_expr(lexer)?);
+        while lexer
+            .next_if(|t| disc(&t.token_type) == disc(&TokenType::Comma))
+            .is_some()
+        {
+            rv.push(self.parse_expr(lexer)?);
+        }
+        Ok(rv)
+    }
+
+    fn parse_ref<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        if let Some(token) = lexer.peek() {
+            match &token.token_type {
+                TokenType::Identifier(_) => Ok(Expression::RefExpr(RefExpr {
+                    value: lexer.next().unwrap(),
+                })),
+                TokenType::Char(_) => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
+                TokenType::Str(_) => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
+                TokenType::Int(_) => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
+                TokenType::Float(_) => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
+                TokenType::OpenParen => self.parse_paren(lexer),
+                _ => Err(unexpected(&token)),
+            }
+        } else {
+            self.parse_paren(lexer)
+        }
+    }
+
+    fn parse_paren<T: Iterator<Item = String>>(
         &mut self,
         _lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
@@ -239,96 +321,15 @@ impl ParseTree {
         use crate::lex::TokenType::*;
         let token = lexer.peek().unwrap();
         Ok(match token.token_type {
-            Identifier(_) => self.parse_expr_id(lexer)?,
-            Str(_) => Expression::Immediate(Immediate {
-                value: lexer.next().unwrap(),
-            }),
-            Int(_) => Expression::Immediate(Immediate {
-                value: lexer.next().unwrap(),
-            }),
-            Float(_) => Expression::Immediate(Immediate {
-                value: lexer.next().unwrap(),
-            }),
+            Identifier(_) => self.parse_eq(lexer)?,
+            Str(_) => self.parse_eq(lexer)?,
+            Int(_) => self.parse_eq(lexer)?,
+            Float(_) => self.parse_eq(lexer)?,
+            Char(_) => self.parse_eq(lexer)?,
             OpenBrace => self.parse_block(lexer)?,
-            CloseBrace => todo!(),
-            OpenParen => todo!(),
-            CloseParen => todo!(),
-            Comma => todo!(),
-            Dot => todo!(),
-            Equal => todo!(),
-            Char(_) => Expression::Immediate(Immediate {
-                value: lexer.next().unwrap(),
-            }),
-            ErrChar(c) => {
-                return Err(err_msg(
-                    &lexer.next().unwrap(),
-                    &format!("unexpected char {}", c),
-                ))
-            }
-            Semicolon => {
-                return Err(err_msg(
-                    &lexer.next().unwrap(),
-                    &format!("unexpected semicolon"),
-                ))
-            }
-            Keyword(_) => todo!(),
+            OpenParen => self.parse_paren(lexer)?,
+            _ => return Err(unexpected(&token)),
         })
-    }
-
-    fn parse_call_args<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
-        function: Expression,
-    ) -> Result<Expression, String> {
-        use crate::lex::TokenType::*;
-        let mut args: Vec<Expression> = Vec::new();
-        let mut need_comma = false;
-        self.expect(lexer, vec![OpenParen])?;
-        loop {
-            if let Some(token) = lexer.peek() {
-                match token.token_type {
-                    CloseParen => {
-                        lexer.next();
-                        break;
-                    }
-                    Comma => {
-                        if need_comma {
-                            continue;
-                        } else {
-                            return Err(err_msg(&token, "unexpected comma"));
-                        }
-                    }
-                    _ => {
-                        if need_comma {
-                            return Err(err_msg(&token, "expected comma"));
-                        } else {
-                            args.push(self.parse_expr(lexer)?);
-                            need_comma = true;
-                        }
-                    }
-                }
-            } else {
-                return Err("Unexpected EOF while parsing arguments to call expression".into());
-            }
-        }
-        Ok(Expression::CallExpr(CallExpr {
-            function: Box::new(function),
-            args,
-        }))
-    }
-
-    fn parse_ref<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
-    ) -> Result<Expression, String> {
-        use crate::lex::TokenType::*;
-        let token = lexer.next().unwrap();
-        match token.token_type {
-            Identifier(_) => (),
-            _ => return Err(unexpected(&token, vec![Identifier("".into())])),
-        }
-
-        Ok(Expression::RefExpr(RefExpr { value: token }))
     }
 }
 
