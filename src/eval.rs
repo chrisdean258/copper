@@ -1,12 +1,12 @@
 use crate::builtins::*;
 use crate::parser::*;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum Value {
-    BuiltinFunc(fn(&mut Evaluator, Vec<usize>) -> Value),
+    BuiltinFunc(&'static str, fn(&mut Evaluator, Vec<usize>) -> Value),
     Reference(usize),
     Str(String),
     Int(i64),
@@ -20,13 +20,29 @@ impl Debug for Value {
         use Value::*;
         f.write_str("Value::")?;
         match self {
-            BuiltinFunc(_) => f.write_str("BuiltinFunc")?,
+            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name))?,
             Str(s) => f.write_fmt(format_args!("Str({:?})", s))?,
             Int(i) => f.write_fmt(format_args!("Int({:?})", i))?,
             Float(d) => f.write_fmt(format_args!("Float({:?})", d))?,
             Char(c) => f.write_fmt(format_args!("Char({:?})", c))?,
-            Reference(u) => f.write_fmt(format_args!("Reference({:?})", u))?,
+            Reference(u) => f.write_fmt(format_args!("Reference({:x})", u))?,
             Null => f.write_str("Null")?,
+        };
+        Ok(())
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        use Value::*;
+        match self {
+            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name))?,
+            Str(s) => f.write_fmt(format_args!("{}", s))?,
+            Int(i) => f.write_fmt(format_args!("{}", i))?,
+            Float(d) => f.write_fmt(format_args!("{}", d))?,
+            Char(c) => f.write_fmt(format_args!("{}", c))?,
+            Reference(u) => f.write_fmt(format_args!("0x{:x}", u))?,
+            Null => f.write_str("null")?,
         };
         Ok(())
     }
@@ -50,7 +66,7 @@ impl Evaluator {
         eval.add_val(Value::Null);
         builtins.insert(
             String::from("print"),
-            eval.add_val(Value::BuiltinFunc(copper_print)),
+            eval.add_val(Value::BuiltinFunc("print", copper_print)),
         );
 
         eval.scopes.push(builtins);
@@ -169,10 +185,7 @@ impl Evaluator {
                 _ => todo!(),
             },
             BlockExpr(blockexpr) => self.eval_block(blockexpr)?,
-            // e => {
-            // println!("{:#?}", e);
-            // todo!()
-            // }
+            BinOp(_) => todo!(),
         })
     }
 
@@ -184,7 +197,7 @@ impl Evaluator {
             args.push(self.eval_expr(arg)?);
         }
         let rtn = match func {
-            Value::BuiltinFunc(f) => f(self, args),
+            Value::BuiltinFunc(_, f) => f(self, args),
             Value::Reference(u) => {
                 let val = self.lookup_reference(u);
                 println!("{:#?}", self.values[val]);

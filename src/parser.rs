@@ -15,20 +15,14 @@ pub enum Expression {
     CallExpr(CallExpr),
     RefExpr(RefExpr),
     Immediate(Immediate),
-    EqualExpr(EqualExpr),
     BlockExpr(BlockExpr),
+    BinOp(BinOp),
 }
 
 #[derive(Debug, Clone)]
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct EqualExpr {
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +45,13 @@ pub struct BlockExpr {
     pub statements: Vec<Statement>,
 }
 
+#[derive(Debug, Clone)]
+pub struct BinOp {
+    pub lhs: Box<Expression>,
+    pub op: Token,
+    pub rhs: Box<Expression>,
+}
+
 fn err_msg(token: &Token, reason: &str) -> String {
     format!("{}: {}", token.location, reason)
 }
@@ -63,6 +64,36 @@ fn unexpected(unexpected: &Token, expected: Vec<TokenType>) -> String {
         .unwrap();
     let reason = format!("Expected one of ({}), found {:?}", expected_str, unexpected);
     err_msg(unexpected, &reason)
+}
+
+macro_rules! binop {
+    ( $name:ident, $next:ident, $( $token:path ),+) => {
+        fn $name<T: Iterator<Item = String>>(
+            &mut self,
+            lexer: &mut ReIterable<Lexer<T>>,
+        ) -> Result<Expression, String> {
+            use crate::lex::TokenType::*;
+            let lhs = self.$next(lexer)?;
+            let token = match lexer.peek() {
+                Some(t) => t,
+                None => return Ok(lhs),
+            };
+            match token.token_type {
+                $(
+                    $token => {
+                        lexer.next();
+                    },
+                )+
+                _ => return Ok(lhs),
+            }
+            let rhs = self.$name(lexer)?;
+            Ok(Expression::BinOp(BinOp {
+                lhs: Box::new(lhs),
+                op: token,
+                rhs: Box::new(rhs),
+            }))
+        }
+    }
 }
 
 impl ParseTree {
@@ -178,7 +209,7 @@ impl ParseTree {
         };
         Ok(match &token.token_type {
             TokenType::OpenParen => self.parse_call_args(lexer, lhs)?,
-            TokenType::Equal => self.parse_equal_expr(lexer, lhs)?,
+            TokenType::Equal => todo!(),
             TokenType::Semicolon => lhs,
             TokenType::CloseParen => lhs,
             t => {
@@ -188,23 +219,17 @@ impl ParseTree {
         })
     }
 
-    fn parse_equal_expr<T: Iterator<Item = String>>(
+    binop! {parse_eq, parse_boolean_op, Equal}
+    binop! {parse_boolean_op, parse_bitwise_or, Equal}
+    binop! {parse_bitwise_or, parse_bitwise_xor, Equal}
+    binop! {parse_bitwise_xor, parse_bitwise_and, Equal}
+    binop! {parse_bitwise_and, parse_comparision, Equal}
+
+    fn parse_comparision<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
-        lhs: Expression,
+        _lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        use std::mem::discriminant;
-        if lexer
-            .next_if(|t| discriminant(&TokenType::Equal) == discriminant(&t.token_type))
-            .is_none()
-        {
-            unreachable!();
-        }
-        let rhs = self.parse_expr(lexer)?;
-        Ok(Expression::EqualExpr(EqualExpr {
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        }))
+        todo!()
     }
 
     fn parse_expr<T: Iterator<Item = String>>(
