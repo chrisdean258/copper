@@ -16,6 +16,7 @@ pub enum Expression {
     RefExpr(RefExpr),
     Immediate(Immediate),
     EqualExpr(EqualExpr),
+    BlockExpr(BlockExpr),
 }
 
 #[derive(Debug, Clone)]
@@ -40,8 +41,13 @@ pub struct Immediate {
     pub value: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParseTree {
+    pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockExpr {
     pub statements: Vec<Statement>,
 }
 
@@ -110,15 +116,41 @@ impl ParseTree {
             Dot => return Err(err_msg(&token, "Unexpected dot")),
             Equal => return Err(err_msg(&token, "Unexpected equal")),
             OpenParen => self.parse_expr(lexer)?,
+            OpenBrace => self.parse_block(lexer)?,
             Identifier(_) => self.parse_expr(lexer)?,
             Str(_) => self.parse_expr(lexer)?,
             Int(_) => self.parse_expr(lexer)?,
             Float(_) => self.parse_expr(lexer)?,
             Char(_) => self.parse_expr(lexer)?,
             ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
+            Keyword(_) => todo!(),
+            CloseBrace => todo!(),
         }));
         lexer.next_if(|t| discriminant(&t.token_type) == discriminant(&Semicolon));
         rv
+    }
+
+    fn parse_block<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        use std::mem::discriminant as disc;
+        let mut rv = Vec::new();
+        if lexer
+            .next_if(|t| disc(&TokenType::OpenBrace) == disc(&t.token_type))
+            .is_none()
+        {
+            unreachable!();
+        }
+
+        while lexer
+            .next_if(|t| disc(&TokenType::CloseBrace) == disc(&t.token_type))
+            .is_none()
+        {
+            let statement = self.parse_statement(lexer);
+            rv.push(statement?);
+        }
+        Ok(Expression::BlockExpr(BlockExpr { statements: rv }))
     }
 
     fn parse_expr_id<T: Iterator<Item = String>>(
@@ -192,6 +224,8 @@ impl ParseTree {
             Float(_) => Expression::Immediate(Immediate {
                 value: lexer.next().unwrap(),
             }),
+            OpenBrace => self.parse_block(lexer)?,
+            CloseBrace => todo!(),
             OpenParen => todo!(),
             CloseParen => todo!(),
             Comma => todo!(),
@@ -212,6 +246,7 @@ impl ParseTree {
                     &format!("unexpected semicolon"),
                 ))
             }
+            Keyword(_) => todo!(),
         })
     }
 

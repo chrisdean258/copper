@@ -18,6 +18,7 @@ pub struct Token {
     pub location: Location,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TokenType {
     Identifier(String),
@@ -30,8 +31,18 @@ pub enum TokenType {
     Dot,
     Equal,
     Semicolon,
+    OpenBrace,
+    CloseBrace,
     Char(char),
     ErrChar(char),
+    Keyword(Keyword),
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum Keyword {
+    If,
+    Else,
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
@@ -193,6 +204,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 token_type: match self.chars.peek()? {
                     '(' => self.eat_ret(OpenParen),
                     ')' => self.eat_ret(CloseParen),
+                    '{' => self.eat_ret(OpenBrace),
+                    '}' => self.eat_ret(CloseBrace),
                     ',' => self.eat_ret(Comma),
                     '.' => self.eat_ret(Dot),
                     ';' => self.eat_ret(Semicolon),
@@ -210,6 +223,11 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                         continue;
                     }
                     ' ' => {
+                        self.row += 1;
+                        self.chars.next();
+                        continue;
+                    }
+                    '\t' => {
                         self.row += 1;
                         self.chars.next();
                         continue;

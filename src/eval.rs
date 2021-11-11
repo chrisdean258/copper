@@ -3,6 +3,7 @@ use crate::parser::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub enum Value {
     BuiltinFunc(fn(&mut Evaluator, Vec<usize>) -> Value),
@@ -25,7 +26,7 @@ impl Debug for Value {
             Float(d) => f.write_fmt(format_args!("Float({:?})", d))?,
             Char(c) => f.write_fmt(format_args!("Char({:?})", c))?,
             Reference(u) => f.write_fmt(format_args!("Reference({:?})", u))?,
-            Null => f.write_str("null")?,
+            Null => f.write_str("Null")?,
         };
         Ok(())
     }
@@ -46,6 +47,7 @@ impl Evaluator {
         };
 
         let mut builtins = HashMap::new();
+        eval.add_val(Value::Null);
         builtins.insert(
             String::from("print"),
             eval.add_val(Value::BuiltinFunc(copper_print)),
@@ -64,8 +66,24 @@ impl Evaluator {
         self.scopes.pop();
     }
 
-    fn insert_scope(&mut self, key: String, val: usize) {
-        self.scopes.last_mut().unwrap().insert(key, val);
+    fn scope_search(&mut self, key: &str) -> Option<&mut usize> {
+        let mut rv = None;
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(key) {
+                rv = scope.get_mut(key);
+                break;
+            }
+        }
+        rv
+    }
+
+    fn insert_scope(&mut self, key: &str, val: usize) {
+        match self.scope_search(key) {
+            Some(v) => *v = val,
+            None => {
+                self.scopes.last_mut().unwrap().insert(key.to_string(), val);
+            }
+        }
     }
 
     // pub fn alloc(&mut self) -> usize {
@@ -115,29 +133,42 @@ impl Evaluator {
         Ok(())
     }
 
-    fn eval_statement(&mut self, statement: &Statement) -> Result<(), String> {
+    fn eval_statement(&mut self, statement: &Statement) -> Result<usize, String> {
         use crate::parser::Statement::*;
-        match statement {
+        Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
-        };
-        Ok(())
+        })
+    }
+
+    fn eval_block(&mut self, b: &BlockExpr) -> Result<usize, String> {
+        let mut rv = 0;
+        self.openscope();
+        for statement in b.statements.iter() {
+            rv = self.eval_statement(&statement)?;
+        }
+        self.closescope();
+        Ok(rv)
     }
 
     fn eval_expr(&mut self, expr: &Expression) -> Result<usize, String> {
+        use crate::lex::TokenType;
         use crate::parser::Expression::*;
         Ok(match expr {
             CallExpr(callexpr) => self.eval_call_expr(&callexpr)?,
             RefExpr(refexpr) => self.eval_ref_expr(&refexpr)?,
             Immediate(immediate) => self.eval_immediate(&immediate)?,
             EqualExpr(equalexpr) => match &*equalexpr.lhs {
-                RefExpr(r) => {
-                    let idx = self.eval_ref_expr_or_alloc(&r)?;
-                    let rhs = self.eval_expr(&equalexpr.rhs)?;
-                    self.values[idx] = Value::Reference(rhs);
-                    idx
-                }
+                RefExpr(r) => match &r.value.token_type {
+                    TokenType::Identifier(s) => {
+                        let rhs = self.eval_expr(&equalexpr.rhs)?;
+                        self.insert_scope(s, rhs);
+                        rhs
+                    }
+                    _ => todo!(),
+                },
                 _ => todo!(),
             },
+            BlockExpr(blockexpr) => self.eval_block(blockexpr)?,
             // e => {
             // println!("{:#?}", e);
             // todo!()
@@ -190,22 +221,6 @@ impl Evaluator {
                 _ => Err(format!("{}: No such name in scope...", s)),
             },
             _ => Err("Unexpected...".into()),
-        }
-    }
-
-    fn eval_ref_expr_or_alloc(&mut self, expr: &RefExpr) -> Result<usize, String> {
-        use crate::lex::TokenType::*;
-        match self.eval_ref_expr(expr) {
-            Ok(v) => return Ok(v),
-            _ => (),
-        };
-        match &expr.value.token_type {
-            Identifier(s) => {
-                let new_val = self.alloc();
-                self.insert_scope(s.clone(), new_val);
-                Ok(new_val)
-            }
-            _ => todo!(),
         }
     }
 
