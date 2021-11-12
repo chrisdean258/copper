@@ -1,3 +1,4 @@
+use crate::lex;
 use crate::lex::*;
 use crate::reiter::ReIter;
 use crate::reiter::ReIterable;
@@ -9,6 +10,7 @@ pub struct Parser<T: Iterator<Item = String>> {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
+    While(While),
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +22,13 @@ pub enum Expression {
     BinOp(BinOp),
     PreUnOp(PreUnOp),
     PostUnOp(PostUnOp),
+    AssignExpr(AssignExpr),
+}
+
+#[derive(Debug, Clone)]
+pub struct While {
+    pub condition: Box<Expression>,
+    pub body: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +62,14 @@ pub struct BinOp {
     pub lhs: Box<Expression>,
     pub op: Token,
     pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssignExpr {
+    pub lhs: Box<RefExpr>,
+    pub op: Token,
+    pub rhs: Box<Expression>,
+    pub allow_decl: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -140,27 +157,29 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Statement, String> {
+        use crate::lex::Keyword::*;
         use crate::lex::TokenType::*;
         use std::mem::discriminant as disc;
         let token = lexer.peek().unwrap();
-        let rv = Ok(Statement::Expr(match &token.token_type {
+        let rv = Ok(match &token.token_type {
             CloseParen => return Err(err_msg(&token, "Unexpected closing paren")),
             Comma => return Err(err_msg(&token, "Unexpected comma")),
             Semicolon => return Err(err_msg(&token, "Unexpected semicolon")),
             Dot => return Err(err_msg(&token, "Unexpected dot")),
             Equal => return Err(err_msg(&token, "Unexpected equal")),
-            OpenParen => self.parse_expr(lexer)?,
-            OpenBrace => self.parse_block(lexer)?,
-            Identifier(_) => self.parse_expr(lexer)?,
-            Str(_) => self.parse_expr(lexer)?,
-            Int(_) => self.parse_expr(lexer)?,
-            Float(_) => self.parse_expr(lexer)?,
-            Char(_) => self.parse_expr(lexer)?,
+            OpenParen => Statement::Expr(self.parse_expr(lexer)?),
+            OpenBrace => Statement::Expr(self.parse_block(lexer)?),
+            Identifier(_) => Statement::Expr(self.parse_expr(lexer)?),
+            Str(_) => Statement::Expr(self.parse_expr(lexer)?),
+            Int(_) => Statement::Expr(self.parse_expr(lexer)?),
+            Float(_) => Statement::Expr(self.parse_expr(lexer)?),
+            Char(_) => Statement::Expr(self.parse_expr(lexer)?),
             ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
+            Keyword(While) => self.parse_while(lexer)?,
             Keyword(_) => todo!(),
             CloseBrace => todo!(),
             _ => todo!(),
-        }));
+        });
         // eat all the semicolons
         while lexer
             .next_if(|t| disc(&t.token_type) == disc(&Semicolon))
@@ -187,7 +206,60 @@ impl ParseTree {
         Ok(Expression::BlockExpr(BlockExpr { statements: rv }))
     }
 
-    binop! {parse_eq, parse_boolean_op, Equal, AndEq, XorEq, PlusEq, MinusEq, TimesEq, DivEq, ModEq}
+    fn parse_while<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Statement, String> {
+        use crate::lex::TokenType::*;
+        let token = lexer.peek().unwrap();
+        match &token.token_type {
+            Keyword(lex::Keyword::While) => lexer.next(),
+            _ => unreachable!(),
+        };
+
+        let condition = Box::new(self.parse_paren(lexer)?);
+        let body = self.parse_expr(lexer)?;
+
+        Ok(Statement::While(While { condition, body }))
+    }
+
+    fn parse_eq<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        use crate::lex::TokenType::*;
+        let lhs = self.parse_boolean_op(lexer)?;
+        let token = match lexer.peek() {
+            Some(t) => t,
+            None => return Ok(lhs),
+        };
+        let mut allow_decl = false;
+        let reflhs = match &token.token_type {
+            Equal => {
+                lexer.next();
+                allow_decl = true;
+                match lhs {
+                    Expression::RefExpr(re) => re,
+                    _ => return Err(unexpected(&token)),
+                }
+            }
+            AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq => match lhs {
+                Expression::RefExpr(re) => {
+                    lexer.next();
+                    re
+                }
+                _ => return Err(unexpected(&token)),
+            },
+            _ => return Ok(lhs),
+        };
+        let rhs = self.parse_eq(lexer)?;
+        Ok(Expression::AssignExpr(AssignExpr {
+            lhs: Box::new(reflhs),
+            op: token,
+            rhs: Box::new(rhs),
+            allow_decl,
+        }))
+    }
     binop! {parse_boolean_op, parse_bitwise_or, BoolOr, BoolXor, BoolAnd}
     binop! {parse_bitwise_or, parse_bitwise_xor, BitOr}
     binop! {parse_bitwise_xor, parse_bitwise_and, BitXor}
@@ -299,7 +371,11 @@ impl ParseTree {
                 TokenType::Float(_) => Ok(Expression::Immediate(Immediate {
                     value: lexer.next().unwrap(),
                 })),
+                TokenType::Bool(_) => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
                 TokenType::OpenParen => self.parse_paren(lexer),
+                TokenType::OpenBrace => self.parse_block(lexer),
                 _ => Err(unexpected(&token)),
             }
         } else {
@@ -309,9 +385,12 @@ impl ParseTree {
 
     fn parse_paren<T: Iterator<Item = String>>(
         &mut self,
-        _lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        todo!()
+        expect!(lexer, TokenType::OpenParen);
+        let rv = self.parse_expr(lexer)?;
+        expect!(lexer, TokenType::CloseParen);
+        Ok(rv)
     }
 
     fn parse_expr<T: Iterator<Item = String>>(
@@ -326,6 +405,7 @@ impl ParseTree {
             Int(_) => self.parse_eq(lexer)?,
             Float(_) => self.parse_eq(lexer)?,
             Char(_) => self.parse_eq(lexer)?,
+            Bool(_) => self.parse_eq(lexer)?,
             OpenBrace => self.parse_block(lexer)?,
             OpenParen => self.parse_paren(lexer)?,
             _ => return Err(unexpected(&token)),

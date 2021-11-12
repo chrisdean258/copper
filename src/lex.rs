@@ -24,18 +24,22 @@ pub enum TokenType {
     Str(String),
     Int(i64),
     Float(f64),
+    Bool(u8),
     OpenParen,
     CloseParen,
     Comma,
     Dot,
     Equal,
+
     AndEq,
     XorEq,
+    OrEq,
     PlusEq,
     MinusEq,
     TimesEq,
     DivEq,
     ModEq,
+
     Plus,
     Minus,
     Times,
@@ -76,6 +80,8 @@ pub enum TokenType {
 pub enum Keyword {
     If,
     Else,
+    Nullable,
+    While,
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
@@ -151,7 +157,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
     fn identifier(&mut self) -> TokenType {
         use TokenType::Identifier;
-        let mut chars: Vec<char> = Vec::new();
+        let mut chars = String::new();
         match self.chars.peek().unwrap() {
             'a'..='z' => chars.push(self.chars.next().unwrap()),
             'A'..='Z' => chars.push(self.chars.next().unwrap()),
@@ -169,7 +175,13 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
 
         self.col += chars.len();
-        return Identifier(String::from_iter(chars));
+        match &chars[..] {
+            "nullable" => TokenType::Keyword(Keyword::Nullable),
+            "while" => TokenType::Keyword(Keyword::While),
+            "true" => TokenType::Bool(1),
+            "false" => TokenType::Bool(0),
+            _ => Identifier(chars),
+        }
     }
 
     fn chr(&mut self) -> TokenType {
@@ -277,6 +289,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     },
                     '|' => match self.eat_peek() {
                         Some('|') => self.eat_ret(BoolOr),
+                        Some('=') => self.eat_ret(OrEq),
                         _ => BitOr,
                     },
                     '&' => match self.eat_peek() {

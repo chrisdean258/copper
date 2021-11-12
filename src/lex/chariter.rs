@@ -30,6 +30,10 @@ impl<T: Iterator<Item = String>> Iterator for CharIter<T> {
         while self.cur_line.is_none() || self.col_no >= self.cur_line.as_ref()?.len() {
             let line = self.lines.next();
             self.cur_line = Some(line?.chars().collect());
+            let len = self.cur_line.as_ref()?.len();
+            if len == 0 || self.cur_line.as_ref()?[len - 1] != '\n' {
+                self.cur_line.as_mut()?.push('\n');
+            }
             self.line_no += 1;
             self.col_no = 0;
         }
