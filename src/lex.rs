@@ -8,8 +8,6 @@ use std::rc::Rc;
 pub struct Lexer<T: Iterator<Item = String>> {
     label: Rc<String>,
     chars: ReIterable<<CharIter<T> as IntoIterator>::IntoIter>,
-    row: usize,
-    col: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -57,8 +55,8 @@ pub enum TokenType {
     Char(char),
     ErrChar(char),
     Keyword(Keyword),
-    CmpEqual,
-    CmpNotEqual,
+    CmpEq,
+    CmpNotEq,
     CmpGE,
     CmpGT,
     CmpLE,
@@ -80,6 +78,7 @@ pub enum TokenType {
 pub enum Keyword {
     If,
     Else,
+    And,
     Nullable,
     While,
 }
@@ -88,10 +87,6 @@ impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let borrowed: &CharIter<T> = self.chars.borrow();
-        let (row, col) = borrowed.location();
-        self.row = row;
-        self.col = col;
         self.lex_token()
     }
 }
@@ -101,14 +96,14 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
             chars: CharIter::new(lines).into_iter().reiter(),
-            row: 1,
-            col: 0,
         }
     }
 
     #[allow(dead_code)]
     fn location(&self) -> Location {
-        Location::new(self.label.clone(), self.row, self.col)
+        let borrowed: &CharIter<T> = self.chars.borrow();
+        let (row, col) = borrowed.location();
+        Location::new(self.label.clone(), row, col)
     }
 
     fn expect<F>(&mut self, func: F) -> char
@@ -116,7 +111,6 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         F: FnOnce(&char) -> bool,
     {
         assert!(func(&self.chars.peek().unwrap()));
-        self.col += 1;
         self.chars.next().unwrap()
     }
 
@@ -174,10 +168,12 @@ impl<T: Iterator<Item = String>> Lexer<T> {
             }
         }
 
-        self.col += chars.len();
         match &chars[..] {
             "nullable" => TokenType::Keyword(Keyword::Nullable),
             "while" => TokenType::Keyword(Keyword::While),
+            "if" => TokenType::Keyword(Keyword::If),
+            "else" => TokenType::Keyword(Keyword::Else),
+            "and" => TokenType::Keyword(Keyword::And),
             "true" => TokenType::Bool(1),
             "false" => TokenType::Bool(0),
             _ => Identifier(chars),
@@ -251,6 +247,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         use TokenType::*;
         loop {
             break Some(Token {
+                location: self.location(),
                 token_type: match self.chars.peek()? {
                     '(' => self.eat_ret(OpenParen),
                     ')' => self.eat_ret(CloseParen),
@@ -268,23 +265,19 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     '\'' => self.chr(),
                     '0'..='9' => self.num(),
                     '\n' => {
-                        self.col = 1;
-                        self.row += 1;
                         self.chars.next();
                         continue;
                     }
                     ' ' => {
-                        self.row += 1;
                         self.chars.next();
                         continue;
                     }
                     '\t' => {
-                        self.row += 1;
                         self.chars.next();
                         continue;
                     }
                     '=' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(CmpEqual),
+                        Some('=') => self.eat_ret(CmpEq),
                         _ => Equal,
                     },
                     '|' => match self.eat_peek() {
@@ -303,7 +296,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                         _ => BitXor,
                     },
                     '!' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(CmpNotEqual),
+                        Some('=') => self.eat_ret(CmpNotEq),
                         _ => BoolNot,
                     },
                     '>' => match self.eat_peek() {
@@ -351,12 +344,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     },
                     '~' => self.eat_ret(BitNot),
 
-                    _ => {
-                        self.col += 1;
-                        ErrChar(self.chars.next()?)
-                    }
+                    _ => ErrChar(self.chars.next()?),
                 },
-                location: self.location(),
             });
         }
     }

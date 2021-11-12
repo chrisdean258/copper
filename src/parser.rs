@@ -10,11 +10,12 @@ pub struct Parser<T: Iterator<Item = String>> {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
-    While(While),
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    While(While),
+    If(If),
     CallExpr(CallExpr),
     RefExpr(RefExpr),
     Immediate(Immediate),
@@ -28,7 +29,15 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub struct While {
     pub condition: Box<Expression>,
-    pub body: Expression,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct If {
+    pub condition: Box<Expression>,
+    pub body: Box<Expression>,
+    pub and_bodies: Vec<If>,
+    pub else_body: Option<Box<Expression>>,
 }
 
 #[derive(Debug, Clone)]
@@ -175,7 +184,8 @@ impl ParseTree {
             Float(_) => Statement::Expr(self.parse_expr(lexer)?),
             Char(_) => Statement::Expr(self.parse_expr(lexer)?),
             ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
-            Keyword(While) => self.parse_while(lexer)?,
+            Keyword(While) => Statement::Expr(self.parse_while(lexer)?),
+            Keyword(If) => Statement::Expr(self.parse_if(lexer)?),
             Keyword(_) => todo!(),
             CloseBrace => todo!(),
             _ => todo!(),
@@ -209,7 +219,7 @@ impl ParseTree {
     fn parse_while<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
-    ) -> Result<Statement, String> {
+    ) -> Result<Expression, String> {
         use crate::lex::TokenType::*;
         let token = lexer.peek().unwrap();
         match &token.token_type {
@@ -218,9 +228,95 @@ impl ParseTree {
         };
 
         let condition = Box::new(self.parse_paren(lexer)?);
-        let body = self.parse_expr(lexer)?;
+        let body = Box::new(self.parse_expr(lexer)?);
 
-        Ok(Statement::While(While { condition, body }))
+        Ok(Expression::While(While { condition, body }))
+    }
+
+    fn parse_if<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        use crate::lex::Keyword::{And, Else};
+        use crate::lex::TokenType::*;
+        let mut fif = self.parse_if_internal(lexer)?;
+
+        while let Some(token) = lexer.peek() {
+            match token.token_type {
+                Keyword(And) => {
+                    fif.and_bodies.push(self.parse_and(lexer)?);
+                }
+                Keyword(Else) => {
+                    fif.else_body = Some(Box::new(self.parse_else(lexer)?));
+                    break;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(Expression::If(fif))
+    }
+
+    fn parse_and<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<If, String> {
+        if let Some(token) = lexer.peek() {
+            match &token.token_type {
+                TokenType::Keyword(Keyword::And) => lexer.next(),
+                _ => return Err(unexpected(&token)),
+            };
+            self.parse_if_internal(lexer)
+        } else {
+            Err("Unexpected EOF".into())
+        }
+    }
+
+    fn parse_if_internal<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<If, String> {
+        use crate::lex::TokenType::*;
+        if let Some(token) = lexer.peek() {
+            match &token.token_type {
+                Keyword(lex::Keyword::If) => lexer.next(),
+                _ => unreachable!(),
+            };
+            let condition = Box::new(self.parse_paren(lexer)?);
+            let body = Box::new(self.parse_expr(lexer)?);
+            Ok(If {
+                condition,
+                body,
+                and_bodies: Vec::new(),
+                else_body: None,
+            })
+        } else {
+            Err("Unepxtected EOF. Expecting If statement".into())
+        }
+    }
+
+    fn parse_else<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        if let Some(token) = lexer.peek() {
+            match &token.token_type {
+                TokenType::Keyword(Keyword::Else) => lexer.next(),
+                _ => return Err(unexpected(&token)),
+            }
+        } else {
+            return Err("Unexpected EOF".into());
+        };
+
+        if let Some(token) = lexer.peek() {
+            match &token.token_type {
+                TokenType::Keyword(Keyword::If) => self.parse_if(lexer),
+                TokenType::OpenBrace => self.parse_block(lexer),
+                _ => self.parse_expr(lexer),
+            }
+        } else {
+            Err("Unexpected EOF".into())
+        }
     }
 
     fn parse_eq<T: Iterator<Item = String>>(
@@ -266,7 +362,7 @@ impl ParseTree {
     binop! {parse_bitwise_and, parse_comparision, BitAnd}
 
     // Todo: Comparision operator chaining
-    binop! {parse_comparision, parse_bitshift, CmpEqual, CmpGE, CmpGT, CmpLE, CmpLT }
+    binop! {parse_comparision, parse_bitshift, CmpGE, CmpGT, CmpLE, CmpLT, CmpEq, CmpNotEq }
 
     binop! {parse_bitshift, parse_additive, BitShiftLeft, BitShiftRight}
     binop! {parse_additive, parse_multiplicative, Minus, Plus}

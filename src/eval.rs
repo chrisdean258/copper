@@ -70,8 +70,11 @@ impl Evaluator {
         };
 
         let mut builtins = HashMap::new();
+
         let idx = eval.alloc(Value::BuiltinFunc("print", copper_print));
         builtins.insert(String::from("print"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("puts", copper_print_no_newline));
+        builtins.insert(String::from("puts"), idx);
 
         eval.scopes.push(builtins);
 
@@ -132,7 +135,38 @@ impl Evaluator {
         use crate::parser::Statement::*;
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
-            While(w) => self.eval_while(w)?,
+        })
+    }
+
+    fn eval_if(&mut self, i: &If) -> Result<Value, String> {
+        let mut ran_first = self.eval_if_internal(i)?;
+
+        for ai in &i.and_bodies {
+            ran_first |= self.eval_if_internal(&ai)?;
+        }
+
+        if !ran_first && i.else_body.is_some() {
+            self.eval_expr(i.else_body.as_ref().unwrap())?;
+        }
+
+        Ok(Value::Null)
+    }
+
+    fn eval_if_internal(&mut self, i: &If) -> Result<bool, String> {
+        let cond = self.eval_expr(&i.condition)?;
+        let derefed = self.deref(cond);
+        Ok(match derefed {
+            Value::Bool(1) => {
+                self.eval_expr(&*i.body)?;
+                true
+            }
+            Value::Bool(0) => false,
+            _ => {
+                return Err(format!(
+                    "If expressions must have boolean conditions not {:?}",
+                    derefed
+                ))
+            }
         })
     }
 
@@ -255,13 +289,37 @@ impl Evaluator {
                 (Value::Int(a), Value::Char(b)) => Value::Int(a % b as i64),
                 (a, b) => {
                     return Err(format!(
-                        "{}: cannot divide these two. Not supported ({:?} / {:?})",
+                        "{}: cannot divide these two. Not supported ({:?} % {:?})",
                         binop.op.location, a, b
                     ))
                 }
             },
-            // CmpEqual => (),
-            // CmpNotEqual => (),
+            CmpEq => match (lhs, rhs) {
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a == b) as u8),
+                (Value::Bool(a), Value::Bool(b)) => Value::Bool((a == b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a == b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 == b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a == b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                    "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
+                    binop.op.location, a, b
+                ))
+                }
+            },
+            CmpNotEq => match (lhs, rhs) {
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a != b) as u8),
+                (Value::Bool(a), Value::Bool(b)) => Value::Bool((a != b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a != b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 != b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a != b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                    "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
+                    binop.op.location, a, b
+                ))
+                }
+            },
             // CmpGE => (),
             // CmpGT => (),
             // CmpLE => (),
@@ -294,6 +352,8 @@ impl Evaluator {
             BlockExpr(blockexpr) => self.eval_block(blockexpr)?,
             BinOp(binop) => self.eval_binop(binop)?,
             AssignExpr(assignexpr) => self.eval_assign(assignexpr)?,
+            While(w) => self.eval_while(w)?,
+            If(i) => self.eval_if(i)?,
             PreUnOp(_) => todo!(),
             PostUnOp(_) => todo!(),
         })
