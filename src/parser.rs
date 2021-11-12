@@ -470,6 +470,9 @@ impl ParseTree {
                 TokenType::Bool(_) => Ok(Expression::Immediate(Immediate {
                     value: lexer.next().unwrap(),
                 })),
+                TokenType::Null => Ok(Expression::Immediate(Immediate {
+                    value: lexer.next().unwrap(),
+                })),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),
                 _ => Err(unexpected(&token)),

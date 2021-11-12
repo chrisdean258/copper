@@ -378,10 +378,11 @@ impl Evaluator {
         match &expr.op.token_type {
             TokenType::Equal => {
                 // Force types to be the same or throw an error
-                if disc(lhs) == disc(&rhs)
-                    || disc(lhs) == disc(&mut Value::Null)
-                    || (nullable && disc(&rhs) == disc(&Value::Null))
-                {
+                if disc(lhs) == disc(&rhs) {
+                    *lhs = rhs.clone();
+                } else if nullable && disc(&rhs) == disc(&Value::Null) {
+                    *lhs = rhs.clone();
+                } else if disc(lhs) == disc(&mut Value::Null) {
                     *lhs = rhs.clone();
                 } else {
                     return Err(format!(
@@ -521,6 +522,7 @@ impl Evaluator {
             Float(f) => Value::Float(f.clone()),
             Char(c) => Value::Char(c.clone()),
             Bool(b) => Value::Bool(*b),
+            Null => Value::Null,
             _ => return Err(format!("Unexpected immediate value {:?}", immediate.value)),
         })
     }

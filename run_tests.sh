@@ -7,9 +7,9 @@ run-test()
 {
 	file="$1"
 	if [ $# -gt 1 ]; then
-		! diff -y <(./target/debug/copper "$file") "$file.out"
+		! diff -y <(./target/debug/copper "$file" 2>&1) "$file.out"
 	else
-		! diff -q <(./target/debug/copper "$file") "$file.out"
+		! diff -q <(./target/debug/copper "$file" 2>&1) "$file.out"
 	fi
 }
 
@@ -31,7 +31,7 @@ if [ $# -eq 0 ]; then
 	echo "Passed $num_passed/$num_tests"
 else 
 	for t in "$@"; do 
-		file="$(ls tests/*.cu | grep "$t" | head -n 1)"
+		file="$(find tests -name '*.cu' | grep "$t" | head -n 1)"
 		run-test "$file" 1
 	done
 fi
