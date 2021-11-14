@@ -1,3 +1,3 @@
 a = \1 + 1
 
-println(a(2))
+print(a(2))

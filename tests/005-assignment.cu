@@ -1,2 +1,2 @@
 a = "hello"
-println(a)
+print(a)

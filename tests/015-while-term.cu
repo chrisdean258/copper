@@ -1,6 +1,6 @@
 i = 10
 while(i != 0) {
-	println(i)
+	print(i)
 	i -= 1
 }
 

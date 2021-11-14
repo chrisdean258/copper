@@ -1,5 +1,5 @@
 a = fn(a, b, c) {
-	println(a, b, c)
+	print(a, b, c)
 }
 
 a("helo", " ", "worl")

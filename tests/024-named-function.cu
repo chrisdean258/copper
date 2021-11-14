@@ -1,3 +1,3 @@
-fn hello_world() println("Hello, World!")
+fn hello_world() print("Hello, World!")
 
 hello_world()

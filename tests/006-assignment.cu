@@ -1,3 +1,3 @@
 a = "Hello, World"
-b = println(a);
-println(b)
+b = print(a);
+print(b)

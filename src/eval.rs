@@ -81,10 +81,10 @@ impl Evaluator {
 
         let mut builtins = HashMap::new();
 
-        let idx = eval.alloc(Value::BuiltinFunc("println", copper_print));
-        builtins.insert(String::from("println"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("print", copper_print_no_newline));
+        let idx = eval.alloc(Value::BuiltinFunc("print", copper_print));
         builtins.insert(String::from("print"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("prints", copper_print_no_newline));
+        builtins.insert(String::from("prints"), idx);
 
         eval.scopes.push(builtins);
 
@@ -172,7 +172,10 @@ impl Evaluator {
             ran_first = Some(self.eval_expr(i.else_body.as_ref().unwrap())?);
         }
 
-        Ok(ran_first.unwrap())
+        match ran_first {
+            Some(a) => Ok(a),
+            None => Ok(Value::Null),
+        }
     }
 
     fn eval_if_internal(&mut self, i: &If) -> Result<Option<Value>, String> {
@@ -626,10 +629,7 @@ impl Evaluator {
 
     fn eval_call_expr(&mut self, expr: &CallExpr) -> Result<Value, String> {
         let func = self.eval_expr(&expr.function)?;
-        let func = match &func {
-            Value::Reference(u, _) => self.memory[*u].clone(),
-            _ => func,
-        };
+        let func = self.deref(func);
         let mut args = Vec::new();
         for arg in expr.args.iter() {
             args.push(self.eval_expr(arg)?);

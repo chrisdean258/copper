@@ -1,4 +1,4 @@
 while(false){
-	println("hello")
+	print("hello")
 }
-println("world")
+print("world")

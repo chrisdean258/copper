@@ -1,3 +1,3 @@
 a = "hello"
 b = "world"
-println(a + " " + b)
+print(a + " " + b)
