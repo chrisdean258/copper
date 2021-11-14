@@ -98,7 +98,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn location(&self) -> Location {
         let borrowed: &CharIter<T> = self.chars.borrow();
         let (row, col) = borrowed.location();
-        Location::new(self.label.clone(), row, col)
+        Location::new(self.label.clone(), row, col + 1)
     }
 
     fn expect<F>(&mut self, func: F) -> char

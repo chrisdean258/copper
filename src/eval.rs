@@ -127,11 +127,18 @@ impl Evaluator {
     }
 
     pub fn deref(&mut self, val: Value) -> Value {
-        let mut rv = val;
+        let idx = match val {
+            Value::Reference(u, _) => u,
+            _ => return val,
+        };
+        let mut curidx = idx;
         loop {
-            rv = match rv {
-                Value::Reference(u, _) => self.memory[u].clone(),
-                _ => break rv,
+            curidx = match self.memory[curidx] {
+                Value::Reference(u, _) => u,
+                _ => return self.memory[curidx].clone(),
+            };
+            if curidx == idx {
+                panic!("reference loop")
             }
         }
     }
@@ -217,13 +224,8 @@ impl Evaluator {
 
         let mut lhs = self.eval_expr(&*binop.lhs)?;
         let mut rhs = self.eval_expr(&*binop.rhs)?;
-
-        if let Value::Reference(u, _) = lhs {
-            lhs = self.memory[u].clone();
-        }
-        if let Value::Reference(u, _) = rhs {
-            rhs = self.memory[u].clone();
-        }
+        lhs = self.deref(lhs);
+        rhs = self.deref(rhs);
 
         Ok(match binop.op.token_type {
             Plus => match (lhs, rhs) {
@@ -491,7 +493,13 @@ impl Evaluator {
     }
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
-        Ok(Value::Function(f.clone()))
+        if f.name.is_some() {
+            let idx = self.alloc(Value::Function(f.clone()));
+            self.insert_scope_local(f.name.as_ref().unwrap(), idx);
+            Ok(Value::Reference(idx, false))
+        } else {
+            Ok(Value::Function(f.clone()))
+        }
     }
 
     fn eval_lambda_def(&mut self, f: &Lambda) -> Result<Value, String> {

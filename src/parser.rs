@@ -380,7 +380,10 @@ impl ParseTree {
         expect!(lexer, TokenType::Function);
         let token = lexer.peek().expect("Unexpected EOF".into());
         let name = match token.token_type {
-            TokenType::Identifier(s) => Some(s),
+            TokenType::Identifier(s) =>{
+                lexer.next();
+                Some(s)
+            },
             _ => None,
         };
         expect!(lexer, TokenType::OpenParen);
