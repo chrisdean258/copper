@@ -38,7 +38,7 @@ impl Debug for Value {
             Function(func) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
-            Lambda(lambda) => f.write_fmt(format_args!("lambda(...{})", lambda.max_arg))?,
+            Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
             Null => f.write_str("Null")?,
         };
         Ok(())
@@ -59,7 +59,7 @@ impl Display for Value {
             Function(func) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
-            Lambda(lambda) => f.write_fmt(format_args!("lambda(...{})", lambda.max_arg))?,
+            Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
             Null => f.write_str("null")?,
         };
         Ok(())

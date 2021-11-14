@@ -24,13 +24,18 @@ pub enum TokenType {
     Int(i64),
     Float(f64),
     Bool(u8),
+    If,
+    Else,
+    And,
+    While,
+    Function,
+    Lambda,
     Null,
     OpenParen,
     CloseParen,
     Comma,
     Dot,
     Equal,
-
     AndEq,
     XorEq,
     OrEq,
@@ -39,7 +44,6 @@ pub enum TokenType {
     TimesEq,
     DivEq,
     ModEq,
-
     Plus,
     Minus,
     Times,
@@ -56,7 +60,6 @@ pub enum TokenType {
     CloseBracket,
     Char(char),
     ErrChar(char),
-    Keyword(Keyword),
     CmpEq,
     CmpNotEq,
     CmpGE,
@@ -73,16 +76,6 @@ pub enum TokenType {
     BoolNot,
     BitShiftRight,
     BitShiftLeft,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum Keyword {
-    If,
-    Else,
-    And,
-    While,
-    Function,
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
@@ -171,11 +164,11 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
 
         match &chars[..] {
-            "while" => TokenType::Keyword(Keyword::While),
-            "if" => TokenType::Keyword(Keyword::If),
-            "else" => TokenType::Keyword(Keyword::Else),
-            "and" => TokenType::Keyword(Keyword::And),
-            "fn" => TokenType::Keyword(Keyword::Function),
+            "while" => TokenType::While,
+            "if" => TokenType::If,
+            "else" => TokenType::Else,
+            "and" => TokenType::And,
+            "fn" => TokenType::Function,
             "null" => TokenType::Null,
             "true" => TokenType::Bool(1),
             "false" => TokenType::Bool(0),
@@ -260,8 +253,11 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 _ => break,
             }
         }
-
-        TokenType::LambdaArg(chars.parse().expect("Expected integer"))
+        if chars.len() == 0 {
+            TokenType::Lambda
+        } else {
+            TokenType::LambdaArg(chars.parse().expect("Expected integer"))
+        }
     }
 
     fn lex_token(&mut self) -> Option<Token> {

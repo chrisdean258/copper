@@ -8,10 +8,11 @@ if exists("b:current_syntax")
 endif
 
 syn keyword copperKeyword fn
-syn keyword copperBuiltin while if else and for
+syn keyword coppeeConditional while if else and for
 syn keyword copperBuiltin print println
 syn keyword copperBool true false
 syn keyword copperNull null
+syn match copperKeyword '\\'
 syn match copperOperator '='
 syn match copperOperator '=='
 syn match copperOperator '|'
@@ -51,8 +52,11 @@ syn match copperOperator '\~'
 syn match copperNumber '[-+]\?\d\+\(\.\d\+\)\?'
 syn match copperString '"\([^"\\]\|\\.\)*"'
 syn match copperChar '\'\([^"\\]\|\\.\)\''
+syn match copperLambdaArg '\\[1-9]\d*'
+
 
 let b:current_syntax = "copper"
+hi def link copperConditional Conditional
 hi def link copperKeyword Keyword
 hi def link copperBuiltin Function
 hi def link copperNumber Number
@@ -61,6 +65,7 @@ hi def link copperChar Character
 hi def link copperBool Boolean
 hi def link copperOperator Operator
 hi def link copperNull Constant
+hi def link copperLambdaArg PreProc
 
 
 
