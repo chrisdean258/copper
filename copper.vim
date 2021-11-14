@@ -11,6 +11,7 @@ syn keyword copperKeyword fn
 syn keyword copperBuiltin while if else and for
 syn keyword copperBuiltin print println
 syn keyword copperBool true false
+syn keyword copperNull null
 syn match copperOperator '='
 syn match copperOperator '=='
 syn match copperOperator '|'
@@ -59,6 +60,7 @@ hi def link copperString String
 hi def link copperChar Character
 hi def link copperBool Boolean
 hi def link copperOperator Operator
+hi def link copperNull Constant
 
 
 

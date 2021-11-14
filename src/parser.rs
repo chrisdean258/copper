@@ -30,6 +30,13 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
+pub struct ParseTree {
+    pub statements: Vec<Statement>,
+    max_lambda: usize,
+    lambda_count: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct While {
     pub condition: Box<Expression>,
     pub body: Box<Expression>,
@@ -57,12 +64,6 @@ pub struct RefExpr {
 #[derive(Debug, Clone)]
 pub struct Immediate {
     pub value: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct ParseTree {
-    pub statements: Vec<Statement>,
-    max_lambda: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +166,7 @@ impl ParseTree {
         ParseTree {
             statements: Vec::new(),
             max_lambda: 0,
+            lambda_count: 0,
         }
     }
 
