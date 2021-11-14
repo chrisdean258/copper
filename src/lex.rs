@@ -81,6 +81,7 @@ pub enum Keyword {
     Else,
     And,
     While,
+    Function,
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
@@ -173,6 +174,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
             "if" => TokenType::Keyword(Keyword::If),
             "else" => TokenType::Keyword(Keyword::Else),
             "and" => TokenType::Keyword(Keyword::And),
+            "fn" => TokenType::Keyword(Keyword::Function),
             "null" => TokenType::Null,
             "true" => TokenType::Bool(1),
             "false" => TokenType::Bool(0),

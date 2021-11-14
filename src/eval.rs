@@ -14,6 +14,7 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(u8),
+    Function(Function),
     Null,
 }
 
@@ -33,6 +34,9 @@ impl Debug for Value {
                 if *b { "" } else { ", nonnullable" }
             ))?,
             Bool(b) => f.write_fmt(format_args!("Bool({})", b))?,
+            Function(func) => {
+                f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
+            }
             Null => f.write_str("Null")?,
         };
         Ok(())
@@ -50,6 +54,9 @@ impl Display for Value {
             Char(c) => f.write_fmt(format_args!("{}", c))?,
             Reference(u, _) => f.write_fmt(format_args!("0x{:x}", u))?,
             Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" }))?,
+            Function(func) => {
+                f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
+            }
             Null => f.write_str("null")?,
         };
         Ok(())
@@ -110,6 +117,10 @@ impl Evaluator {
                 self.scopes.last_mut().unwrap().insert(key.to_string(), val);
             }
         }
+    }
+
+    fn insert_scope_local(&mut self, key: &str, val: usize) {
+        self.scopes.last_mut().unwrap().insert(key.to_string(), val);
     }
 
     pub fn deref(&mut self, val: Value) -> Value {
@@ -470,9 +481,14 @@ impl Evaluator {
             AssignExpr(assignexpr) => self.eval_assign(assignexpr)?,
             While(w) => self.eval_while(w)?,
             If(i) => self.eval_if(i)?,
+            Function(f) => self.eval_function_def(f)?,
             PreUnOp(_) => todo!(),
             PostUnOp(_) => todo!(),
         })
+    }
+
+    fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
+        Ok(Value::Function(f.clone()))
     }
 
     fn eval_assign(&mut self, expr: &AssignExpr) -> Result<Value, String> {
@@ -603,8 +619,25 @@ impl Evaluator {
         for arg in expr.args.iter() {
             args.push(self.eval_expr(arg)?);
         }
-        Ok(match func {
+        Ok(match &func {
             Value::BuiltinFunc(_, f) => f(self, args),
+            Value::Function(f) => {
+                if args.len() != f.argnames.len() {
+                    return Err(format!(
+                        "Trying to call function with wrong number of args. wanted {} found {}",
+                        args.len(),
+                        f.argnames.len()
+                    ));
+                }
+                self.openscope();
+                for it in f.argnames.iter().zip(args.iter()) {
+                    let (name, arg) = it;
+                    let idx = self.alloc(arg.clone());
+                    self.insert_scope_local(name, idx);
+                }
+                let rv = self.eval_expr(&*f.body)?;
+                rv
+            }
             f => {
                 println!("{:#?}", f);
                 unreachable!();

@@ -7,6 +7,7 @@ if exists("b:current_syntax")
   finish
 endif
 
+syn keyword copperKeyword fn
 syn keyword copperBuiltin while if else and for
 syn keyword copperBuiltin print println
 syn keyword copperBool true false

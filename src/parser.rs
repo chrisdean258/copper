@@ -12,6 +12,7 @@ pub enum Statement {
     Expr(Expression),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Expression {
     While(While),
@@ -24,6 +25,7 @@ pub enum Expression {
     PreUnOp(PreUnOp),
     PostUnOp(PostUnOp),
     AssignExpr(AssignExpr),
+    Function(Function),
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +93,12 @@ pub struct PreUnOp {
 pub struct PostUnOp {
     pub lhs: Box<Expression>,
     pub op: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub argnames: Vec<String>,
+    pub body: Box<Expression>,
 }
 
 fn err_msg(token: &Token, reason: &str) -> String {
@@ -186,6 +194,7 @@ impl ParseTree {
             ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
             Keyword(While) => Statement::Expr(self.parse_while(lexer)?),
             Keyword(If) => Statement::Expr(self.parse_if(lexer)?),
+            Keyword(Function) => Statement::Expr(self.parse_expr(lexer)?),
             Keyword(_) => todo!(),
             CloseBrace => todo!(),
             _ => todo!(),
@@ -391,40 +400,83 @@ impl ParseTree {
         }
     }
 
+    fn parse_function<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let token = lexer.next().unwrap();
+        match token.token_type {
+            //todo fix this
+            TokenType::Keyword(Keyword::Function) => (),
+            _ => return Err(unexpected(&token)),
+        };
+
+        expect!(lexer, TokenType::OpenParen);
+        let mut args = Vec::new();
+        loop {
+            if let Some(token) = lexer.next() {
+                match &token.token_type {
+                    TokenType::Identifier(s) => args.push(s.clone()),
+                    TokenType::CloseParen => break,
+                    _ => return Err(unexpected(&token)),
+                }
+                if let Some(token) = lexer.next() {
+                    match &token.token_type {
+                        TokenType::Comma => (),
+                        TokenType::CloseParen => break,
+                        _ => return Err(unexpected(&token)),
+                    }
+                } else {
+                    return Err("Unexpected EOF while aprsing function".into());
+                }
+            } else {
+                return Err("Unexpected EOF while aprsing function".into());
+            }
+        }
+
+        let body = self.parse_expr(lexer)?;
+
+        Ok(Expression::Function(Function {
+            argnames: args,
+            body: Box::new(body),
+        }))
+    }
+
     fn parse_post_unary<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        let lhs = self.parse_ref(lexer)?;
-        if let Some(token) = lexer.peek() {
+        let mut lhs = self.parse_ref(lexer)?;
+        while let Some(token) = lexer.peek() {
             match token.token_type {
-                TokenType::Inc => (),
-                TokenType::Dec => (),
+                TokenType::Inc => todo!(),
+                TokenType::Dec => todo!(),
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer)?;
-                    return Ok(Expression::CallExpr(CallExpr {
+                    lhs = Expression::CallExpr(CallExpr {
                         function: Box::new(lhs),
                         args,
-                    }));
+                    });
                 }
                 TokenType::OpenBracket => todo!(),
                 _ => return Ok(lhs),
             }
-            lexer.next();
-            Ok(Expression::PostUnOp(PostUnOp {
-                lhs: Box::new(lhs),
-                op: lexer.next().unwrap(),
-            }))
-        } else {
-            Ok(lhs)
         }
+        Ok(lhs)
     }
 
     fn parse_paren_cse<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Vec<Expression>, String> {
+        use std::mem::discriminant as disc;
         expect!(lexer, TokenType::OpenParen);
+        if lexer
+            .next_if(|t| disc(&t.token_type) == disc(&TokenType::CloseParen))
+            .is_some()
+        {
+            return Ok(Vec::new());
+        }
         let cse = self.parse_cse(lexer)?;
         expect!(lexer, TokenType::CloseParen);
         Ok(cse)
@@ -475,6 +527,7 @@ impl ParseTree {
                 })),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),
+                TokenType::Keyword(Keyword::Function) => self.parse_function(lexer),
                 _ => Err(unexpected(&token)),
             }
         } else {
@@ -496,6 +549,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
+        use crate::lex::Keyword::Function;
         use crate::lex::TokenType::*;
         let token = lexer.peek().unwrap();
         Ok(match token.token_type {
@@ -507,6 +561,7 @@ impl ParseTree {
             Bool(_) => self.parse_eq(lexer)?,
             OpenBrace => self.parse_block(lexer)?,
             OpenParen => self.parse_paren(lexer)?,
+            Keyword(Function) => self.parse_function(lexer)?,
             _ => return Err(unexpected(&token)),
         })
     }
