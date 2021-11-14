@@ -1,1 +1,1 @@
-print(0.1);
+println(0.1);

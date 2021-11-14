@@ -1,8 +1,8 @@
 a = true
 while(a)
 {
-	print("Hello, ")
+	println("Hello, ")
 	a = false
 }
 
-print("World!")
+println("World!")

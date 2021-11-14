@@ -1,1 +1,1 @@
-print(print(1))
+println(println(1))

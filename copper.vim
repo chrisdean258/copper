@@ -7,8 +7,8 @@ if exists("b:current_syntax")
   finish
 endif
 
-syn keyword copperKeyword while if else and for
-syn keyword copperBuiltin print put
+syn keyword copperBuiltin while if else and for
+syn keyword copperBuiltin print println
 syn keyword copperBool true false
 syn match copperOperator '='
 syn match copperOperator '=='
@@ -18,9 +18,9 @@ syn match copperOperator '|='
 syn match copperOperator '&'
 syn match copperOperator '&&'
 syn match copperOperator '&='
-syn match copperOperator '^'
-syn match copperOperator '^^'
-syn match copperOperator '^='
+syn match copperOperator '\^'
+syn match copperOperator '\^\^'
+syn match copperOperator '\^='
 syn match copperOperator '!'
 syn match copperOperator '!='
 syn match copperOperator '>'
@@ -46,8 +46,7 @@ syn match copperOperator '\/='
 syn match copperOperator '\~'
 
 
-syn match copperNumber '[-+]\d\+'
-syn match copperNumber '[-+]\d\+\.\d\+'
+syn match copperNumber '[-+]\?\d\+\(\.\d\+\)\?'
 syn match copperString '"\([^"\\]\|\\.\)*"'
 syn match copperChar '\'\([^"\\]\|\\.\)\''
 

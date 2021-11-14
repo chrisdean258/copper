@@ -1,6 +1,6 @@
 a = 1
 {
 	a = 2
-	print(a)
+	println(a)
 }
-print(a)
+println(a)

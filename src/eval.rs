@@ -49,7 +49,7 @@ impl Display for Value {
             Float(d) => f.write_fmt(format_args!("{}", d))?,
             Char(c) => f.write_fmt(format_args!("{}", c))?,
             Reference(u, _) => f.write_fmt(format_args!("0x{:x}", u))?,
-            Bool(b) => f.write_fmt(format_args!("{}", b))?,
+            Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" }))?,
             Null => f.write_str("null")?,
         };
         Ok(())
@@ -71,10 +71,10 @@ impl Evaluator {
 
         let mut builtins = HashMap::new();
 
-        let idx = eval.alloc(Value::BuiltinFunc("print", copper_print));
+        let idx = eval.alloc(Value::BuiltinFunc("println", copper_print));
+        builtins.insert(String::from("println"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("print", copper_print_no_newline));
         builtins.insert(String::from("print"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("put", copper_print_no_newline));
-        builtins.insert(String::from("put"), idx);
 
         eval.scopes.push(builtins);
 
@@ -222,8 +222,8 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => Value::Int(a + b as i64),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 + b),
                 (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 + b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 + b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a + b as i64),
+                (Value::Char(a), Value::Int(b)) => Value::Char((a as i64 + b) as u8 as char),
+                (Value::Int(a), Value::Char(b)) => Value::Char((a + b as i64) as u8 as char),
                 (a, b) => {
                     return Err(format!(
                         "{}: cannot add two together. Not supported ({:?} + {:?})",
@@ -239,8 +239,8 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => Value::Int(a - b as i64),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 - b),
                 (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 - b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 - b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a - b as i64),
+                (Value::Char(a), Value::Int(b)) => Value::Char((a as i64 - b) as u8 as char),
+                (Value::Int(a), Value::Char(b)) => Value::Char((a - b as i64) as u8 as char),
                 (a, b) => {
                     return Err(format!(
                         "{}: cannot subtract these two. Not supported ({:?} - {:?})",
@@ -255,9 +255,6 @@ impl Evaluator {
                 (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 * b),
                 (Value::Int(a), Value::Bool(b)) => Value::Int(a * b as i64),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 * b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 * b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 * b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a * b as i64),
                 (a, b) => {
                     return Err(format!(
                         "{}: cannot multiply these two. Not supported ({:?} * {:?})",
@@ -271,9 +268,6 @@ impl Evaluator {
                 (Value::Float(a), Value::Int(b)) => Value::Float(a / b as f64),
                 (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 / b),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 / b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 / b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 / b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a / b as i64),
                 (a, b) => {
                     return Err(format!(
                         "{}: cannot divide these two. Not supported ({:?} / {:?})",
@@ -283,10 +277,7 @@ impl Evaluator {
             },
             Mod => match (lhs, rhs) {
                 (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 % b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 % b as u8) as char),
                 (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 % b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a % b as i64),
                 (a, b) => {
                     return Err(format!(
                         "{}: cannot divide these two. Not supported ({:?} % {:?})",
@@ -295,11 +286,14 @@ impl Evaluator {
                 }
             },
             CmpEq => match (lhs, rhs) {
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a == b) as u8),
                 (Value::Int(a), Value::Int(b)) => Value::Bool((a == b) as u8),
                 (Value::Bool(a), Value::Bool(b)) => Value::Bool((a == b) as u8),
                 (Value::Char(a), Value::Char(b)) => Value::Bool((a == b) as u8),
                 (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 == b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a == b as i64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 == b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a == b as f64) as u8),
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a == b) as u8),
                 (a, b) => {
                     return Err(format!(
                     "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
@@ -308,11 +302,15 @@ impl Evaluator {
                 }
             },
             CmpNotEq => match (lhs, rhs) {
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a != b) as u8),
                 (Value::Int(a), Value::Int(b)) => Value::Bool((a != b) as u8),
                 (Value::Bool(a), Value::Bool(b)) => Value::Bool((a != b) as u8),
                 (Value::Char(a), Value::Char(b)) => Value::Bool((a != b) as u8),
                 (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 != b) as u8),
                 (Value::Int(a), Value::Char(b)) => Value::Bool((a != b as i64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 != b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a != b as f64) as u8),
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a != b) as u8),
                 (a, b) => {
                     return Err(format!(
                     "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
@@ -320,20 +318,138 @@ impl Evaluator {
                 ))
                 }
             },
-            // CmpGE => (),
-            // CmpGT => (),
-            // CmpLE => (),
-            // CmpLT => (),
-            // BitOr => (),
-            // BoolOr => (),
-            // BitAnd => (),
-            // BoolAnd => (),
-            // BitNot => (),
-            // BitXor => (),
-            // BoolXor => (),
-            // BoolNot => (),
-            // BitShiftRight => (),
-            // BitShiftLeft => (),
+            CmpGE => match (lhs, rhs) {
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a >= b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a >= b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 >= b) as u8),
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a >= b) as u8),
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a >= b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a >= b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 >= b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a >= b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} >= {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            CmpGT => match (lhs, rhs) {
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a > b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a > b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 > b) as u8),
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a > b) as u8),
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a > b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a > b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 > b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a > b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} > {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            CmpLE => match (lhs, rhs) {
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a <= b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a <= b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 <= b) as u8),
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a <= b) as u8),
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a <= b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a <= b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 <= b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a <= b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} <= {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            CmpLT => match (lhs, rhs) {
+                (Value::Float(a), Value::Float(b)) => Value::Bool((a < b) as u8),
+                (Value::Float(a), Value::Int(b)) => Value::Bool((a < b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => Value::Bool(((a as f64) < b) as u8),
+                (Value::Str(a), Value::Str(b)) => Value::Bool((a < b) as u8),
+                (Value::Int(a), Value::Int(b)) => Value::Bool((a < b) as u8),
+                (Value::Char(a), Value::Char(b)) => Value::Bool((a < b) as u8),
+                (Value::Char(a), Value::Int(b)) => Value::Bool(((a as i64) < b) as u8),
+                (Value::Int(a), Value::Char(b)) => Value::Bool((a < b as i64) as u8),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} < {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            BitOr => match (lhs, rhs) {
+                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
+                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 | b),
+                (Value::Int(a), Value::Bool(b)) => Value::Int(a | b as i64),
+                (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 | b as u8) as char),
+                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) | b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a | b as i64),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compute or between these two. Not supported ({:?} | {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            BitAnd => match (lhs, rhs) {
+                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
+                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 & b),
+                (Value::Int(a), Value::Bool(b)) => Value::Int(a & b as i64),
+                (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 & b as u8) as char),
+                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) & b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a & b as i64),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot computer and between these two. Not supported ({:?} & {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            BitXor => match (lhs, rhs) {
+                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
+                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 ^ b),
+                (Value::Int(a), Value::Bool(b)) => Value::Int(a ^ b as i64),
+                (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 ^ b as u8) as char),
+                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) ^ b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a ^ b as i64),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot computer xor between these two. Not supported ({:?} ^ {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            BoolOr => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
+            BoolAnd => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
+            BoolXor => todo!("Going to implement with the other two boolean functions"),
+            BitShiftRight => match (lhs, rhs) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
+                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) >> b),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compute bitshift between these two. Not supported ({:?} >> {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
+            BitShiftLeft => match (lhs, rhs) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
+                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) << b),
+                (a, b) => {
+                    return Err(format!(
+                        "{}: cannot compute bitshift between these two. Not supported ({:?} << {:?})",
+                        binop.op.location, a, b
+                    ))
+                }
+            },
             _ => {
                 return Err(format!(
                     "{}: {:?}, unimplemented",

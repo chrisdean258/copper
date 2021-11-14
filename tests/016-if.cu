@@ -1,8 +1,8 @@
 if (true) {
-	print("hello world")
+	println("hello world")
 } and if (true) {
-	print("and hello world")
+	println("and hello world")
 }
 else if (true) {
-	print("hello world2")
+	println("hello world2")
 }
