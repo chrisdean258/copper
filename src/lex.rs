@@ -19,6 +19,7 @@ pub struct Token {
 #[derive(Debug, Clone)]
 pub enum TokenType {
     Identifier(String),
+    LambdaArg(usize),
     Str(String),
     Int(i64),
     Float(f64),
@@ -245,6 +246,24 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         self.chars.peek()
     }
 
+    fn lambda_arg(&mut self) -> TokenType {
+        match self.chars.next().unwrap() {
+            '\\' => (),
+            _ => unreachable!(),
+        }
+
+        let mut chars = String::new();
+
+        loop {
+            match self.chars.peek().unwrap() {
+                '0'..='9' => chars.push(self.chars.next().unwrap()),
+                _ => break,
+            }
+        }
+
+        TokenType::LambdaArg(chars.parse().expect("Expected integer"))
+    }
+
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
         loop {
@@ -266,6 +285,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     '"' => self.str(),
                     '\'' => self.chr(),
                     '0'..='9' => self.num(),
+                    '\\' => self.lambda_arg(),
                     '\n' => {
                         self.chars.next();
                         continue;

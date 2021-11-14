@@ -26,6 +26,7 @@ pub enum Expression {
     PostUnOp(PostUnOp),
     AssignExpr(AssignExpr),
     Function(Function),
+    Lambda(Lambda),
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +62,7 @@ pub struct Immediate {
 #[derive(Debug, Clone)]
 pub struct ParseTree {
     pub statements: Vec<Statement>,
+    max_lambda: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +103,13 @@ pub struct Function {
     pub body: Box<Expression>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Lambda {
+    pub max_arg: usize,
+    pub body: Box<Expression>,
+}
+
+#[allow(dead_code)]
 fn err_msg(token: &Token, reason: &str) -> String {
     format!("{}: {}", token.location, reason)
 }
@@ -155,6 +164,7 @@ impl ParseTree {
     pub fn new() -> ParseTree {
         ParseTree {
             statements: Vec::new(),
+            max_lambda: 0,
         }
     }
 
@@ -174,30 +184,12 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Statement, String> {
-        use crate::lex::Keyword::*;
+        // use crate::lex::Keyword::*;
         use crate::lex::TokenType::*;
         use std::mem::discriminant as disc;
         let token = lexer.peek().unwrap();
         let rv = Ok(match &token.token_type {
-            CloseParen => return Err(err_msg(&token, "Unexpected closing paren")),
-            Comma => return Err(err_msg(&token, "Unexpected comma")),
-            Semicolon => return Err(err_msg(&token, "Unexpected semicolon")),
-            Dot => return Err(err_msg(&token, "Unexpected dot")),
-            Equal => return Err(err_msg(&token, "Unexpected equal")),
-            OpenParen => Statement::Expr(self.parse_expr(lexer)?),
-            OpenBrace => Statement::Expr(self.parse_block(lexer)?),
-            Identifier(_) => Statement::Expr(self.parse_expr(lexer)?),
-            Str(_) => Statement::Expr(self.parse_expr(lexer)?),
-            Int(_) => Statement::Expr(self.parse_expr(lexer)?),
-            Float(_) => Statement::Expr(self.parse_expr(lexer)?),
-            Char(_) => Statement::Expr(self.parse_expr(lexer)?),
-            ErrChar(c) => return Err(err_msg(&token, &format!("{:?}", c))),
-            Keyword(While) => Statement::Expr(self.parse_while(lexer)?),
-            Keyword(If) => Statement::Expr(self.parse_if(lexer)?),
-            Keyword(Function) => Statement::Expr(self.parse_expr(lexer)?),
-            Keyword(_) => todo!(),
-            CloseBrace => todo!(),
-            _ => todo!(),
+            _ => Statement::Expr(self.parse_expr(lexer)?),
         });
         // eat all the semicolons
         while lexer
@@ -328,12 +320,20 @@ impl ParseTree {
         }
     }
 
+    fn assemble_lambda(&mut self, expr: Expression) -> Result<Expression, String> {
+        Ok(Expression::Lambda(Lambda {
+            max_arg: self.max_lambda,
+            body: Box::new(expr),
+        }))
+    }
+
     fn parse_eq<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
         use crate::lex::TokenType::*;
-        let lhs = self.parse_boolean_op(lexer)?;
+        let lhs = self.parse_lambda(lexer)?;
+
         let token = match lexer.peek() {
             Some(t) => t,
             None => return Ok(lhs),
@@ -358,6 +358,7 @@ impl ParseTree {
             _ => return Ok(lhs),
         };
         let rhs = self.parse_eq(lexer)?;
+
         Ok(Expression::AssignExpr(AssignExpr {
             lhs: Box::new(reflhs),
             op: token,
@@ -365,6 +366,19 @@ impl ParseTree {
             allow_decl,
         }))
     }
+
+    fn parse_lambda<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let mut rv = self.parse_boolean_op(lexer)?;
+        if self.max_lambda > 0 {
+            rv = self.assemble_lambda(rv)?;
+            self.max_lambda = 0;
+        }
+        Ok(rv)
+    }
+
     binop! {parse_boolean_op, parse_bitwise_or, BoolOr, BoolXor, BoolAnd}
     binop! {parse_bitwise_or, parse_bitwise_xor, BitOr}
     binop! {parse_bitwise_xor, parse_bitwise_and, BitXor}
@@ -507,6 +521,16 @@ impl ParseTree {
                 TokenType::Identifier(_) => Ok(Expression::RefExpr(RefExpr {
                     value: lexer.next().unwrap(),
                 })),
+                TokenType::LambdaArg(a) => {
+                    self.max_lambda = if *a > self.max_lambda {
+                        *a
+                    } else {
+                        self.max_lambda
+                    };
+                    Ok(Expression::RefExpr(RefExpr {
+                        value: lexer.next().unwrap(),
+                    }))
+                }
                 TokenType::Char(_) => Ok(Expression::Immediate(Immediate {
                     value: lexer.next().unwrap(),
                 })),
@@ -528,6 +552,8 @@ impl ParseTree {
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),
                 TokenType::Keyword(Keyword::Function) => self.parse_function(lexer),
+                TokenType::Keyword(Keyword::While) => self.parse_while(lexer),
+                TokenType::Keyword(Keyword::If) => self.parse_if(lexer),
                 _ => Err(unexpected(&token)),
             }
         } else {
@@ -549,21 +575,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        use crate::lex::Keyword::Function;
-        use crate::lex::TokenType::*;
-        let token = lexer.peek().unwrap();
-        Ok(match token.token_type {
-            Identifier(_) => self.parse_eq(lexer)?,
-            Str(_) => self.parse_eq(lexer)?,
-            Int(_) => self.parse_eq(lexer)?,
-            Float(_) => self.parse_eq(lexer)?,
-            Char(_) => self.parse_eq(lexer)?,
-            Bool(_) => self.parse_eq(lexer)?,
-            OpenBrace => self.parse_block(lexer)?,
-            OpenParen => self.parse_paren(lexer)?,
-            Keyword(Function) => self.parse_function(lexer)?,
-            _ => return Err(unexpected(&token)),
-        })
+        self.parse_eq(lexer)
     }
 }
 

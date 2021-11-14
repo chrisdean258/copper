@@ -15,6 +15,7 @@ pub enum Value {
     Char(char),
     Bool(u8),
     Function(Function),
+    Lambda(Lambda),
     Null,
 }
 
@@ -37,6 +38,7 @@ impl Debug for Value {
             Function(func) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
+            Lambda(lambda) => f.write_fmt(format_args!("lambda(...{})", lambda.max_arg))?,
             Null => f.write_str("Null")?,
         };
         Ok(())
@@ -57,6 +59,7 @@ impl Display for Value {
             Function(func) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
+            Lambda(lambda) => f.write_fmt(format_args!("lambda(...{})", lambda.max_arg))?,
             Null => f.write_str("null")?,
         };
         Ok(())
@@ -110,14 +113,14 @@ impl Evaluator {
         None
     }
 
-    fn insert_scope(&mut self, key: &str, val: usize) {
-        match self.lookup_scope(key) {
-            Some(v) => *v = val,
-            None => {
-                self.scopes.last_mut().unwrap().insert(key.to_string(), val);
-            }
-        }
-    }
+    // fn insert_scope(&mut self, key: &str, val: usize) {
+    // match self.lookup_scope(key) {
+    // Some(v) => *v = val,
+    // None => {
+    // self.scopes.last_mut().unwrap().insert(key.to_string(), val);
+    // }
+    // }
+    // }
 
     fn insert_scope_local(&mut self, key: &str, val: usize) {
         self.scopes.last_mut().unwrap().insert(key.to_string(), val);
@@ -153,25 +156,24 @@ impl Evaluator {
         let mut ran_first = self.eval_if_internal(i)?;
 
         for ai in &i.and_bodies {
-            ran_first |= self.eval_if_internal(&ai)?;
+            if let Some(rv) = self.eval_if_internal(&ai)? {
+                ran_first = Some(rv);
+            }
         }
 
-        if !ran_first && i.else_body.is_some() {
-            self.eval_expr(i.else_body.as_ref().unwrap())?;
+        if ran_first.is_none() && i.else_body.is_some() {
+            ran_first = Some(self.eval_expr(i.else_body.as_ref().unwrap())?);
         }
 
-        Ok(Value::Null)
+        Ok(ran_first.unwrap())
     }
 
-    fn eval_if_internal(&mut self, i: &If) -> Result<bool, String> {
+    fn eval_if_internal(&mut self, i: &If) -> Result<Option<Value>, String> {
         let cond = self.eval_expr(&i.condition)?;
         let derefed = self.deref(cond);
         Ok(match derefed {
-            Value::Bool(1) => {
-                self.eval_expr(&*i.body)?;
-                true
-            }
-            Value::Bool(0) => false,
+            Value::Bool(1) => Some(self.eval_expr(&*i.body)?),
+            Value::Bool(0) => None,
             _ => {
                 return Err(format!(
                     "If expressions must have boolean conditions not {:?}",
@@ -482,6 +484,7 @@ impl Evaluator {
             While(w) => self.eval_while(w)?,
             If(i) => self.eval_if(i)?,
             Function(f) => self.eval_function_def(f)?,
+            Lambda(lambda) => self.eval_lambda_def(lambda)?,
             PreUnOp(_) => todo!(),
             PostUnOp(_) => todo!(),
         })
@@ -489,6 +492,10 @@ impl Evaluator {
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
         Ok(Value::Function(f.clone()))
+    }
+
+    fn eval_lambda_def(&mut self, f: &Lambda) -> Result<Value, String> {
+        Ok(Value::Lambda(f.clone()))
     }
 
     fn eval_assign(&mut self, expr: &AssignExpr) -> Result<Value, String> {
@@ -638,10 +645,25 @@ impl Evaluator {
                 let rv = self.eval_expr(&*f.body)?;
                 rv
             }
-            f => {
-                println!("{:#?}", f);
-                unreachable!();
+            Value::Lambda(l) => {
+                if args.len() != l.max_arg {
+                    return Err(format!(
+                        "Trying to call lambda with wrong number of args. wanted {} found {}",
+                        args.len(),
+                        l.max_arg
+                    ));
+                }
+                self.openscope();
+                for it in args.iter().enumerate() {
+                    let (arg_num, arg) = it;
+                    let idx = self.alloc(arg.clone());
+                    let label = format!("\\{}", arg_num + 1);
+                    self.insert_scope_local(&label, idx);
+                }
+                let rv = self.eval_expr(&*l.body)?;
+                rv
             }
+            f => return Err(format!("Tried to call {:#?}", f)),
         })
     }
 
@@ -653,7 +675,19 @@ impl Evaluator {
                     Ok(Value::Reference(*idx, false))
                 } else if allow_insert {
                     let idx = self.alloc(Value::Null);
-                    self.insert_scope(s, idx);
+                    self.insert_scope_local(s, idx);
+                    Ok(Value::Reference(idx, false))
+                } else {
+                    Err(format!("{}: No such name in scope...", s))
+                }
+            }
+            LambdaArg(u) => {
+                let s = format!("\\{}", u);
+                if let Some(idx) = self.lookup_scope(&s) {
+                    Ok(Value::Reference(*idx, false))
+                } else if allow_insert {
+                    let idx = self.alloc(Value::Null);
+                    self.insert_scope_local(&s, idx);
                     Ok(Value::Reference(idx, false))
                 } else {
                     Err(format!("{}: No such name in scope...", s))
