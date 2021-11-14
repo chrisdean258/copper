@@ -80,7 +80,6 @@ pub enum Keyword {
     If,
     Else,
     And,
-    Nullable,
     While,
 }
 
@@ -170,7 +169,6 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
 
         match &chars[..] {
-            "nullable" => TokenType::Keyword(Keyword::Nullable),
             "while" => TokenType::Keyword(Keyword::While),
             "if" => TokenType::Keyword(Keyword::If),
             "else" => TokenType::Keyword(Keyword::Else),

@@ -73,8 +73,8 @@ impl Evaluator {
 
         let idx = eval.alloc(Value::BuiltinFunc("print", copper_print));
         builtins.insert(String::from("print"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("puts", copper_print_no_newline));
-        builtins.insert(String::from("puts"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("put", copper_print_no_newline));
+        builtins.insert(String::from("put"), idx);
 
         eval.scopes.push(builtins);
 
