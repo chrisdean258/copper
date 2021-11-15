@@ -226,11 +226,9 @@ impl Evaluator {
 
     fn eval_block(&mut self, b: &BlockExpr) -> Result<Value, String> {
         let mut rv = Value::Null;
-        self.openscope();
         for statement in b.statements.iter() {
             rv = self.eval_statement(&statement)?;
         }
-        self.closescope();
         Ok(rv)
     }
 
