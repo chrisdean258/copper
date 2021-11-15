@@ -115,10 +115,7 @@ fn err_msg(token: &Token, reason: &str) -> String {
 }
 
 fn unexpected(token: &Token) -> String {
-    panic!(
-        "{}",
-        format!("{}: Unexpected {:?}", token.location, token.token_type)
-    )
+    format!("{}: Unexpected {:?}", token.location, token.token_type)
 }
 
 macro_rules! binop {
@@ -360,17 +357,48 @@ impl ParseTree {
                 TokenType::BitNot => (),
                 TokenType::Minus => (),
                 TokenType::Plus => (),
+                TokenType::Inc => (),
+                TokenType::Dec => (),
                 _ => return self.parse_post_unary(lexer),
             }
-            lexer.next();
-            let rhs = self.parse_post_unary(lexer)?;
+            let token = lexer.next().unwrap();
+            let rhs = self.parse_pre_unary(lexer)?;
             Ok(Expression::PreUnOp(PreUnOp {
-                op: lexer.next().unwrap(),
+                op: token,
                 rhs: Box::new(rhs),
             }))
         } else {
             self.parse_post_unary(lexer)
         }
+    }
+
+    fn parse_post_unary<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut ReIterable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let mut lhs = self.parse_ref(lexer)?;
+        while let Some(token) = lexer.peek() {
+            lhs = match token.token_type {
+                TokenType::Inc => Expression::PostUnOp(PostUnOp {
+                    lhs: Box::new(lhs),
+                    op: lexer.next().unwrap(),
+                }),
+                TokenType::Dec => Expression::PostUnOp(PostUnOp {
+                    lhs: Box::new(lhs),
+                    op: lexer.next().unwrap(),
+                }),
+                TokenType::OpenParen => {
+                    let args = self.parse_paren_cse(lexer)?;
+                    Expression::CallExpr(CallExpr {
+                        function: Box::new(lhs),
+                        args,
+                    })
+                }
+                TokenType::OpenBracket => todo!(),
+                _ => return Ok(lhs),
+            }
+        }
+        Ok(lhs)
     }
 
     fn parse_function<T: Iterator<Item = String>>(
@@ -380,10 +408,10 @@ impl ParseTree {
         expect!(lexer, TokenType::Function);
         let token = lexer.peek().expect("Unexpected EOF".into());
         let name = match token.token_type {
-            TokenType::Identifier(s) =>{
+            TokenType::Identifier(s) => {
                 lexer.next();
                 Some(s)
-            },
+            }
             _ => None,
         };
         expect!(lexer, TokenType::OpenParen);
@@ -423,29 +451,6 @@ impl ParseTree {
             max_arg,
             body: Box::new(body),
         }))
-    }
-
-    fn parse_post_unary<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
-    ) -> Result<Expression, String> {
-        let mut lhs = self.parse_ref(lexer)?;
-        while let Some(token) = lexer.peek() {
-            match token.token_type {
-                TokenType::Inc => todo!(),
-                TokenType::Dec => todo!(),
-                TokenType::OpenParen => {
-                    let args = self.parse_paren_cse(lexer)?;
-                    lhs = Expression::CallExpr(CallExpr {
-                        function: Box::new(lhs),
-                        args,
-                    });
-                }
-                TokenType::OpenBracket => todo!(),
-                _ => return Ok(lhs),
-            }
-        }
-        Ok(lhs)
     }
 
     fn parse_paren_cse<T: Iterator<Item = String>>(

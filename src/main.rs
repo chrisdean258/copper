@@ -5,6 +5,8 @@ mod lex;
 mod location;
 mod parser;
 mod reiter;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -12,8 +14,50 @@ use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let filename = args[1].clone();
-    eval_file(&filename);
+    if args.len() == 2 {
+        eval_file(&args[1]);
+    } else {
+        repl()
+    }
+}
+
+fn repl() {
+    let mut rl = Editor::<()>::new();
+    let mut lineno: usize = 1;
+    let mut evaluator = eval::Evaluator::new();
+    loop {
+        let readline = rl.readline(">>> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                let lexer = lex::Lexer::new_with_lineno("<stdin>", vec![line].into_iter(), lineno);
+                lineno += 1;
+                let parser = parser::Parser::new(lexer);
+                let tree = match parser.parse() {
+                    Ok(t) => t,
+                    Err(s) => {
+                        println!("{}", s);
+                        continue;
+                    }
+                };
+                let val = evaluator.eval(&tree);
+                match val {
+                    Ok(eval::Value::Null) => (),
+                    Ok(t) => println!("{}", t),
+                    Err(s) => println!("{}", s),
+                }
+            }
+            Err(ReadlineError::Interrupted) => break,
+            Err(ReadlineError::Eof) => {
+                println!("quit");
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
+        }
+    }
 }
 
 fn eval_file(filename: &str) {

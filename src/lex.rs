@@ -94,6 +94,15 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
     }
 
+    pub fn new_with_lineno(label: &str, lines: T, lineno: usize) -> Lexer<T> {
+        Lexer {
+            label: Rc::new(label.into()),
+            chars: CharIter::new_with_lineno(lines, lineno)
+                .into_iter()
+                .reiter(),
+        }
+    }
+
     #[allow(dead_code)]
     fn location(&self) -> Location {
         let borrowed: &CharIter<T> = self.chars.borrow();

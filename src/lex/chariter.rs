@@ -5,24 +5,6 @@ pub struct CharIter<T: Iterator<Item = String>> {
     col_no: usize,
 }
 
-// impl<T> IntoIterator for CharIter<T>
-// where
-// T: Iterator<Item = String>,
-// {
-// type Item = char;
-// type IntoIter = FlatMap<T, std::vec::IntoIter<char>, fn(T::Item) -> std::vec::IntoIter<char>>;
-
-// fn into_iter(self) -> Self::IntoIter {
-// self.lines.flat_map(|s| {
-// let mut v: Vec<char> = s.chars().collect();
-// if v.last() != Some(&'\n') {
-// v.push('\n');
-// }
-// v.into_iter()
-// })
-// }
-// }
-
 impl<T: Iterator<Item = String>> Iterator for CharIter<T> {
     type Item = char;
 
@@ -48,6 +30,15 @@ impl<T: Iterator<Item = String>> CharIter<T> {
             lines,
             cur_line: None,
             line_no: 0,
+            col_no: 0,
+        }
+    }
+
+    pub fn new_with_lineno(lines: T, lineno: usize) -> Self {
+        CharIter {
+            lines,
+            cur_line: None,
+            line_no: lineno - 1,
             col_no: 0,
         }
     }
