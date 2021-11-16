@@ -104,10 +104,10 @@ impl Evaluator {
         self.scopes.pop();
     }
 
-    fn lookup_scope(&mut self, key: &str) -> Option<&mut usize> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(val) = scope.get_mut(key) {
-                return Some(val);
+    fn lookup_scope(&self, key: &str) -> Option<usize> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.get(key) {
+                return Some(*val);
             }
         }
         None
@@ -908,7 +908,7 @@ impl Evaluator {
                     self.insert_scope_local(s, idx);
                     Ok(Value::Reference(idx, false))
                 } else if let Some(idx) = self.lookup_scope(s) {
-                    Ok(Value::Reference(*idx, false))
+                    Ok(Value::Reference(idx, false))
                 } else {
                     Err(format!("{}: No such name in scope...", s))
                 }
@@ -920,7 +920,7 @@ impl Evaluator {
                     self.insert_scope_local(&s, idx);
                     Ok(Value::Reference(idx, false))
                 } else if let Some(idx) = self.lookup_scope(&s) {
-                    Ok(Value::Reference(*idx, false))
+                    Ok(Value::Reference(idx, false))
                 } else {
                     Err(format!("{}: No such name in scope...", s))
                 }
