@@ -1,4 +1,5 @@
 use crate::lex::*;
+use crate::location::Location;
 use crate::reiter::ReIter;
 use crate::reiter::ReIterable;
 
@@ -28,6 +29,25 @@ pub enum Expression {
     Lambda(Lambda),
 }
 
+impl Expression {
+    pub fn location(&self) -> Location {
+        match self {
+            Expression::While(w) => w.location.clone(),
+            Expression::If(i) => i.location.clone(),
+            Expression::CallExpr(c) => c.location.clone(),
+            Expression::RefExpr(r) => r.value.location.clone(),
+            Expression::Immediate(i) => i.value.location.clone(),
+            Expression::BlockExpr(b) => b.location.clone(),
+            Expression::BinOp(b) => b.op.location.clone(),
+            Expression::PreUnOp(u) => u.op.location.clone(),
+            Expression::PostUnOp(u) => u.op.location.clone(),
+            Expression::AssignExpr(a) => a.op.location.clone(),
+            Expression::Function(f) => f.location.clone(),
+            Expression::Lambda(l) => l.location.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParseTree {
     pub statements: Vec<Statement>,
@@ -36,12 +56,14 @@ pub struct ParseTree {
 
 #[derive(Debug, Clone)]
 pub struct While {
+    pub location: Location,
     pub condition: Box<Expression>,
     pub body: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
 pub struct If {
+    pub location: Location,
     pub condition: Box<Expression>,
     pub body: Box<Expression>,
     pub and_bodies: Vec<If>,
@@ -50,6 +72,7 @@ pub struct If {
 
 #[derive(Debug, Clone)]
 pub struct CallExpr {
+    pub location: Location,
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
 }
@@ -66,6 +89,7 @@ pub struct Immediate {
 
 #[derive(Debug, Clone)]
 pub struct BlockExpr {
+    pub location: Location,
     pub statements: Vec<Statement>,
 }
 
@@ -98,6 +122,7 @@ pub struct PostUnOp {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub location: Location,
     pub argnames: Vec<String>,
     pub body: Box<Expression>,
     pub name: Option<String>,
@@ -105,6 +130,7 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub struct Lambda {
+    pub location: Location,
     pub max_arg: usize,
     pub body: Box<Expression>,
 }
@@ -151,7 +177,7 @@ macro_rules! expect {
     ( $lexer:ident, $token:path ) => {
         if let Some(token) = $lexer.peek() {
             match &token.token_type {
-                $token => $lexer.next(),
+                $token => $lexer.next().unwrap(),
                 _ => return Err(unexpected(&token)),
             }
         } else {
@@ -214,24 +240,31 @@ impl ParseTree {
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let mut rv = Vec::new();
-        expect!(lexer, TokenType::OpenBrace);
+        let location = expect!(lexer, TokenType::OpenBrace).location;
 
         while !if_expect!(lexer, TokenType::CloseBrace) {
             let statement = self.parse_statement(lexer);
             rv.push(statement?);
         }
-        Ok(Expression::BlockExpr(BlockExpr { statements: rv }))
+        Ok(Expression::BlockExpr(BlockExpr {
+            location,
+            statements: rv,
+        }))
     }
 
     fn parse_while<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        expect!(lexer, TokenType::While);
+        let location = expect!(lexer, TokenType::While).location;
         let condition = Box::new(self.parse_paren(lexer)?);
         let body = Box::new(self.parse_expr(lexer)?);
 
-        Ok(Expression::While(While { condition, body }))
+        Ok(Expression::While(While {
+            location,
+            condition,
+            body,
+        }))
     }
 
     fn parse_if<T: Iterator<Item = String>>(
@@ -270,10 +303,11 @@ impl ParseTree {
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<If, String> {
         use crate::lex::TokenType::If as tokenIf;
-        expect!(lexer, tokenIf);
+        let location = expect!(lexer, tokenIf).location;
         let condition = Box::new(self.parse_paren(lexer)?);
         let body = Box::new(self.parse_expr(lexer)?);
         Ok(If {
+            location,
             condition,
             body,
             and_bodies: Vec::new(),
@@ -390,6 +424,7 @@ impl ParseTree {
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer)?;
                     Expression::CallExpr(CallExpr {
+                        location: token.location,
                         function: Box::new(lhs),
                         args,
                     })
@@ -405,7 +440,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        expect!(lexer, TokenType::Function);
+        let loctoken = expect!(lexer, TokenType::Function);
         let token = lexer.peek().expect("Unexpected EOF".into());
         let name = match token.token_type {
             TokenType::Identifier(s) => {
@@ -433,6 +468,7 @@ impl ParseTree {
         let body = self.parse_expr(lexer)?;
 
         Ok(Expression::Function(Function {
+            location: loctoken.location,
             argnames: args,
             body: Box::new(body),
             name: name,
@@ -443,11 +479,13 @@ impl ParseTree {
         &mut self,
         lexer: &mut ReIterable<Lexer<T>>,
     ) -> Result<Expression, String> {
+        let location = lexer.peek().unwrap().location;
         if_expect!(lexer, TokenType::Lambda); //we may or may not have started this lambda with a signifier
         self.max_arg.push(0);
         let body = self.parse_expr(lexer)?;
         let max_arg = self.max_arg.pop().unwrap();
         Ok(Expression::Lambda(Lambda {
+            location,
             max_arg,
             body: Box::new(body),
         }))

@@ -1,6 +1,7 @@
 use crate::location::Location;
 use crate::reiter::{ReIter, ReIterable};
 use std::borrow::Borrow;
+use std::fmt::{Display, Formatter};
 mod chariter;
 use chariter::CharIter;
 use std::rc::Rc;
@@ -24,6 +25,7 @@ pub enum TokenType {
     Int(i64),
     Float(f64),
     Bool(u8),
+    Char(char),
     If,
     Else,
     And,
@@ -58,8 +60,6 @@ pub enum TokenType {
     CloseBrace,
     OpenBracket,
     CloseBracket,
-    Char(char),
-    ErrChar(char),
     CmpEq,
     CmpNotEq,
     CmpGE,
@@ -76,6 +76,74 @@ pub enum TokenType {
     BoolNot,
     BitShiftRight,
     BitShiftLeft,
+    ErrChar(char),
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        use TokenType::*;
+        match self {
+            Identifier(s) => f.write_fmt(format_args!("{}", s))?,
+            LambdaArg(u) => f.write_fmt(format_args!("{}", u))?,
+            Str(s) => f.write_fmt(format_args!("\"{}\"", s))?,
+            Int(i) => f.write_fmt(format_args!("{}", i))?,
+            Float(d) => f.write_fmt(format_args!("{}", d))?,
+            Bool(u) => f.write_fmt(format_args!("{}", u))?,
+            Char(c) => f.write_fmt(format_args!("{}", c))?,
+            If => f.write_fmt(format_args!("if",))?,
+            Else => f.write_fmt(format_args!("else",))?,
+            And => f.write_fmt(format_args!("and",))?,
+            While => f.write_fmt(format_args!("while",))?,
+            Function => f.write_fmt(format_args!("fn",))?,
+            Lambda => f.write_fmt(format_args!("\\",))?,
+            Null => f.write_fmt(format_args!("null",))?,
+            OpenParen => f.write_fmt(format_args!("(",))?,
+            CloseParen => f.write_fmt(format_args!(")",))?,
+            Comma => f.write_fmt(format_args!(",",))?,
+            Dot => f.write_fmt(format_args!(".",))?,
+            Equal => f.write_fmt(format_args!("=",))?,
+            AndEq => f.write_fmt(format_args!("&=",))?,
+            XorEq => f.write_fmt(format_args!("^=",))?,
+            OrEq => f.write_fmt(format_args!("|=",))?,
+            PlusEq => f.write_fmt(format_args!("+=",))?,
+            MinusEq => f.write_fmt(format_args!("-=",))?,
+            TimesEq => f.write_fmt(format_args!("*=",))?,
+            DivEq => f.write_fmt(format_args!("/=",))?,
+            ModEq => f.write_fmt(format_args!("%=",))?,
+            Plus => f.write_fmt(format_args!("+",))?,
+            Minus => f.write_fmt(format_args!("-",))?,
+            Times => f.write_fmt(format_args!("*",))?,
+            Div => f.write_fmt(format_args!("/",))?,
+            Mod => f.write_fmt(format_args!("%",))?,
+            Inc => f.write_fmt(format_args!("++",))?,
+            Dec => f.write_fmt(format_args!("--",))?,
+            BitShiftRightEq => f.write_fmt(format_args!(">>=",))?,
+            BitShiftLeftEq => f.write_fmt(format_args!("<<=",))?,
+            Semicolon => f.write_fmt(format_args!(";",))?,
+            OpenBrace => f.write_fmt(format_args!("{{",))?,
+            CloseBrace => f.write_fmt(format_args!("}}",))?,
+            OpenBracket => f.write_fmt(format_args!("[",))?,
+            CloseBracket => f.write_fmt(format_args!("]",))?,
+            CmpEq => f.write_fmt(format_args!("==",))?,
+            CmpNotEq => f.write_fmt(format_args!("!=",))?,
+            CmpGE => f.write_fmt(format_args!(">=",))?,
+            CmpGT => f.write_fmt(format_args!(">",))?,
+            CmpLE => f.write_fmt(format_args!("<=",))?,
+            CmpLT => f.write_fmt(format_args!("<",))?,
+            BitOr => f.write_fmt(format_args!("|",))?,
+            BoolOr => f.write_fmt(format_args!("||",))?,
+            BitAnd => f.write_fmt(format_args!("&",))?,
+            BoolAnd => f.write_fmt(format_args!("&&",))?,
+            BitNot => f.write_fmt(format_args!("~",))?,
+            BitXor => f.write_fmt(format_args!("^",))?,
+            BoolXor => f.write_fmt(format_args!("^^",))?,
+            BoolNot => f.write_fmt(format_args!("!",))?,
+            BitShiftRight => f.write_fmt(format_args!(">>",))?,
+            BitShiftLeft => f.write_fmt(format_args!("<<",))?,
+            ErrChar(c) => f.write_fmt(format_args!("error: {}", c))?,
+        }
+        Ok(())
+    }
 }
 
 impl<T: Iterator<Item = String>> Iterator for Lexer<T> {

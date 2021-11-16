@@ -711,7 +711,12 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => *a &= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a &= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 & *b as u8) as char,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `&=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::OrEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a |= *b,
@@ -719,7 +724,12 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => *a |= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a |= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 | *b as u8) as char,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `|=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::XorEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a ^= *b,
@@ -727,7 +737,12 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => *a ^= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a ^= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 ^ *b as u8) as char,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `^=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::PlusEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a += *b,
@@ -739,7 +754,12 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a += *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a += (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a + *b as f64,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `+=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::MinusEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a -= *b,
@@ -751,7 +771,12 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a -= *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a -= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a - *b as f64,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `-=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::TimesEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a *= *b,
@@ -763,7 +788,12 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a *= *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a *= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `*=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::DivEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a /= *b,
@@ -773,7 +803,12 @@ impl Evaluator {
                 (Value::Float(a), Value::Float(b)) => *a /= *b,
                 (Value::Float(a), Value::Char(b)) => *a /= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `/=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
             TokenType::ModEq => match (&mut lhs, &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a %= *b,
@@ -782,11 +817,34 @@ impl Evaluator {
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 % *b as u8) as char,
                 (Value::Float(a), Value::Char(b)) => *a %= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => todo!(),
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `%=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
             },
-            TokenType::BitShiftRightEq => todo!(),
-            TokenType::BitShiftLeftEq => todo!(),
-            _ => todo!(),
+            TokenType::BitShiftRightEq => match (&mut lhs, &rhs) {
+                (Value::Int(a), Value::Int(b)) => *a >>= *b,
+                (Value::Char(a), Value::Int(b)) => *a = (*a as u8 >> *b as u8) as char,
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `>>=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
+            },
+            TokenType::BitShiftLeftEq => match (&mut lhs, &rhs) {
+                (Value::Int(a), Value::Int(b)) => *a <<= *b,
+                (Value::Char(a), Value::Int(b)) => *a = ((*a as u8) << *b as u8) as char,
+                _ => {
+                    return Err(format!(
+                        "{}: Cannot `<<=` between {} and {}. This operation is not supported",
+                        expr.op.location, lhs, rhs
+                    ))
+                }
+            },
+            _ => unreachable!(),
         }
         Ok(lhs.clone())
     }

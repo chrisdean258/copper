@@ -5,6 +5,7 @@ mod lex;
 mod location;
 mod parser;
 mod reiter;
+mod typecheck;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::env;
@@ -65,6 +66,9 @@ fn eval_file(filename: &str) {
     let lexer = lex::Lexer::new(&filename, &mut lines);
     let parser = parser::Parser::new(lexer);
     let tree = parser.parse().unwrap();
+    let mut typechecker = typecheck::TypeChecker::new();
+    typechecker.typecheck(&tree).unwrap();
+
     let mut evaluator = eval::Evaluator::new();
     evaluator.eval(&tree).unwrap();
 }
