@@ -417,25 +417,31 @@ impl TypeChecker {
         rhs: Type,
     ) -> Result<Type, String> {
         use std::mem::discriminant as disc;
-        let lhs = &mut self.memory[lhsidx];
-        let rhs = match lhs {
+        let olhs = self.memory[lhsidx].clone();
+        let lhs = match &olhs {
             Type::Unininitialized => {
                 self.memory[lhsidx] = rhs.clone();
                 return Ok(rhs);
             }
-            Type::Null => {
-                self.memory[lhsidx] = Type::Nullable(Box::new(rhs.clone()));
-                return Ok(Type::Nullable(Box::new(rhs.clone())));
-            }
-            Type::Nullable(t) => *t.clone(),
-            _ => rhs,
+            Type::Null => match rhs {
+                Type::Null => Type::Null,
+                _ => {
+                    self.memory[lhsidx] = Type::Nullable(Box::new(rhs.clone()));
+                    return Ok(Type::Nullable(Box::new(rhs.clone())));
+                }
+            },
+            Type::Nullable(t) => match rhs {
+                Type::Null => return Ok(olhs),
+                _ => *t.clone(),
+            },
+            _ => olhs.clone(),
         };
-        if disc(lhs) == disc(&rhs) {
-            return Ok(rhs);
+        if disc(&lhs) == disc(&rhs) {
+            return Ok(olhs);
         }
         Err(format!(
-            "{}: Cannot assign {:?} = {:?}",
-            expr.op.location, lhs, rhs
+            "{}: Cannot assign type {:?} = type {:?}",
+            expr.op.location, olhs, rhs
         ))
     }
 

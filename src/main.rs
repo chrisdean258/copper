@@ -25,6 +25,7 @@ fn main() {
 fn repl() {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
+    let mut typechecker = typecheck::TypeChecker::new();
     let mut evaluator = eval::Evaluator::new();
     loop {
         let readline = rl.readline(">>> ");
@@ -41,6 +42,10 @@ fn repl() {
                         continue;
                     }
                 };
+                match typechecker.typecheck(&tree) {
+                    Ok(_) => (),
+                    Err(s) => println!("{}", s),
+                }
                 let val = evaluator.eval(&tree);
                 match val {
                     Ok(eval::Value::Null) => (),
