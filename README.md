@@ -15,12 +15,9 @@ You can just use a lambda argument and it will start a lambda if you havent alre
 
 for example
 ```
-
 fn do_action_if(val, cond, action) if cond(val) action(val)
 
 do_action_if(10, \1 % 2 == 0, print)
-
-
 ```
 
 will print 10
@@ -44,4 +41,16 @@ fn if_false() if(false) 5 else 8
 ```
 returns 8
 
+
+### Types
+Currently only some basic types are supported:
+- Int
+- Char
+- String
+- Null
+- Nullable<T> where T is one of the above
+
+A nullable value is created when on creation a variable is assigned a null value then later assigned another non null value
+
+When it comes to types, you cannot change type except for a Null type promoting to a Nullable type
 
