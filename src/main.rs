@@ -1,5 +1,4 @@
 mod builtins;
-mod copper_type;
 mod eval;
 mod lex;
 mod location;

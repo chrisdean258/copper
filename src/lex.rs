@@ -1,5 +1,4 @@
 use crate::location::Location;
-use crate::reiter::{ReIter, ReIterable};
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 mod chariter;
@@ -8,7 +7,7 @@ use std::rc::Rc;
 
 pub struct Lexer<T: Iterator<Item = String>> {
     label: Rc<String>,
-    chars: ReIterable<<CharIter<T> as IntoIterator>::IntoIter>,
+    chars: CharIter<T>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,16 +157,14 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     pub fn new(label: &str, lines: T) -> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
-            chars: CharIter::new(lines).into_iter().reiter(),
+            chars: CharIter::new(lines).into_iter(),
         }
     }
 
     pub fn new_with_lineno(label: &str, lines: T, lineno: usize) -> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
-            chars: CharIter::new_with_lineno(lines, lineno)
-                .into_iter()
-                .reiter(),
+            chars: CharIter::new_with_lineno(lines, lineno).into_iter(),
         }
     }
 
@@ -175,7 +172,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn location(&self) -> Location {
         let borrowed: &CharIter<T> = self.chars.borrow();
         let (row, col) = borrowed.location();
-        Location::new(self.label.clone(), row, col + 1)
+        Location::new(self.label.clone(), row, col)
     }
 
     fn expect<F>(&mut self, func: F) -> char
@@ -340,6 +337,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
         loop {
+            self.chars.peek();
             break Some(Token {
                 location: self.location(),
                 token_type: match self.chars.peek()? {
