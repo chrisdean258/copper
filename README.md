@@ -9,7 +9,7 @@ Its got pretty standard operations and some custom syntaxes
 
 `fn fname(args..) body` for functions
 
-We can declare a lambda function with the `\` operator and reference arguments with `\1`, `\2`,...
+We can declare a lambda function with the `\` operator and reference arguments with `\0`, `\1`,...
 
 You can just use a lambda argument and it will start a lambda if you havent already
 
@@ -17,7 +17,7 @@ for example
 ```
 fn do_action_if(val, cond, action) if cond(val) action(val)
 
-do_action_if(10, \1 % 2 == 0, print)
+do_action_if(10, \0 % 2 == 0, print)
 ```
 
 will print 10

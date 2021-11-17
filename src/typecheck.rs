@@ -548,7 +548,7 @@ impl TypeChecker {
                 rv
             }
             Type::Lambda(l, sigs) => {
-                if args.len() != l.max_arg {
+                if args.len() != l.max_arg + 1 {
                     return Err(format!(
                         "{}: Trying to call lambda with wrong number of args. wanted {} found {}",
                         l.location,
@@ -563,7 +563,7 @@ impl TypeChecker {
                 }
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
-                    let label = format!("\\{}", arg_num + 1);
+                    let label = format!("\\{}", arg_num);
                     self.insert_scope_local(&label, arg.clone());
                 }
                 let rv = self.typecheck_expr(&*l.body)?;

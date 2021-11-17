@@ -1,7 +1,6 @@
 use crate::lex::*;
 use crate::location::Location;
-use crate::reiter::ReIter;
-use crate::reiter::ReIterable;
+use std::iter::Peekable;
 
 pub struct Parser<T: Iterator<Item = String>> {
     lexer: Lexer<T>,
@@ -29,24 +28,24 @@ pub enum Expression {
     Lambda(Lambda),
 }
 
-impl Expression {
-    pub fn location(&self) -> Location {
-        match self {
-            Expression::While(w) => w.location.clone(),
-            Expression::If(i) => i.location.clone(),
-            Expression::CallExpr(c) => c.location.clone(),
-            Expression::RefExpr(r) => r.value.location.clone(),
-            Expression::Immediate(i) => i.value.location.clone(),
-            Expression::BlockExpr(b) => b.location.clone(),
-            Expression::BinOp(b) => b.op.location.clone(),
-            Expression::PreUnOp(u) => u.op.location.clone(),
-            Expression::PostUnOp(u) => u.op.location.clone(),
-            Expression::AssignExpr(a) => a.op.location.clone(),
-            Expression::Function(f) => f.location.clone(),
-            Expression::Lambda(l) => l.location.clone(),
-        }
-    }
-}
+// impl Expression {
+// pub fn location(&self) -> Location {
+// match self {
+// Expression::While(w) => w.location.clone(),
+// Expression::If(i) => i.location.clone(),
+// Expression::CallExpr(c) => c.location.clone(),
+// Expression::RefExpr(r) => r.value.location.clone(),
+// Expression::Immediate(i) => i.value.location.clone(),
+// Expression::BlockExpr(b) => b.location.clone(),
+// Expression::BinOp(b) => b.op.location.clone(),
+// Expression::PreUnOp(u) => u.op.location.clone(),
+// Expression::PostUnOp(u) => u.op.location.clone(),
+// Expression::AssignExpr(a) => a.op.location.clone(),
+// Expression::Function(f) => f.location.clone(),
+// Expression::Lambda(l) => l.location.clone(),
+// }
+// }
+// }
 
 #[derive(Debug, Clone)]
 pub struct ParseTree {
@@ -148,12 +147,12 @@ macro_rules! binop {
     ( $name:ident, $next:ident, $( $token:path ),+) => {
         fn $name<T: Iterator<Item = String>>(
             &mut self,
-            lexer: &mut ReIterable<Lexer<T>>,
+            lexer: &mut Peekable<Lexer<T>>,
             ) -> Result<Expression, String> {
             use crate::lex::TokenType::*;
             let lhs = self.$next(lexer)?;
             let token = match lexer.peek() {
-                Some(t) => t,
+                Some(t) => t.clone(),
                 None => return Ok(lhs),
             };
             match token.token_type {
@@ -167,7 +166,7 @@ macro_rules! binop {
             let rhs = self.$name(lexer)?;
             Ok(Expression::BinOp(BinOp {
                 lhs: Box::new(lhs),
-                op: token,
+                op: token.clone(),
                 rhs: Box::new(rhs),
             }))
         }
@@ -214,7 +213,7 @@ impl ParseTree {
         &mut self,
         lexer: Lexer<T>,
     ) -> Result<(), String> {
-        let mut peekable = lexer.reiter();
+        let mut peekable = lexer.peekable();
         while peekable.peek().is_some() {
             let statement = self.parse_statement(&mut peekable);
             self.statements.push(statement?);
@@ -224,7 +223,7 @@ impl ParseTree {
 
     fn parse_statement<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         let token = lexer.peek().unwrap();
         let rv = Ok(match &token.token_type {
@@ -237,7 +236,7 @@ impl ParseTree {
 
     fn parse_block<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let mut rv = Vec::new();
         let location = expect!(lexer, TokenType::OpenBrace).location;
@@ -254,7 +253,7 @@ impl ParseTree {
 
     fn parse_while<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let location = expect!(lexer, TokenType::While).location;
         let condition = Box::new(self.parse_paren(lexer)?);
@@ -269,7 +268,7 @@ impl ParseTree {
 
     fn parse_if<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         use crate::lex::TokenType::*;
         let mut fif = self.parse_if_internal(lexer)?;
@@ -292,7 +291,7 @@ impl ParseTree {
 
     fn parse_and<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<If, String> {
         expect!(lexer, TokenType::And);
         self.parse_if_internal(lexer)
@@ -300,7 +299,7 @@ impl ParseTree {
 
     fn parse_if_internal<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<If, String> {
         use crate::lex::TokenType::If as tokenIf;
         let location = expect!(lexer, tokenIf).location;
@@ -317,7 +316,7 @@ impl ParseTree {
 
     fn parse_else<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         expect!(lexer, TokenType::Else);
 
@@ -331,13 +330,13 @@ impl ParseTree {
 
     fn parse_eq<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         use crate::lex::TokenType::*;
         let lhs = self.parse_boolean_op(lexer)?;
 
         let token = match lexer.peek() {
-            Some(t) => t,
+            Some(t) => t.clone(),
             None => return Ok(lhs),
         };
         let mut allow_decl = false;
@@ -363,7 +362,7 @@ impl ParseTree {
 
         Ok(Expression::AssignExpr(AssignExpr {
             lhs: Box::new(reflhs),
-            op: token,
+            op: token.clone(),
             rhs: Box::new(rhs),
             allow_decl,
         }))
@@ -383,7 +382,7 @@ impl ParseTree {
 
     fn parse_pre_unary<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
             match token.token_type {
@@ -412,10 +411,11 @@ impl ParseTree {
 
     fn parse_post_unary<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let mut lhs = self.parse_ref(lexer)?;
         while let Some(token) = lexer.peek() {
+            let token = token.clone();
             lhs = match token.token_type {
                 TokenType::Inc => Expression::PostUnOp(PostUnOp {
                     lhs: match lhs {
@@ -448,14 +448,15 @@ impl ParseTree {
 
     fn parse_function<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let loctoken = expect!(lexer, TokenType::Function);
         let token = lexer.peek().expect("Unexpected EOF".into());
-        let name = match token.token_type {
+        let name = match &token.token_type {
             TokenType::Identifier(s) => {
+                let rv = s.clone();
                 lexer.next();
-                Some(s)
+                Some(rv)
             }
             _ => None,
         };
@@ -487,9 +488,9 @@ impl ParseTree {
 
     fn parse_lambda<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        let location = lexer.peek().unwrap().location;
+        let location = lexer.peek().unwrap().location.clone();
         if_expect!(lexer, TokenType::Lambda); //we may or may not have started this lambda with a signifier
         self.max_arg.push(0);
         let body = self.parse_expr(lexer)?;
@@ -503,7 +504,7 @@ impl ParseTree {
 
     fn parse_paren_cse<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Vec<Expression>, String> {
         expect!(lexer, TokenType::OpenParen);
         if if_expect!(lexer, TokenType::CloseParen) {
@@ -516,7 +517,7 @@ impl ParseTree {
 
     fn parse_cse<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Vec<Expression>, String> {
         let mut rv = Vec::new();
         rv.push(self.parse_expr(lexer)?);
@@ -528,7 +529,7 @@ impl ParseTree {
 
     fn parse_ref<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
             match &token.token_type {
@@ -577,7 +578,7 @@ impl ParseTree {
 
     fn parse_paren<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         expect!(lexer, TokenType::OpenParen);
         let rv = self.parse_expr(lexer)?;
@@ -587,7 +588,7 @@ impl ParseTree {
 
     fn parse_expr<T: Iterator<Item = String>>(
         &mut self,
-        lexer: &mut ReIterable<Lexer<T>>,
+        lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         self.parse_eq(lexer)
     }

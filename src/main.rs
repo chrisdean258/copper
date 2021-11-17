@@ -3,7 +3,6 @@ mod eval;
 mod lex;
 mod location;
 mod parser;
-mod reiter;
 mod typecheck;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;

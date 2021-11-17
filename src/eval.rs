@@ -764,10 +764,10 @@ impl Evaluator {
                 rv
             }
             Value::Lambda(l) => {
-                assert_eq!(args.len(), l.max_arg);
+                assert_eq!(args.len(), l.max_arg + 1);
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
-                    let label = format!("\\{}", arg_num + 1);
+                    let label = format!("\\{}", arg_num);
                     self.insert_scope_local(&label, arg.clone());
                 }
                 let rv = self.eval_expr(&*l.body)?;

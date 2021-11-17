@@ -1,6 +1,6 @@
-combine = \1 + \2(\1)
+combine = \0 + \1(\0)
 
-print(combine(1, \1 + 1))
+print(combine(1, \0 + 1))
 
 
 
