@@ -111,12 +111,12 @@ pub struct AssignExpr {
 #[derive(Debug, Clone)]
 pub struct PreUnOp {
     pub op: Token,
-    pub rhs: Box<Expression>,
+    pub rhs: Box<RefExpr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PostUnOp {
-    pub lhs: Box<Expression>,
+    pub lhs: Box<RefExpr>,
     pub op: Token,
 }
 
@@ -397,6 +397,10 @@ impl ParseTree {
             }
             let token = lexer.next().unwrap();
             let rhs = self.parse_pre_unary(lexer)?;
+            let rhs = match rhs {
+                Expression::RefExpr(re) => re,
+                _ => return Err(unexpected(&token)),
+            };
             Ok(Expression::PreUnOp(PreUnOp {
                 op: token,
                 rhs: Box::new(rhs),
@@ -414,11 +418,17 @@ impl ParseTree {
         while let Some(token) = lexer.peek() {
             lhs = match token.token_type {
                 TokenType::Inc => Expression::PostUnOp(PostUnOp {
-                    lhs: Box::new(lhs),
+                    lhs: match lhs {
+                        Expression::RefExpr(re) => Box::new(re),
+                        _ => return Err(unexpected(&token)),
+                    },
                     op: lexer.next().unwrap(),
                 }),
                 TokenType::Dec => Expression::PostUnOp(PostUnOp {
-                    lhs: Box::new(lhs),
+                    lhs: match lhs {
+                        Expression::RefExpr(re) => Box::new(re),
+                        _ => return Err(unexpected(&token)),
+                    },
                     op: lexer.next().unwrap(),
                 }),
                 TokenType::OpenParen => {

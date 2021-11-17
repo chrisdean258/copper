@@ -342,7 +342,8 @@ impl TypeChecker {
 
     fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<Type, String> {
         use crate::lex::TokenType;
-        let rhs = self.typecheck_expr(&*u.rhs)?;
+        let rhsidx = self.typecheck_ref_expr_int(&*u.rhs, false)?;
+        let rhs = self.memory[rhsidx].clone();
         Ok(match u.op.token_type {
             TokenType::BoolNot => match rhs {
                 Type::Bool => Type::Bool,
@@ -380,7 +381,8 @@ impl TypeChecker {
 
     fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<Type, String> {
         use crate::lex::TokenType;
-        let lhs = self.typecheck_expr(&*u.lhs)?;
+        let lhsidx = self.typecheck_ref_expr_int(&*u.lhs, false)?;
+        let lhs = self.memory[lhsidx].clone();
         Ok(match u.op.token_type {
             TokenType::Inc => match lhs {
                 Type::Int => Type::Int,

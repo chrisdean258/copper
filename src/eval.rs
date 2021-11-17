@@ -16,6 +16,7 @@ pub enum Value {
     Bool(u8),
     Function(Function),
     Lambda(Lambda),
+    Uninitialized,
     Null,
 }
 
@@ -40,6 +41,7 @@ impl Debug for Value {
             }
             Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
             Null => f.write_str("Null")?,
+            Uninitialized => f.write_str("Uninitialized")?,
         };
         Ok(())
     }
@@ -61,6 +63,7 @@ impl Display for Value {
             }
             Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
             Null => f.write_str("null")?,
+            Uninitialized => f.write_str("Uninitialized")?,
         };
         Ok(())
     }
@@ -104,8 +107,8 @@ impl Evaluator {
         self.scopes.pop();
     }
 
-    fn lookup_scope(&self, key: &str) -> Option<usize> {
-        for scope in self.scopes.iter().rev() {
+    fn lookup_scope(&mut self, key: &str) -> Option<usize> {
+        for scope in self.scopes.iter_mut().rev() {
             if let Some(val) = scope.get(key) {
                 return Some(*val);
             }
@@ -113,17 +116,21 @@ impl Evaluator {
         None
     }
 
-    // fn insert_scope(&mut self, key: &str, val: usize) {
-    // match self.lookup_scope(key) {
-    // Some(v) => *v = val,
-    // None => {
-    // self.scopes.last_mut().unwrap().insert(key.to_string(), val);
-    // }
-    // }
-    // }
+    fn lookup_scope_local(&self, key: &str) -> Option<usize> {
+        self.scopes.last().unwrap().get(key).and_then(|u| Some(*u))
+    }
 
-    fn insert_scope_local(&mut self, key: &str, val: usize) {
-        self.scopes.last_mut().unwrap().insert(key.to_string(), val);
+    fn setdefault_scope_local(&mut self, key: &str, default: Value) -> usize {
+        if let Some(_) = self.lookup_scope_local(key) {
+        } else {
+            self.insert_scope_local(key, default.clone());
+        }
+        self.lookup_scope_local(key).unwrap()
+    }
+
+    fn insert_scope_local(&mut self, key: &str, val: Value) {
+        let idx = self.alloc(val);
+        self.scopes.last_mut().unwrap().insert(key.to_string(), idx);
     }
 
     pub fn deref(&mut self, val: Value) -> Value {
@@ -507,96 +514,64 @@ impl Evaluator {
 
     fn eval_unop_pre(&mut self, u: &PreUnOp) -> Result<Value, String> {
         use crate::lex::TokenType;
-        let rhs = self.eval_expr(&*u.rhs)?;
-        let derefed = self.deref(rhs.clone());
+        let rhsidx = self.eval_ref_expr_int(&*u.rhs, false)?;
+        let derefedidx = self.deref_idx(rhsidx);
+        let rhs = self.memory[derefedidx].clone();
+
         Ok(match u.op.token_type {
-            TokenType::BoolNot => match derefed {
+            TokenType::BoolNot => match rhs {
                 Value::Bool(b) => Value::Bool(if b == 0 { 1 } else { 0 }),
                 Value::Int(i) => Value::Bool(if i == 0 { 1 } else { 0 }),
                 Value::Char(c) => Value::Bool(if c == '\0' { 1 } else { 0 }),
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot apply operator `!` to {:?}",
-                        u.op.location, rhs
-                    ));
-                }
+                _ => unreachable!(),
             },
-            TokenType::BitNot => match derefed {
+            TokenType::BitNot => match rhs {
                 Value::Int(i) => Value::Int(!i),
                 Value::Char(c) => Value::Char(!(c as u8) as char),
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot apply operator `~` to {:?}",
-                        u.op.location, rhs
-                    ));
-                }
+                _ => unreachable!(),
             },
-            TokenType::Minus => match derefed {
+            TokenType::Minus => match rhs {
                 Value::Int(i) => Value::Int(-i),
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot apply unary operator `!` to {:?}",
-                        u.op.location, rhs
-                    ));
-                }
+                _ => unreachable!(),
             },
-            TokenType::Plus => match derefed {
+            TokenType::Plus => match rhs {
                 Value::Int(i) => Value::Int(i),
                 Value::Char(c) => Value::Char(c),
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot apply unary operator `+` to {:?}",
-                        u.op.location, rhs
-                    ));
-                }
+                _ => unreachable!(),
             },
-            TokenType::Inc => match (rhs, derefed) {
-                (Value::Reference(u, _), Value::Int(i)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+            TokenType::Inc => match rhs {
+                Value::Int(i) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Int(ii) => *ii += 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i + 1)
                 }
-                (Value::Reference(u, _), Value::Char(c)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+                Value::Char(c) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Char(cc) => *cc = ((*cc as u8) + 1) as char,
                         _ => unreachable!(),
                     }
                     Value::Char(((c as u8) + 1) as char)
                 }
-                (_, d) => {
-                    return Err(format!(
-                        "{}: cannot apply prefix `++` to {:?}",
-                        u.op.location, d
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::Dec => match (rhs, derefed) {
-                (Value::Reference(u, _), Value::Int(i)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+            TokenType::Dec => match rhs {
+                Value::Int(i) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Int(ii) => *ii -= 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i - 1)
                 }
-                (Value::Reference(u, _), Value::Char(c)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+                Value::Char(c) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Char(cc) => *cc = ((*cc as u8) - 1) as char,
                         _ => unreachable!(),
                     }
                     Value::Char(((c as u8) - 1) as char)
                 }
-                (_, d) => {
-                    return Err(format!(
-                        "{}: cannot apply prefix `--` to {:?}",
-                        u.op.location, d
-                    ))
-                }
+                _ => unreachable!(),
             },
             _ => unreachable!(),
         })
@@ -604,69 +579,56 @@ impl Evaluator {
 
     fn eval_unop_post(&mut self, u: &PostUnOp) -> Result<Value, String> {
         use crate::lex::TokenType;
-        let lhs = self.eval_expr(&*u.lhs)?;
-        let derefed = self.deref(lhs.clone());
+
+        let lhsidx = self.eval_ref_expr_int(&*u.lhs, false)?;
+        let derefedidx = self.deref_idx(lhsidx);
+        let lhs = self.memory[derefedidx].clone();
         Ok(match u.op.token_type {
-            TokenType::Inc => match (lhs, derefed) {
-                (Value::Reference(u, _), Value::Int(i)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+            TokenType::Inc => match lhs {
+                Value::Int(i) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Int(ii) => *ii += 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i)
                 }
-                (Value::Reference(u, _), Value::Char(c)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+                Value::Char(c) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Char(cc) => *cc = ((*cc as u8) + 1) as char,
                         _ => unreachable!(),
                     }
                     Value::Char(c)
                 }
-                (_, d) => {
-                    return Err(format!(
-                        "{}: cannot apply postfix `++` to {:?}",
-                        u.op.location, d
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::Dec => match (lhs, derefed) {
-                (Value::Reference(u, _), Value::Int(i)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+            TokenType::Dec => match lhs {
+                Value::Int(i) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Int(ii) => *ii -= 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i)
                 }
-                (Value::Reference(u, _), Value::Char(c)) => {
-                    let idx = self.deref_idx(u);
-                    match &mut self.memory[idx] {
+                Value::Char(c) => {
+                    match &mut self.memory[derefedidx] {
                         Value::Char(cc) => *cc = ((*cc as u8) - 1) as char,
                         _ => unreachable!(),
                     }
                     Value::Char(c)
                 }
-                (_, d) => {
-                    return Err(format!(
-                        "{}: cannot apply postfix `--` to {:?}",
-                        u.op.location, d
-                    ))
-                }
+                _ => unreachable!(),
             },
             _ => unreachable!(),
         })
     }
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
+        let idx = self.alloc(Value::Function(f.clone()));
+        let rv = Value::Reference(idx, false);
         if f.name.is_some() {
-            let idx = self.alloc(Value::Function(f.clone()));
-            self.insert_scope_local(f.name.as_ref().unwrap(), idx);
-            Ok(Value::Reference(idx, false))
-        } else {
-            Ok(Value::Function(f.clone()))
+            self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
         }
+        Ok(rv)
     }
 
     fn eval_lambda_def(&mut self, f: &Lambda) -> Result<Value, String> {
@@ -675,76 +637,43 @@ impl Evaluator {
 
     fn eval_assign(&mut self, expr: &AssignExpr) -> Result<Value, String> {
         use crate::lex::TokenType;
-        use std::mem::discriminant as disc;
-        let lhs_asref = self.eval_ref_expr(&*expr.lhs, expr.allow_decl)?;
-        let rhs_pos_ref = self.eval_expr(&*expr.rhs)?;
-
-        let rhs = match rhs_pos_ref {
+        let rhs = self.eval_expr(&*expr.rhs)?;
+        let rhs = match rhs {
             Value::Reference(u, _) => self.memory[u].clone(),
-            _ => rhs_pos_ref,
+            _ => rhs,
         };
 
-        let (mut lhs, nullable) = match lhs_asref {
-            Value::Reference(u, b) => (self.memory.get_mut(u).unwrap(), b),
-            _ => unreachable!(),
-        };
+        let lhsidx = self.eval_ref_expr_int(&*expr.lhs, expr.allow_decl)?;
 
         match &expr.op.token_type {
             TokenType::Equal => {
-                // Force types to be the same or throw an error
-                if disc(lhs) == disc(&rhs) {
-                    *lhs = rhs.clone();
-                } else if nullable && disc(&rhs) == disc(&Value::Null) {
-                    *lhs = rhs.clone();
-                } else if disc(lhs) == disc(&mut Value::Null) {
-                    *lhs = rhs.clone();
-                } else {
-                    return Err(format!(
-                        "{}: cannot assign {:?} <= {:?}",
-                        expr.op.location, lhs, rhs
-                    ));
-                }
+                self.memory[lhsidx] = rhs;
             }
-            TokenType::AndEq => match (&mut lhs, &rhs) {
+            TokenType::AndEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a &= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 & *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a &= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a &= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 & *b as u8) as char,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `&=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::OrEq => match (&mut lhs, &rhs) {
+            TokenType::OrEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a |= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 | *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a |= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a |= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 | *b as u8) as char,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `|=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::XorEq => match (&mut lhs, &rhs) {
+            TokenType::XorEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a ^= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 ^ *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a ^= *b as i64,
                 (Value::Int(a), Value::Char(b)) => *a ^= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 ^ *b as u8) as char,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `^=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::PlusEq => match (&mut lhs, &rhs) {
+            TokenType::PlusEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a += *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 + *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a += *b as i64,
@@ -754,14 +683,9 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a += *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a += (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a + *b as f64,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `+=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::MinusEq => match (&mut lhs, &rhs) {
+            TokenType::MinusEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a -= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 - *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a -= *b as i64,
@@ -771,14 +695,9 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a -= *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a -= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a - *b as f64,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `-=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::TimesEq => match (&mut lhs, &rhs) {
+            TokenType::TimesEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a *= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 * *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a *= *b as i64,
@@ -788,14 +707,9 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a *= *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a *= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `*=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::DivEq => match (&mut lhs, &rhs) {
+            TokenType::DivEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a /= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 / *b as u8) as char,
                 (Value::Int(a), Value::Char(b)) => *a /= *b as i64,
@@ -803,50 +717,30 @@ impl Evaluator {
                 (Value::Float(a), Value::Float(b)) => *a /= *b,
                 (Value::Float(a), Value::Char(b)) => *a /= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `/=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::ModEq => match (&mut lhs, &rhs) {
+            TokenType::ModEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a %= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 % *b as u8) as char,
                 (Value::Int(a), Value::Char(b)) => *a %= *b as i64,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 % *b as u8) as char,
                 (Value::Float(a), Value::Char(b)) => *a %= (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `%=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::BitShiftRightEq => match (&mut lhs, &rhs) {
+            TokenType::BitShiftRightEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a >>= *b,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 >> *b as u8) as char,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `>>=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
-            TokenType::BitShiftLeftEq => match (&mut lhs, &rhs) {
+            TokenType::BitShiftLeftEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a <<= *b,
                 (Value::Char(a), Value::Int(b)) => *a = ((*a as u8) << *b as u8) as char,
-                _ => {
-                    return Err(format!(
-                        "{}: Cannot `<<=` between {} and {}. This operation is not supported",
-                        expr.op.location, lhs, rhs
-                    ))
-                }
+                _ => unreachable!(),
             },
             _ => unreachable!(),
         }
-        Ok(lhs.clone())
+        Ok(self.memory[lhsidx].clone())
     }
 
     fn eval_call_expr(&mut self, expr: &CallExpr) -> Result<Value, String> {
@@ -861,34 +755,20 @@ impl Evaluator {
         let rv = Ok(match &func {
             Value::BuiltinFunc(_, f) => f(self, args),
             Value::Function(f) => {
-                if args.len() != f.argnames.len() {
-                    return Err(format!(
-                        "Trying to call function with wrong number of args. wanted {} found {}",
-                        args.len(),
-                        f.argnames.len()
-                    ));
-                }
+                assert_eq!(args.len(), f.argnames.len());
                 for it in f.argnames.iter().zip(args.iter()) {
                     let (name, arg) = it;
-                    let idx = self.alloc(arg.clone());
-                    self.insert_scope_local(name, idx);
+                    self.insert_scope_local(name, arg.clone());
                 }
                 let rv = self.eval_expr(&*f.body)?;
                 rv
             }
             Value::Lambda(l) => {
-                if args.len() != l.max_arg {
-                    return Err(format!(
-                        "Trying to call lambda with wrong number of args. wanted {} found {}",
-                        args.len(),
-                        l.max_arg
-                    ));
-                }
+                assert_eq!(args.len(), l.max_arg);
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
-                    let idx = self.alloc(arg.clone());
                     let label = format!("\\{}", arg_num + 1);
-                    self.insert_scope_local(&label, idx);
+                    self.insert_scope_local(&label, arg.clone());
                 }
                 let rv = self.eval_expr(&*l.body)?;
                 rv
@@ -900,15 +780,18 @@ impl Evaluator {
     }
 
     fn eval_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Value, String> {
+        let idx = self.eval_ref_expr_int(expr, allow_insert)?;
+        Ok(self.memory[idx].clone())
+    }
+
+    fn eval_ref_expr_int(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<usize, String> {
         use crate::lex::TokenType::*;
         match &expr.value.token_type {
             Identifier(s) => {
                 if allow_insert {
-                    let idx = self.alloc(Value::Null);
-                    self.insert_scope_local(s, idx);
-                    Ok(Value::Reference(idx, false))
+                    Ok(self.setdefault_scope_local(&s, Value::Uninitialized))
                 } else if let Some(idx) = self.lookup_scope(s) {
-                    Ok(Value::Reference(idx, false))
+                    Ok(idx)
                 } else {
                     Err(format!("{}: No such name in scope...", s))
                 }
@@ -916,11 +799,9 @@ impl Evaluator {
             LambdaArg(u) => {
                 let s = format!("\\{}", u);
                 if allow_insert {
-                    let idx = self.alloc(Value::Null);
-                    self.insert_scope_local(&s, idx);
-                    Ok(Value::Reference(idx, false))
+                    Ok(self.setdefault_scope_local(&s, Value::Uninitialized))
                 } else if let Some(idx) = self.lookup_scope(&s) {
-                    Ok(Value::Reference(idx, false))
+                    Ok(idx)
                 } else {
                     Err(format!("{}: No such name in scope...", s))
                 }
