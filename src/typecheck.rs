@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 use crate::lex;
 use crate::parser::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::mem::swap;
+use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub enum Type {
@@ -16,8 +18,16 @@ pub enum Type {
     Null,
     Nullable(Box<Type>),
     Reference(Box<Type>),
-    Function(Function, Vec<Signature>, Vec<HashMap<String, usize>>), //Note all signatures must have the same number of args
-    Lambda(Lambda, Vec<Signature>, Vec<HashMap<String, usize>>),
+    Function(
+        Function,
+        Vec<Signature>,
+        Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    ), //Note all signatures must have the same number of args
+    Lambda(
+        Lambda,
+        Vec<Signature>,
+        Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    ),
     Unininitialized,
 }
 
@@ -41,6 +51,12 @@ impl Display for Type {
             Unininitialized => f.write_str("Unininitialized"),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeChecker {
+    scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    memory: Vec<Type>,
 }
 
 #[derive(Clone, Debug)]
@@ -68,12 +84,6 @@ impl Signature {
             false
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct TypeChecker {
-    scopes: Vec<HashMap<String, usize>>,
-    memory: Vec<Type>,
 }
 
 fn unop_err(operator: &lex::Token, typ: &Type) -> String {
@@ -116,7 +126,7 @@ impl TypeChecker {
         let mut builtins = HashMap::new();
         builtins.insert(String::from("print"), tc.alloc(Type::BuiltinFunc));
         builtins.insert(String::from("prints"), tc.alloc(Type::BuiltinFunc));
-        tc.scopes.push(builtins);
+        tc.scopes.push(Rc::new(RefCell::new(builtins)));
         tc
     }
 
@@ -126,7 +136,7 @@ impl TypeChecker {
     }
 
     fn openscope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
     }
 
     fn closescope(&mut self) {
@@ -135,7 +145,7 @@ impl TypeChecker {
 
     fn lookup_scope(&mut self, key: &str) -> Option<usize> {
         for scope in self.scopes.iter_mut().rev() {
-            if let Some(val) = scope.get(key) {
+            if let Some(val) = scope.borrow().get(key) {
                 return Some(*val);
             }
         }
@@ -143,7 +153,12 @@ impl TypeChecker {
     }
 
     fn lookup_scope_local(&self, key: &str) -> Option<usize> {
-        self.scopes.last().unwrap().get(key).and_then(|u| Some(*u))
+        self.scopes
+            .last()
+            .unwrap()
+            .borrow()
+            .get(key)
+            .and_then(|u| Some(*u))
     }
 
     fn setdefault_scope_local(&mut self, key: &str, default: Type) -> usize {
@@ -156,7 +171,11 @@ impl TypeChecker {
 
     fn insert_scope_local(&mut self, key: &str, val: Type) {
         let idx = self.alloc(val);
-        self.scopes.last_mut().unwrap().insert(key.to_string(), idx);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .borrow_mut()
+            .insert(key.to_string(), idx);
     }
 
     pub fn typecheck(&mut self, tree: &ParseTree) -> Result<Type, String> {
@@ -398,13 +417,9 @@ impl TypeChecker {
     }
 
     fn typecheck_function_def(&mut self, f: &Function) -> Result<Type, String> {
-        let mut rv = Type::Function(f.clone(), Vec::new(), self.scopes.clone());
+        let rv = Type::Function(f.clone(), Vec::new(), self.scopes.clone());
         if f.name.is_some() {
             self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
-        }
-        match &mut rv {
-            Type::Function(_, _, s) => *s = self.scopes.clone(),
-            _ => unreachable!(),
         }
         Ok(rv)
     }

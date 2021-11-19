@@ -1,5 +1,6 @@
 use crate::builtins::*;
 use crate::parser::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::mem::swap;
@@ -15,10 +16,16 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(u8),
-    Function(Function, Vec<HashMap<String, usize>>),
-    Lambda(Lambda, Vec<HashMap<String, usize>>),
+    Function(Function, Vec<Rc<RefCell<HashMap<String, usize>>>>),
+    Lambda(Lambda, Vec<Rc<RefCell<HashMap<String, usize>>>>),
     Uninitialized,
     Null,
+}
+
+#[derive(Clone, Debug)]
+pub struct Evaluator {
+    scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    pub memory: Vec<Value>,
 }
 
 impl Debug for Value {
@@ -69,12 +76,6 @@ impl Display for Value {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Evaluator {
-    scopes: Vec<HashMap<String, usize>>,
-    pub memory: Vec<Value>,
-}
-
 impl Evaluator {
     pub fn new() -> Evaluator {
         let mut eval = Evaluator {
@@ -89,7 +90,7 @@ impl Evaluator {
         let idx = eval.alloc(Value::BuiltinFunc("prints", copper_print_no_newline));
         builtins.insert(String::from("prints"), idx);
 
-        eval.scopes.push(builtins);
+        eval.scopes.push(Rc::new(RefCell::new(builtins)));
 
         eval
     }
@@ -100,7 +101,7 @@ impl Evaluator {
     }
 
     fn openscope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
     }
 
     fn closescope(&mut self) {
@@ -109,7 +110,7 @@ impl Evaluator {
 
     fn lookup_scope(&mut self, key: &str) -> Option<usize> {
         for scope in self.scopes.iter_mut().rev() {
-            if let Some(val) = scope.get(key) {
+            if let Some(val) = scope.borrow().get(key) {
                 return Some(*val);
             }
         }
@@ -117,7 +118,12 @@ impl Evaluator {
     }
 
     fn lookup_scope_local(&self, key: &str) -> Option<usize> {
-        self.scopes.last().unwrap().get(key).and_then(|u| Some(*u))
+        self.scopes
+            .last()
+            .unwrap()
+            .borrow()
+            .get(key)
+            .and_then(|u| Some(*u))
     }
 
     fn setdefault_scope_local(&mut self, key: &str, default: Value) -> usize {
@@ -130,7 +136,11 @@ impl Evaluator {
 
     fn insert_scope_local(&mut self, key: &str, val: Value) {
         let idx = self.alloc(val);
-        self.scopes.last_mut().unwrap().insert(key.to_string(), idx);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .borrow_mut()
+            .insert(key.to_string(), idx);
     }
 
     pub fn deref(&mut self, val: Value) -> Value {
@@ -623,12 +633,11 @@ impl Evaluator {
     }
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
-        let idx = self.alloc(Value::Uninitialized);
+        let idx = self.alloc(Value::Function(f.clone(), self.scopes.clone()));
         let rv = Value::Reference(idx, false);
         if f.name.is_some() {
             self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
         }
-        self.memory[idx] = Value::Function(f.clone(), self.scopes.clone());
         Ok(rv)
     }
 
