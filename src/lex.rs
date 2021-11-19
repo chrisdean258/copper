@@ -443,7 +443,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                                 _ => (),
                             }
                         }
-                        continue
+                        continue;
                     }
 
                     _ => ErrChar(self.chars.next()?),

@@ -2,6 +2,7 @@ use crate::builtins::*;
 use crate::parser::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::mem::swap;
 use std::rc::Rc;
 
 #[allow(dead_code)]
@@ -14,8 +15,8 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(u8),
-    Function(Function),
-    Lambda(Lambda),
+    Function(Function, Vec<HashMap<String, usize>>),
+    Lambda(Lambda, Vec<HashMap<String, usize>>),
     Uninitialized,
     Null,
 }
@@ -25,25 +26,24 @@ impl Debug for Value {
         use Value::*;
         f.write_str("Value::")?;
         match self {
-            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name))?,
-            Str(s) => f.write_fmt(format_args!("Str({:?})", s))?,
-            Int(i) => f.write_fmt(format_args!("Int({:?})", i))?,
-            Float(d) => f.write_fmt(format_args!("Float({:?})", d))?,
-            Char(c) => f.write_fmt(format_args!("Char({:?})", c))?,
+            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name)),
+            Str(s) => f.write_fmt(format_args!("Str({:})", s)),
+            Int(i) => f.write_fmt(format_args!("Int({:})", i)),
+            Float(d) => f.write_fmt(format_args!("Float({:})", d)),
+            Char(c) => f.write_fmt(format_args!("Char({:})", c)),
             Reference(u, b) => f.write_fmt(format_args!(
                 "Reference({:x}{})",
                 u,
                 if *b { "" } else { ", nonnullable" }
-            ))?,
-            Bool(b) => f.write_fmt(format_args!("Bool({})", b))?,
-            Function(func) => {
-                f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
+            )),
+            Bool(b) => f.write_fmt(format_args!("Bool({})", b)),
+            Function(func, _) => {
+                f.write_fmt(format_args!("function({})", func.argnames.join(", "),))
             }
-            Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
-            Null => f.write_str("Null")?,
-            Uninitialized => f.write_str("Uninitialized")?,
-        };
-        Ok(())
+            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg)),
+            Null => f.write_str("Null"),
+            Uninitialized => f.write_str("Uninitialized"),
+        }
     }
 }
 
@@ -58,10 +58,10 @@ impl Display for Value {
             Char(c) => f.write_fmt(format_args!("{}", c))?,
             Reference(u, _) => f.write_fmt(format_args!("Reference(0x{:x})", u))?,
             Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" }))?,
-            Function(func) => {
+            Function(func, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
-            Lambda(lambda) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
+            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
             Null => f.write_str("null")?,
             Uninitialized => f.write_str("Uninitialized")?,
         };
@@ -69,10 +69,10 @@ impl Display for Value {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Evaluator {
     scopes: Vec<HashMap<String, usize>>,
     pub memory: Vec<Value>,
-    // stack: Vec<Value>, // May use this later
 }
 
 impl Evaluator {
@@ -163,32 +163,32 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, tree: &ParseTree) -> Result<Value, String> {
+    pub fn eval(&mut self, tree: &mut ParseTree) -> Result<Value, String> {
         let mut rv = Value::Null;
-        for statement in tree.statements.iter() {
-            rv = self.eval_statement(&statement)?;
+        for statement in tree.statements.iter_mut() {
+            rv = self.eval_statement(statement)?;
         }
         Ok(self.deref(rv))
     }
 
-    fn eval_statement(&mut self, statement: &Statement) -> Result<Value, String> {
+    fn eval_statement(&mut self, statement: &mut Statement) -> Result<Value, String> {
         use crate::parser::Statement::*;
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
         })
     }
 
-    fn eval_if(&mut self, i: &If) -> Result<Value, String> {
+    fn eval_if(&mut self, i: &mut If) -> Result<Value, String> {
         let mut ran_first = self.eval_if_internal(i)?;
 
-        for ai in &i.and_bodies {
-            if let Some(rv) = self.eval_if_internal(&ai)? {
+        for ai in i.and_bodies.iter_mut() {
+            if let Some(rv) = self.eval_if_internal(ai)? {
                 ran_first = Some(rv);
             }
         }
 
         if ran_first.is_none() && i.else_body.is_some() {
-            ran_first = Some(self.eval_expr(i.else_body.as_ref().unwrap())?);
+            ran_first = Some(self.eval_expr(i.else_body.as_mut().unwrap())?);
         }
 
         match ran_first {
@@ -197,11 +197,11 @@ impl Evaluator {
         }
     }
 
-    fn eval_if_internal(&mut self, i: &If) -> Result<Option<Value>, String> {
-        let cond = self.eval_expr(&i.condition)?;
+    fn eval_if_internal(&mut self, i: &mut If) -> Result<Option<Value>, String> {
+        let cond = self.eval_expr(&mut i.condition)?;
         let derefed = self.deref(cond);
         Ok(match derefed {
-            Value::Bool(1) => Some(self.eval_expr(&*i.body)?),
+            Value::Bool(1) => Some(self.eval_expr(i.body.as_mut())?),
             Value::Bool(0) => None,
             _ => {
                 return Err(format!(
@@ -212,9 +212,9 @@ impl Evaluator {
         })
     }
 
-    fn eval_while(&mut self, w: &While) -> Result<Value, String> {
+    fn eval_while(&mut self, w: &mut While) -> Result<Value, String> {
         loop {
-            let cond = self.eval_expr(&*w.condition)?;
+            let cond = self.eval_expr(w.condition.as_mut())?;
             let derefed = self.deref(cond);
             match derefed {
                 Value::Bool(1) => (),
@@ -226,24 +226,24 @@ impl Evaluator {
                     ))
                 }
             }
-            self.eval_expr(&w.body)?;
+            self.eval_expr(&mut w.body)?;
         }
         Ok(Value::Null)
     }
 
-    fn eval_block(&mut self, b: &BlockExpr) -> Result<Value, String> {
+    fn eval_block(&mut self, b: &mut BlockExpr) -> Result<Value, String> {
         let mut rv = Value::Null;
-        for statement in b.statements.iter() {
-            rv = self.eval_statement(&statement)?;
+        for statement in b.statements.iter_mut() {
+            rv = self.eval_statement(statement)?;
         }
         Ok(rv)
     }
 
-    fn eval_binop(&mut self, binop: &BinOp) -> Result<Value, String> {
+    fn eval_binop(&mut self, binop: &mut BinOp) -> Result<Value, String> {
         use crate::lex::TokenType::*;
 
-        let mut lhs = self.eval_expr(&*binop.lhs)?;
-        let mut rhs = self.eval_expr(&*binop.rhs)?;
+        let mut lhs = self.eval_expr(binop.lhs.as_mut())?;
+        let mut rhs = self.eval_expr(binop.rhs.as_mut())?;
         lhs = self.deref(lhs);
         rhs = self.deref(rhs);
 
@@ -494,12 +494,12 @@ impl Evaluator {
         })
     }
 
-    fn eval_expr(&mut self, expr: &Expression) -> Result<Value, String> {
+    fn eval_expr(&mut self, expr: &mut Expression) -> Result<Value, String> {
         use crate::parser::Expression::*;
         match expr {
-            CallExpr(callexpr) => self.eval_call_expr(&callexpr),
-            RefExpr(refexpr) => self.eval_ref_expr(&refexpr, false),
-            Immediate(immediate) => self.eval_immediate(&immediate),
+            CallExpr(callexpr) => self.eval_call_expr(callexpr),
+            RefExpr(refexpr) => self.eval_ref_expr(refexpr, false),
+            Immediate(immediate) => self.eval_immediate(immediate),
             BlockExpr(blockexpr) => self.eval_block(blockexpr),
             BinOp(binop) => self.eval_binop(binop),
             AssignExpr(assignexpr) => self.eval_assign(assignexpr),
@@ -623,21 +623,22 @@ impl Evaluator {
     }
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
-        let idx = self.alloc(Value::Function(f.clone()));
+        let idx = self.alloc(Value::Uninitialized);
         let rv = Value::Reference(idx, false);
         if f.name.is_some() {
             self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
         }
+        self.memory[idx] = Value::Function(f.clone(), self.scopes.clone());
         Ok(rv)
     }
 
     fn eval_lambda_def(&mut self, f: &Lambda) -> Result<Value, String> {
-        Ok(Value::Lambda(f.clone()))
+        Ok(Value::Lambda(f.clone(), self.scopes.clone()))
     }
 
-    fn eval_assign(&mut self, expr: &AssignExpr) -> Result<Value, String> {
+    fn eval_assign(&mut self, expr: &mut AssignExpr) -> Result<Value, String> {
         use crate::lex::TokenType;
-        let rhs = self.eval_expr(&*expr.rhs)?;
+        let rhs = self.eval_expr(expr.rhs.as_mut())?;
         let rhs = match rhs {
             Value::Reference(u, _) => self.memory[u].clone(),
             _ => rhs,
@@ -743,37 +744,46 @@ impl Evaluator {
         Ok(self.memory[lhsidx].clone())
     }
 
-    fn eval_call_expr(&mut self, expr: &CallExpr) -> Result<Value, String> {
-        let func = self.eval_expr(&expr.function)?;
-        let func = self.deref(func);
+    fn eval_call_expr(&mut self, expr: &mut CallExpr) -> Result<Value, String> {
+        let func = self.eval_expr(expr.function.as_mut())?;
+        let mut func = self.deref(func);
         let mut args = Vec::new();
-        for arg in expr.args.iter() {
+        for arg in expr.args.iter_mut() {
             args.push(self.eval_expr(arg)?);
         }
 
         self.openscope();
-        let rv = Ok(match &func {
+        let rv = Ok(match &mut func {
             Value::BuiltinFunc(_, f) => f(self, args),
-            Value::Function(f) => {
+            Value::Function(f, scopes) => {
                 assert_eq!(args.len(), f.argnames.len());
+                let mut tmp = scopes.clone();
+                swap(&mut self.scopes, &mut tmp);
+                self.openscope();
                 for it in f.argnames.iter().zip(args.iter()) {
                     let (name, arg) = it;
                     self.insert_scope_local(name, arg.clone());
                 }
-                let rv = self.eval_expr(&*f.body)?;
+                let rv = self.eval_expr(f.body.as_mut())?;
+                swap(&mut self.scopes, &mut tmp);
                 rv
             }
-            Value::Lambda(l) => {
+            Value::Lambda(l, scopes) => {
                 assert_eq!(args.len(), l.max_arg + 1);
+                let mut tmp = scopes.clone();
+                swap(&mut self.scopes, &mut tmp);
+                self.openscope();
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
                     let label = format!("\\{}", arg_num);
                     self.insert_scope_local(&label, arg.clone());
                 }
-                let rv = self.eval_expr(&*l.body)?;
+                let rv = self.eval_expr(l.body.as_mut())?;
+                self.closescope();
+                swap(&mut self.scopes, &mut tmp);
                 rv
             }
-            f => return Err(format!("Tried to call {:#?}", f)),
+            _ => unreachable!(),
         });
         self.closescope();
         rv

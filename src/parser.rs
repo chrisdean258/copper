@@ -28,25 +28,6 @@ pub enum Expression {
     Lambda(Lambda),
 }
 
-// impl Expression {
-// pub fn location(&self) -> Location {
-// match self {
-// Expression::While(w) => w.location.clone(),
-// Expression::If(i) => i.location.clone(),
-// Expression::CallExpr(c) => c.location.clone(),
-// Expression::RefExpr(r) => r.value.location.clone(),
-// Expression::Immediate(i) => i.value.location.clone(),
-// Expression::BlockExpr(b) => b.location.clone(),
-// Expression::BinOp(b) => b.op.location.clone(),
-// Expression::PreUnOp(u) => u.op.location.clone(),
-// Expression::PostUnOp(u) => u.op.location.clone(),
-// Expression::AssignExpr(a) => a.op.location.clone(),
-// Expression::Function(f) => f.location.clone(),
-// Expression::Lambda(l) => l.location.clone(),
-// }
-// }
-// }
-
 #[derive(Debug, Clone)]
 pub struct ParseTree {
     pub statements: Vec<Statement>,

@@ -2,6 +2,8 @@
 use crate::lex;
 use crate::parser::*;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
+use std::mem::swap;
 
 #[derive(Clone, Debug)]
 pub enum Type {
@@ -11,13 +13,34 @@ pub enum Type {
     Float,
     Char,
     Bool,
-    Reference(Box<Type>),
-    Function(Function, Vec<Signature>), //Note all signatures must have the same number of args
-    Lambda(Lambda, Vec<Signature>),
     Null,
     Nullable(Box<Type>),
-    Class,
+    Reference(Box<Type>),
+    Function(Function, Vec<Signature>, Vec<HashMap<String, usize>>), //Note all signatures must have the same number of args
+    Lambda(Lambda, Vec<Signature>, Vec<HashMap<String, usize>>),
     Unininitialized,
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        use Type::*;
+        match self {
+            BuiltinFunc => f.write_str("BuiltinFunc"),
+            Str => f.write_str("Str"),
+            Int => f.write_str("Int"),
+            Float => f.write_str("Float"),
+            Char => f.write_str("Char"),
+            Bool => f.write_str("Bool"),
+            Null => f.write_str("Null"),
+            Nullable(t) => f.write_fmt(format_args!("Nullable({})", t.as_ref())),
+            Reference(t) => f.write_fmt(format_args!("Reference({})", t.as_ref())),
+            Function(func, _, _) => {
+                f.write_fmt(format_args!("Function({})", func.argnames.join(", "),))
+            }
+            Lambda(lambda, _, _) => f.write_fmt(format_args!("Lambda(args={})", lambda.max_arg)),
+            Unininitialized => f.write_str("Unininitialized"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -47,6 +70,7 @@ impl Signature {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TypeChecker {
     scopes: Vec<HashMap<String, usize>>,
     memory: Vec<Type>,
@@ -54,14 +78,14 @@ pub struct TypeChecker {
 
 fn unop_err(operator: &lex::Token, typ: &Type) -> String {
     format!(
-        "{}: Cannot apply operator `{}` to type {:?}",
+        "{}: Cannot apply operator `{}` to type `{}`",
         operator.location, operator.token_type, typ
     )
 }
 
 fn binop_err(operator: &lex::Token, ltyp: &Type, rtyp: &Type) -> String {
     format!(
-        "{}: Cannot apply operator `{}` to types {:?} and {:?}",
+        "{}: Cannot apply operator `{}` to types `{}` and `{}`",
         operator.location, operator.token_type, ltyp, rtyp
     )
 }
@@ -82,31 +106,6 @@ fn sig_partial_match(s1: &Vec<Signature>, s2: &Vec<Signature>) -> bool {
     }
     false
 }
-
-// fn same_type(t1: &Type, t2: &Type) -> bool {
-// use std::mem::discriminant as disc;
-// use Type::*;
-// let t1 = match t1 {
-// Reference(t) => t,
-// _ => t1,
-// };
-
-// let t2 = match t2 {
-// Reference(t) => t,
-// _ => t2,
-// };
-// let (t1, t2) = match (t1, t2) {
-// (Function(_, sigs1), Lambda(_, sigs2)) => return sig_partial_match(sigs1, sigs2),
-// (Lambda(_, sigs1), Function(_, sigs2)) => return sig_partial_match(sigs1, sigs2),
-// (Function(_, sigs1), Function(_, sigs2)) => return sig_partial_match(sigs1, sigs2),
-// (Lambda(_, sigs1), Lambda(_, sigs2)) => return sig_partial_match(sigs1, sigs2),
-// (Nullable(a), Nullable(b)) => a, &*b),
-// (Reference(a), b) => (&*a, b),
-// (a, Reference(b)) => (a, &*b),
-// _ => (),
-// };
-// disc(t1) == disc(t2)
-// }
 
 impl TypeChecker {
     pub fn new() -> TypeChecker {
@@ -399,15 +398,19 @@ impl TypeChecker {
     }
 
     fn typecheck_function_def(&mut self, f: &Function) -> Result<Type, String> {
-        let rv = Type::Function(f.clone(), Vec::new());
+        let mut rv = Type::Function(f.clone(), Vec::new(), self.scopes.clone());
         if f.name.is_some() {
             self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
+        }
+        match &mut rv {
+            Type::Function(_, _, s) => *s = self.scopes.clone(),
+            _ => unreachable!(),
         }
         Ok(rv)
     }
 
     fn typecheck_lambda_def(&mut self, f: &Lambda) -> Result<Type, String> {
-        Ok(Type::Lambda(f.clone(), Vec::new()))
+        Ok(Type::Lambda(f.clone(), Vec::new(), self.scopes.clone()))
     }
 
     fn typecheck_assignment(
@@ -440,7 +443,7 @@ impl TypeChecker {
             return Ok(olhs);
         }
         Err(format!(
-            "{}: Cannot assign type {:?} = type {:?}",
+            "{}: Cannot assign type {} = type {}",
             expr.op.location, olhs, rhs
         ))
     }
@@ -521,13 +524,13 @@ impl TypeChecker {
         self.openscope();
         let rv = Ok(match &mut func {
             Type::BuiltinFunc => Type::Null,
-            Type::Function(f, sigs) => {
+            Type::Function(f, sigs, scopes) => {
                 if args.len() != f.argnames.len() {
                     return Err(format!(
                         "{}: Trying to call function with wrong number of args. wanted {} found {}",
-                        f.location,
+                        expr.location,
+                        f.argnames.len(),
                         args.len(),
-                        f.argnames.len()
                     ));
                 }
                 // we have the types of all the args. We should check against known signatures
@@ -536,24 +539,29 @@ impl TypeChecker {
                         return Ok(*sig.out.clone());
                     }
                 }
+                let mut tmp = scopes.clone();
+                swap(&mut self.scopes, &mut tmp);
+                self.openscope();
                 for it in f.argnames.iter().zip(args.iter()) {
                     let (name, arg) = it;
                     self.insert_scope_local(name, arg.clone());
                 }
                 let rv = self.typecheck_expr(&*f.body)?;
+                self.closescope();
+                swap(&mut self.scopes, &mut tmp);
                 sigs.push(Signature {
                     ins: args,
                     out: Box::new(rv.clone()),
                 });
                 rv
             }
-            Type::Lambda(l, sigs) => {
+            Type::Lambda(l, sigs, scopes) => {
                 if args.len() != l.max_arg + 1 {
                     return Err(format!(
                         "{}: Trying to call lambda with wrong number of args. wanted {} found {}",
-                        l.location,
+                        expr.location,
+                        l.max_arg + 1,
                         args.len(),
-                        l.max_arg
                     ));
                 }
                 for sig in sigs.iter() {
@@ -561,12 +569,17 @@ impl TypeChecker {
                         return Ok(*sig.out.clone());
                     }
                 }
+                let mut tmp = scopes.clone();
+                swap(&mut self.scopes, &mut tmp);
+                self.openscope();
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
                     let label = format!("\\{}", arg_num);
                     self.insert_scope_local(&label, arg.clone());
                 }
                 let rv = self.typecheck_expr(&*l.body)?;
+                self.closescope();
+                swap(&mut self.scopes, &mut tmp);
                 sigs.push(Signature {
                     ins: args,
                     out: Box::new(rv.clone()),

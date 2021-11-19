@@ -33,7 +33,7 @@ fn repl() {
                 let lexer = lex::Lexer::new_with_lineno("<stdin>", vec![line].into_iter(), lineno);
                 lineno += 1;
                 let parser = parser::Parser::new(lexer);
-                let tree = match parser.parse() {
+                let mut tree = match parser.parse() {
                     Ok(t) => t,
                     Err(s) => {
                         println!("{}", s);
@@ -44,7 +44,7 @@ fn repl() {
                     Ok(_) => (),
                     Err(s) => println!("{}", s),
                 }
-                let val = evaluator.eval(&tree);
+                let val = evaluator.eval(&mut tree);
                 match val {
                     Ok(eval::Value::Null) => (),
                     Ok(t) => println!("{}", t),
@@ -68,12 +68,12 @@ fn eval_file(filename: &str) {
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
     let lexer = lex::Lexer::new(&filename, &mut lines);
     let parser = parser::Parser::new(lexer);
-    let tree = parser.parse().unwrap();
+    let mut tree = parser.parse().unwrap();
     let mut typechecker = typecheck::TypeChecker::new();
     typechecker.typecheck(&tree).unwrap();
 
     let mut evaluator = eval::Evaluator::new();
-    evaluator.eval(&tree).unwrap();
+    evaluator.eval(&mut tree).unwrap();
 }
 
 fn read_lines<P>(filename: &P) -> io::Lines<io::BufReader<File>>
