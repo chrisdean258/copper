@@ -436,6 +436,15 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                         _ => Div,
                     },
                     '~' => self.eat_ret(BitNot),
+                    '#' => {
+                        while let Some(c) = self.chars.next() {
+                            match c {
+                                '\n' => break,
+                                _ => (),
+                            }
+                        }
+                        continue
+                    }
 
                     _ => ErrChar(self.chars.next()?),
                 },

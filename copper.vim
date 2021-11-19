@@ -53,6 +53,7 @@ syn match copperNumber '[-+]\?\d\+\(\.\d\+\)\?'
 syn match copperString '"\([^"\\]\|\\.\)*"'
 syn match copperChar '\'\([^"\\]\|\\.\)\''
 syn match copperLambdaArg '\\\d\+'
+syn match copperComment '#.*$'
 
 syn match copperFunction '[_a-zA-Z][_a-zA-z0-9]*\s*\ze('
 
@@ -69,6 +70,7 @@ hi def link copperOperator Operator
 hi def link copperNull Constant
 hi def link copperLambdaArg PreProc
 hi def link copperFunction Function
+hi def link copperComment Comment
 
 
 
