@@ -9,6 +9,7 @@ pub struct Parser<T: Iterator<Item = String>> {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
+    GlobalDecl(GlobalDecl),
 }
 
 #[allow(dead_code)]
@@ -26,6 +27,11 @@ pub enum Expression {
     AssignExpr(AssignExpr),
     Function(Function),
     Lambda(Lambda),
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalDecl {
+    pub token: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -208,11 +214,25 @@ impl ParseTree {
     ) -> Result<Statement, String> {
         let token = lexer.peek().unwrap();
         let rv = Ok(match &token.token_type {
+            TokenType::Global => self.parse_global_decl(lexer)?,
             _ => Statement::Expr(self.parse_expr(lexer)?),
         });
         // eat all the semicolons
         while if_expect!(lexer, TokenType::Semicolon) {}
         rv
+    }
+
+    fn parse_global_decl<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Statement, String> {
+        expect!(lexer, TokenType::Global);
+        let token = lexer.next().expect("Unexpected EOF");
+        match &token.token_type {
+            TokenType::Identifier(_) => (),
+            _ => return Err(unexpected(&token)),
+        }
+        Ok(Statement::GlobalDecl(GlobalDecl { token }))
     }
 
     fn parse_block<T: Iterator<Item = String>>(

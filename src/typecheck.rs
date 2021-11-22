@@ -100,6 +100,10 @@ fn binop_err(operator: &lex::Token, ltyp: &Type, rtyp: &Type) -> String {
     )
 }
 
+fn scope_error(id: &str, token: &lex::Token) -> String {
+    format!("{}: No such name in scope `{}`", token.location, id)
+}
+
 fn sig_partial_match(s1: &Vec<Signature>, s2: &Vec<Signature>) -> bool {
     if s1.len() == 0 || s2.len() == 0 {
         return true;
@@ -189,7 +193,26 @@ impl TypeChecker {
     fn typecheck_statement(&mut self, statement: &Statement) -> Result<Type, String> {
         Ok(match statement {
             Statement::Expr(expr) => self.typecheck_expr(expr)?,
+            Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd)?,
         })
+    }
+
+    fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<Type, String> {
+        use crate::lex::TokenType;
+        let id = match &gd.token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => unreachable!(),
+        };
+
+        let idx = match self.lookup_scope(id) {
+            Some(i) => i,
+            None => return Err(scope_error(id, &gd.token)),
+        };
+
+        let rv = self.memory[idx].clone();
+
+        self.insert_scope_local(id, rv.clone());
+        Ok(rv)
     }
 
     fn typecheck_if(&mut self, i: &If) -> Result<Type, String> {
@@ -473,9 +496,9 @@ impl TypeChecker {
             t => match rhs {
                 Type::Nullable(_) => {
                     return Err(format!(
-                        "{}: Cannot assign type {} = type {}. Try nonnulling the right side of the expression with `*`",
-                        expr.op.location, olhs, rhs
-                    ));
+                            "{}: Cannot assign type {} = type {}. Try nonnulling the right side of the expression with `*`",
+                            expr.op.location, olhs, rhs
+                            ));
                 }
                 _ => t.clone(),
             },
@@ -651,10 +674,7 @@ impl TypeChecker {
                 } else if let Some(typ) = self.lookup_scope(s) {
                     Ok(typ)
                 } else {
-                    Err(format!(
-                        "{}: No such name in scope `{}`",
-                        expr.value.location, s
-                    ))
+                    Err(scope_error(&s, &expr.value))
                 }
             }
             LambdaArg(u) => {
@@ -664,10 +684,7 @@ impl TypeChecker {
                 } else if let Some(typ) = self.lookup_scope(&s) {
                     Ok(typ)
                 } else {
-                    Err(format!(
-                        "{}: No such name in scope `{}`",
-                        expr.value.location, s
-                    ))
+                    Err(scope_error(&s, &expr.value))
                 }
             }
             _ => Err("Unexpected...".into()),

@@ -48,9 +48,14 @@ Currently only some basic types are supported:
 - Char
 - String
 - Null
-- Nullable<T> where T is one of the above
+- Nullable&lt;T&gt; where T is one of the above
 
 A nullable value is created when on creation a variable is assigned a null value then later assigned another non null value
 
 When it comes to types, you cannot change type except for a Null type promoting to a Nullable type
+
+## Global Variables
+
+In a function specify `global name` to bring the global variable name into the local scope
+
 

@@ -129,13 +129,13 @@ impl Evaluator {
     fn setdefault_scope_local(&mut self, key: &str, default: Value) -> usize {
         if let Some(_) = self.lookup_scope_local(key) {
         } else {
-            self.insert_scope_local(key, default.clone());
+            let idx = self.alloc(default.clone());
+            self.insert_scope_local(key, idx);
         }
         self.lookup_scope_local(key).unwrap()
     }
 
-    fn insert_scope_local(&mut self, key: &str, val: Value) {
-        let idx = self.alloc(val);
+    fn insert_scope_local(&mut self, key: &str, idx: usize) {
         self.scopes
             .last_mut()
             .unwrap()
@@ -185,7 +185,24 @@ impl Evaluator {
         use crate::parser::Statement::*;
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
+            GlobalDecl(gd) => self.eval_global_decl(gd)?,
         })
+    }
+
+    fn eval_global_decl(&mut self, gd: &GlobalDecl) -> Result<Value, String> {
+        use crate::lex::TokenType;
+        let id = match &gd.token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => unreachable!(),
+        };
+
+        let idx = match self.lookup_scope(id) {
+            Some(i) => i,
+            None => unreachable!(),
+        };
+        let rv = Value::Reference(idx, false);
+        self.insert_scope_local(id, idx);
+        Ok(rv)
     }
 
     fn eval_if(&mut self, i: &mut If) -> Result<Value, String> {
@@ -646,7 +663,8 @@ impl Evaluator {
         let idx = self.alloc(Value::Function(f.clone(), self.scopes.clone()));
         let rv = Value::Reference(idx, false);
         if f.name.is_some() {
-            self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
+            let idx = self.alloc(rv.clone());
+            self.insert_scope_local(f.name.as_ref().unwrap(), idx);
         }
         Ok(rv)
     }
@@ -663,7 +681,7 @@ impl Evaluator {
             _ => rhs,
         };
 
-        let lhsidx = self.eval_ref_expr_int(&*expr.lhs, expr.allow_decl)?;
+        let lhsidx = self.eval_ref_expr_int(expr.lhs.as_ref(), expr.allow_decl)?;
 
         match &expr.op.token_type {
             TokenType::Equal => {
@@ -781,7 +799,8 @@ impl Evaluator {
                 self.openscope();
                 for it in f.argnames.iter().zip(args.iter()) {
                     let (name, arg) = it;
-                    self.insert_scope_local(name, arg.clone());
+                    let idx = self.alloc(arg.clone());
+                    self.insert_scope_local(name, idx);
                 }
                 let rv = self.eval_expr(f.body.as_mut())?;
                 swap(&mut self.scopes, &mut tmp);
@@ -795,7 +814,8 @@ impl Evaluator {
                 for it in args.iter().enumerate() {
                     let (arg_num, arg) = it;
                     let label = format!("\\{}", arg_num);
-                    self.insert_scope_local(&label, arg.clone());
+                    let idx = self.alloc(arg.clone());
+                    self.insert_scope_local(&label, idx);
                 }
                 let rv = self.eval_expr(l.body.as_mut())?;
                 self.closescope();
