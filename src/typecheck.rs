@@ -301,7 +301,20 @@ impl TypeChecker {
                 (Type::Char, Type::Int) => Type::Int,
                 (a, b) => return Err(binop_err(&binop.op, &a, &b)),
             },
-            CmpEq | CmpNotEq | CmpGE | CmpGT | CmpLE | CmpLT => match (lhs, rhs) {
+            CmpEq | CmpNotEq => match (lhs, rhs) {
+                (Type::Str, Type::Str) => Type::Bool,
+                (Type::Int, Type::Int) => Type::Bool,
+                (Type::Bool, Type::Bool) => Type::Bool,
+                (Type::Char, Type::Char) => Type::Bool,
+                (Type::Char, Type::Int) => Type::Bool,
+                (Type::Int, Type::Float) => Type::Bool,
+                (Type::Float, Type::Int) => Type::Bool,
+                (Type::Float, Type::Float) => Type::Bool,
+                (Type::Nullable(_), Type::Null) => Type::Bool,
+                (Type::Null, Type::Nullable(_)) => Type::Bool,
+                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
+            },
+            CmpGE | CmpGT | CmpLE | CmpLT => match (lhs, rhs) {
                 (Type::Str, Type::Str) => Type::Bool,
                 (Type::Int, Type::Int) => Type::Bool,
                 (Type::Bool, Type::Bool) => Type::Bool,
@@ -393,6 +406,11 @@ impl TypeChecker {
                 Type::Char => Type::Char,
                 _ => return Err(unop_err(&u.op, &rhs)),
             },
+            TokenType::Times => match rhs {
+                //nullable dereferencing
+                Type::Nullable(t) => t.as_ref().clone(),
+                _ => return Err(unop_err(&u.op, &rhs)),
+            },
             _ => unreachable!(),
         })
     }
@@ -452,7 +470,15 @@ impl TypeChecker {
                 Type::Null => return Ok(olhs),
                 _ => *t.clone(),
             },
-            _ => olhs.clone(),
+            t => match rhs {
+                Type::Nullable(_) => {
+                    return Err(format!(
+                        "{}: Cannot assign type {} = type {}. Try nonnulling the right side of the expression with `*`",
+                        expr.op.location, olhs, rhs
+                    ));
+                }
+                _ => t.clone(),
+            },
         };
         if disc(&lhs) == disc(&rhs) {
             return Ok(olhs);

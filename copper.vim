@@ -72,5 +72,3 @@ hi def link copperLambdaArg PreProc
 hi def link copperFunction Function
 hi def link copperComment Comment
 
-
-

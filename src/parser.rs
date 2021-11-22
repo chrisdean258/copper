@@ -373,6 +373,7 @@ impl ParseTree {
                 TokenType::Plus => (),
                 TokenType::Inc => (),
                 TokenType::Dec => (),
+                TokenType::Times => (),
                 _ => return self.parse_post_unary(lexer),
             }
             let token = lexer.next().unwrap();

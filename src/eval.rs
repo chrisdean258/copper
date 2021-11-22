@@ -339,6 +339,9 @@ impl Evaluator {
                 (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 == b) as u8),
                 (Value::Float(a), Value::Int(b)) => Value::Bool((a == b as f64) as u8),
                 (Value::Float(a), Value::Float(b)) => Value::Bool((a == b) as u8),
+                (Value::Null, Value::Null) => Value::Bool(1),
+                (Value::Null, _) => Value::Bool(0),
+                (_, Value::Null) => Value::Bool(0),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
@@ -356,6 +359,9 @@ impl Evaluator {
                 (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 != b) as u8),
                 (Value::Float(a), Value::Int(b)) => Value::Bool((a != b as f64) as u8),
                 (Value::Float(a), Value::Float(b)) => Value::Bool((a != b) as u8),
+                (Value::Null, Value::Null) => Value::Bool(0),
+                (Value::Null, _) => Value::Bool(1),
+                (_, Value::Null) => Value::Bool(1),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
@@ -548,6 +554,10 @@ impl Evaluator {
                 Value::Int(i) => Value::Int(i),
                 Value::Char(c) => Value::Char(c),
                 _ => unreachable!(),
+            },
+            TokenType::Times => match rhs {
+                Value::Null => return Err(format!("{}: Null value encountered", u.op.location)),
+                t => t.clone(),
             },
             TokenType::Inc => match rhs {
                 Value::Int(i) => {

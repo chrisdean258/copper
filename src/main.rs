@@ -42,7 +42,10 @@ fn repl() {
                 };
                 match typechecker.typecheck(&tree) {
                     Ok(_) => (),
-                    Err(s) => println!("{}", s),
+                    Err(s) => {
+                        println!("{}", s);
+                        continue;
+                    }
                 }
                 let val = evaluator.eval(&mut tree);
                 match val {
