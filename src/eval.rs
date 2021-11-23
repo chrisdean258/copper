@@ -47,7 +47,7 @@ impl Debug for Value {
             Function(func, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", "),))
             }
-            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg)),
+            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
             Null => f.write_str("Null"),
             Uninitialized => f.write_str("Uninitialized"),
         }
@@ -68,7 +68,7 @@ impl Display for Value {
             Function(func, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
-            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.max_arg))?,
+            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args))?,
             Null => f.write_str("null")?,
             Uninitialized => f.write_str("Uninitialized")?,
         };
@@ -807,7 +807,7 @@ impl Evaluator {
                 rv
             }
             Value::Lambda(l, scopes) => {
-                assert_eq!(args.len(), l.max_arg + 1);
+                assert_eq!(args.len(), l.num_args);
                 let mut tmp = scopes.clone();
                 swap(&mut self.scopes, &mut tmp);
                 self.openscope();

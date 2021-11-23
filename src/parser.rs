@@ -117,7 +117,7 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct Lambda {
     pub location: Location,
-    pub max_arg: usize,
+    pub num_args: usize,
     pub body: Box<Expression>,
 }
 
@@ -496,10 +496,10 @@ impl ParseTree {
         if_expect!(lexer, TokenType::Lambda); //we may or may not have started this lambda with a signifier
         self.max_arg.push(0);
         let body = self.parse_expr(lexer)?;
-        let max_arg = self.max_arg.pop().unwrap();
+        let num_args = self.max_arg.pop().unwrap();
         Ok(Expression::Lambda(Lambda {
             location,
-            max_arg,
+            num_args,
             body: Box::new(body),
         }))
     }
@@ -539,8 +539,8 @@ impl ParseTree {
                     value: lexer.next().unwrap(),
                 })),
                 TokenType::LambdaArg(a) if self.max_arg.len() > 0 => {
-                    if *a > *self.max_arg.last().unwrap() {
-                        *self.max_arg.last_mut().unwrap() = *a;
+                    if *a + 1 > *self.max_arg.last().unwrap() {
+                        *self.max_arg.last_mut().unwrap() = *a + 1;
                     }
                     Ok(Expression::RefExpr(RefExpr {
                         value: lexer.next().unwrap(),

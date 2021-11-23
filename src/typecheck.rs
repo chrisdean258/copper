@@ -47,7 +47,7 @@ impl Display for Type {
             Function(func, _, _) => {
                 f.write_fmt(format_args!("Function({})", func.argnames.join(", "),))
             }
-            Lambda(lambda, _, _) => f.write_fmt(format_args!("Lambda(args={})", lambda.max_arg)),
+            Lambda(lambda, _, _) => f.write_fmt(format_args!("Lambda(args={})", lambda.num_args)),
             Unininitialized => f.write_str("Unininitialized"),
         }
     }
@@ -620,11 +620,11 @@ impl TypeChecker {
                 rv
             }
             Type::Lambda(l, sigs, scopes) => {
-                if args.len() != l.max_arg + 1 {
+                if args.len() != l.num_args {
                     return Err(format!(
                         "{}: Trying to call lambda with wrong number of args. wanted {} found {}",
                         expr.location,
-                        l.max_arg + 1,
+                        l.num_args,
                         args.len(),
                     ));
                 }
