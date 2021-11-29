@@ -215,6 +215,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
+    // ned to augment this to prevent type switching
     fn typecheck_if(&mut self, i: &If) -> Result<Type, String> {
         let mut ran_first = self.typecheck_if_internal(i)?;
 
