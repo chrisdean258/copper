@@ -9,6 +9,7 @@ pub struct TypeSystem {
     pub conversions: Vec<Vec<usize>>,
     pub op_table: Vec<Operation>,
     pub operations: Vec<Operation>,
+    pub operations_by_name: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,27 +39,85 @@ pub struct Signature {
     output: usize,
 }
 
-macro_rules! make_operation {
-    ($ts: ident, $name: expr,  $(($($inp: expr,)* => $output:expr ))* ) => {
+/* macro_rules! make_op {
+    ($ts: ident, $name: expr, $( ($($inp: expr),*$(,)? => $output:expr )),* $(,)? ) => {
         let opcode = $ts.add_op($name);
         $(
             $ts.operations[opcode].signatures.push(Signature {
-               inputs: vec![$(*$ts.types_by_name.get($inp).unwrap(),)*],
-               output: *$ts.types_by_name.get($output).unwrap(),
+            inputs: vec![$($inp,)*],
+            output: $output,
             });
         )*
+    };
+}*/
+
+macro_rules! make_ops {
+    ($ts: ident, [$($name: expr),+ $(,)?], $( ($($inp: expr),*$(,)? => $output:expr )),* $(,)? ) => {
+        let mut opcodes = Vec::new();
+        $(
+            opcodes.push($ts.add_op($name));
+        )+
+        for opcode in opcodes {
+        $(
+            $ts.operations[opcode].signatures.push(Signature {
+               inputs: vec![$($inp,)*],
+               output: $output,
+            });
+        )*
+        }
     };
 }
 
 impl TypeSystem {
     pub fn new() -> TypeSystem {
-        TypeSystem {
+        let mut rv = TypeSystem {
             types: Vec::new(),
             types_by_name: HashMap::new(),
             conversions: Vec::new(),
             op_table: Vec::new(),
             operations: Vec::new(),
+            operations_by_name: HashMap::new(),
+        };
+        rv.init();
+        rv
+    }
+
+    pub fn init(&mut self) {
+        let float = self.basic("float");
+        let int = self.basic("int");
+        let chr = self.basic("char");
+        let bol = self.basic("bool");
+        self.add_conversion(int, float);
+        self.add_conversion(chr, int);
+        self.add_conversion(bol, chr);
+        make_ops! {self, ["+", "-", "*", "/"],
+            (bol, bol => int),
+            (chr, chr => chr),
+            (int, int => int),
+            (float, float => float),
+        };
+        make_ops! {self, ["==", "!=", ">=", "<=", ">", "<"],
+            (bol, bol => bol),
+            (chr, chr => bol),
+            (int, int => bol),
+            (float, float => bol),
         }
+        make_ops! {self, ["%", "|", "&", "^", "<<", ">>"],
+            (chr, int => chr),
+            (int, int => int),
+        }
+        make_ops! {self, ["+", "-", "++", "--"],
+            (chr => chr),
+            (int => int),
+            (float => float),
+        };
+        make_ops! {self, ["!"],
+            (bol => bol),
+        };
+        make_ops! {self, ["~"],
+            (chr => chr),
+            (int => int),
+        };
     }
 
     pub fn new_entry(&mut self, val: TypeEntry) -> usize {
@@ -114,11 +173,15 @@ impl TypeSystem {
     }
 
     pub fn add_op(&mut self, name: &str) -> usize {
+        if let Some(val) = self.operations_by_name.get(name) {
+            return *val;
+        }
         let rv = self.operations.len();
         self.operations.push(Operation {
             name: name.into(),
             signatures: Vec::new(),
         });
+        self.operations_by_name.insert(name.into(), rv);
         rv
     }
 
@@ -138,20 +201,5 @@ impl TypeSystem {
             }
         }
         None
-    }
-
-    pub fn test_make_op(&mut self) {
-        make_operation! {self, "+",
-            ("int", "int", => "int")
-            ("float", "float", => "int")
-        };
-        make_operation! {self, "-",
-            ("int", "int", => "int")
-            ("float", "float", => "int")
-        };
-        make_operation! {self, "*",
-            ("int", "int", => "int")
-            ("float", "float", => "int")
-        };
     }
 }
