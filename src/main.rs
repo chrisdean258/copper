@@ -4,6 +4,7 @@ mod lex;
 mod location;
 mod parser;
 mod typecheck;
+mod typesystem;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::env;
