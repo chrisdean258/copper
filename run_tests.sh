@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-cargo build
+cargo build || exit 1
 
 run-test()
 {
