@@ -1,4 +1,5 @@
 mod builtins;
+mod code_formatter;
 mod eval;
 mod lex;
 mod location;
@@ -15,11 +16,14 @@ use std::path::Path;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut typecheck_only = false;
+    let mut format = false;
     let mut file_or_cmd: Option<&str> = None;
     let mut is_cmd = false;
     for arg in args[1..].iter() {
         if arg == "-t" || arg == "--typecheck" {
             typecheck_only = true;
+        } else if arg == "-f" || arg == "--format" {
+            format = true;
         } else if arg == "-c" {
             is_cmd = true;
         } else {
@@ -29,10 +33,14 @@ fn main() {
     }
 
     let rv = match file_or_cmd {
-        Some(cmd) if is_cmd => eval_cmd(cmd, typecheck_only),
-        Some(filename) => eval_file(filename, typecheck_only),
+        Some(cmd) if is_cmd => eval_cmd(cmd, format, typecheck_only),
+        Some(filename) => eval_file(filename, format, typecheck_only),
+        None if format => {
+            eval_stdin(format, typecheck_only).unwrap();
+            return;
+        }
         None => {
-            repl(typecheck_only);
+            repl(format, typecheck_only);
             return;
         }
     };
@@ -43,11 +51,15 @@ fn main() {
     };
 }
 
-fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
+fn eval_cmd(cmd: &str, format: bool, typecheck_only: bool) -> Result<(), String> {
     let mut lines = vec![cmd.into()].into_iter();
     let lexer = lex::Lexer::new("<cmdline>", &mut lines);
     let parser = parser::Parser::new(lexer);
     let mut tree = parser.parse()?;
+    if format {
+        println!("{}", tree);
+        return Ok(());
+    }
     let mut typechecker = typecheck::TypeChecker::new();
     typechecker.typecheck(&tree)?;
     if !typecheck_only {
@@ -57,7 +69,7 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn repl(typecheck_only: bool) {
+fn repl(format: bool, typecheck_only: bool) {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
     let mut typechecker = typecheck::TypeChecker::new();
@@ -77,6 +89,10 @@ fn repl(typecheck_only: bool) {
                         continue;
                     }
                 };
+                if format {
+                    println!("{}", tree);
+                    continue;
+                }
                 match typechecker.typecheck(&tree) {
                     Ok(_) => (),
                     Err(s) => {
@@ -106,11 +122,36 @@ fn repl(typecheck_only: bool) {
     }
 }
 
-fn eval_file(filename: &str, typecheck_only: bool) -> Result<(), String> {
+fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
+    let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
+    let lexer = lex::Lexer::new("<stdin>", &mut lines);
+    let parser = parser::Parser::new(lexer);
+    let mut tree = parser.parse()?;
+    if format {
+        println!("{}", tree);
+        return Ok(());
+    }
+
+    let mut typechecker = typecheck::TypeChecker::new();
+    typechecker.typecheck(&tree)?;
+
+    if !typecheck_only {
+        let mut evaluator = eval::Evaluator::new();
+        evaluator.eval(&mut tree)?;
+    }
+    Ok(())
+}
+
+fn eval_file(filename: &str, format: bool, typecheck_only: bool) -> Result<(), String> {
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
     let lexer = lex::Lexer::new(&filename, &mut lines);
     let parser = parser::Parser::new(lexer);
     let mut tree = parser.parse()?;
+    if format {
+        println!("{}", tree);
+        return Ok(());
+    }
+
     let mut typechecker = typecheck::TypeChecker::new();
     typechecker.typecheck(&tree)?;
 
