@@ -14,14 +14,50 @@ use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() == 2 {
-        eval_file(&args[1]);
-    } else {
-        repl()
+    let mut typecheck_only = false;
+    let mut file_or_cmd: Option<&str> = None;
+    let mut is_cmd = false;
+    for arg in args[1..].iter() {
+        if arg == "-t" || arg == "--typecheck" {
+            typecheck_only = true;
+        } else if arg == "-c" {
+            is_cmd = true;
+        } else {
+            file_or_cmd = Some(arg);
+            break;
+        }
     }
+
+    let rv = match file_or_cmd {
+        Some(cmd) if is_cmd => eval_cmd(cmd, typecheck_only),
+        Some(filename) => eval_file(filename, typecheck_only),
+        None => {
+            repl(typecheck_only);
+            return;
+        }
+    };
+
+    match rv {
+        Err(s) => eprintln!("{}", s),
+        _ => (),
+    };
 }
 
-fn repl() {
+fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
+    let mut lines = vec![cmd.into()].into_iter();
+    let lexer = lex::Lexer::new("<cmdline>", &mut lines);
+    let parser = parser::Parser::new(lexer);
+    let mut tree = parser.parse()?;
+    let mut typechecker = typecheck::TypeChecker::new();
+    typechecker.typecheck(&tree)?;
+    if !typecheck_only {
+        let mut evaluator = eval::Evaluator::new();
+        evaluator.eval(&mut tree)?;
+    }
+    Ok(())
+}
+
+fn repl(typecheck_only: bool) {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
     let mut typechecker = typecheck::TypeChecker::new();
@@ -48,11 +84,13 @@ fn repl() {
                         continue;
                     }
                 }
-                let val = evaluator.eval(&mut tree);
-                match val {
-                    Ok(eval::Value::Null) => (),
-                    Ok(t) => println!("{}", t),
-                    Err(s) => println!("{}", s),
+                if !typecheck_only {
+                    let val = evaluator.eval(&mut tree);
+                    match val {
+                        Ok(eval::Value::Null) => (),
+                        Ok(t) => println!("{}", t),
+                        Err(s) => println!("{}", s),
+                    }
                 }
             }
             Err(ReadlineError::Interrupted) => break,
@@ -68,16 +106,19 @@ fn repl() {
     }
 }
 
-fn eval_file(filename: &str) {
+fn eval_file(filename: &str, typecheck_only: bool) -> Result<(), String> {
     let mut lines = read_lines(&filename).map(|s| s.unwrap());
     let lexer = lex::Lexer::new(&filename, &mut lines);
     let parser = parser::Parser::new(lexer);
-    let mut tree = parser.parse().unwrap();
+    let mut tree = parser.parse()?;
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&tree).unwrap();
+    typechecker.typecheck(&tree)?;
 
-    let mut evaluator = eval::Evaluator::new();
-    evaluator.eval(&mut tree).unwrap();
+    if !typecheck_only {
+        let mut evaluator = eval::Evaluator::new();
+        evaluator.eval(&mut tree)?;
+    }
+    Ok(())
 }
 
 fn read_lines<P>(filename: &P) -> io::Lines<io::BufReader<File>>
@@ -86,24 +127,4 @@ where
 {
     let file = File::open(filename).expect("No such file");
     io::BufReader::new(file).lines()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    fn check_output(fp1: &str, fp2: &str) -> bool {
-        fp1 == fs::read_to_string(fp2).unwrap()
-    }
-
-    #[test]
-    fn run_script_tests() {
-        let paths = fs::read_dir("tests").unwrap();
-        for path in paths {
-            let s = path.unwrap().file_name().into_string().unwrap();
-            if s.ends_with(".cu") {
-                assert!(check_output(&s, &format!("tests/{}.out", &s)));
-            }
-        }
-    }
 }
