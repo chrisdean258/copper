@@ -57,7 +57,6 @@ syn match copperComment '#.*$'
 
 syn match copperFunction '[_a-zA-Z][_a-zA-z0-9]*\s*\ze('
 
-
 let b:current_syntax = "copper"
 hi def link copperConditional Conditional
 hi def link copperKeyword Keyword
