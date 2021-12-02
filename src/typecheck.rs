@@ -141,10 +141,17 @@ impl TypeChecker {
         Ok(match cond {
             typesystem::Bool => Some(self.typecheck_expr(&*i.body)?),
             _ => {
+                match &mut self.system.types[cond].typ {
+                    TypeEntryType::GenericType(cons) => {
+                        cons.push(typesystem::Constraint::Type(typesystem::Bool));
+                        return Ok(Some(self.typecheck_expr(&*i.body)?));
+                    }
+                    _ => (),
+                }
                 return Err(format!(
                     "{}: If expressions must have boolean conditions not {:?}",
-                    i.location, cond
-                ))
+                    i.location, self.system.types[cond].name
+                ));
             }
         })
     }
@@ -156,7 +163,7 @@ impl TypeChecker {
             _ => {
                 return Err(format!(
                     "{}: While loops must have boolean conditions not {:?}",
-                    w.location, cond
+                    w.location, self.system.types[cond].name
                 ))
             }
         }
@@ -268,14 +275,13 @@ impl TypeChecker {
             None => format!("fn <anonymous>({})", f.argnames.join(", ")),
         };
         let placeholder = self.system.placeholder(&name);
-        let alloced = self.alloc(placeholder);
         if f.name.is_some() {
-            self.insert_scope_local(f.name.as_ref().unwrap(), alloced);
+            self.insert_scope_local(f.name.as_ref().unwrap(), placeholder);
         }
 
         self.openscope();
         for argname in f.argnames.iter() {
-            let val = self.system.placeholder(argname);
+            let val = self.system.generic(argname);
             inputs.push(val);
             self.insert_scope_local(argname, val);
         }
@@ -380,7 +386,7 @@ impl TypeChecker {
         }
 
         self.openscope();
-        let rv = Ok(match &mut self.system.types[func].typ {
+        let rv = Ok(match &self.system.types[func].typ {
             TypeEntryType::BuiltinFunction => typesystem::Null,
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {
@@ -392,9 +398,15 @@ impl TypeChecker {
                     ));
                 }
                 // TODO: Need to check constraints
+                self.system.check_constraints(&sig.output, &args);
                 sig.output
             }
-            f => return Err(format!("{}: Tried to call {:#?}", expr.location, f)),
+            _ => {
+                return Err(format!(
+                    "{}: Trying to call `{}`",
+                    expr.location, self.system.types[func].name
+                ))
+            }
         });
         self.closescope();
         rv

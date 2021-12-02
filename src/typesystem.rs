@@ -74,6 +74,7 @@ pub enum TypeEntryType {
     StructType(Vec<TypeRef>),       // Struct or tuple
     ListType(TypeRef),              // Lists
     PlaceHolderType,                // Used for typechecking functions
+    GenericType(Vec<Constraint>),   // Used for typechecking functions
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +93,19 @@ pub struct GenericSignature {
 pub struct Signature {
     pub inputs: Vec<TypeRef>,
     pub output: TypeRef,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Constraint {
+    Operation(OperationConstraint),
+    Type(TypeRef),
+    Arg(usize),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OperationConstraint {
+    op: OpRef,
+    args: Vec<TypeRef>,
 }
 
 /* macro_rules! make_op {
@@ -229,6 +243,20 @@ impl TypeSystem {
         })
     }
 
+    pub fn generic(&mut self, name: &str) -> TypeRef {
+        self.new_entry(TypeEntry {
+            name: format!("generic<{}>", name),
+            typ: TypeEntryType::GenericType(Vec::new()),
+        })
+    }
+
+    pub fn generic_con(&mut self, name: &str, con: Vec<Constraint>) -> TypeRef {
+        self.new_entry(TypeEntry {
+            name: format!("generic<{}>", name),
+            typ: TypeEntryType::GenericType(con),
+        })
+    }
+
     pub fn builtinfunction(&mut self, name: &str) -> TypeRef {
         self.new_entry(TypeEntry {
             name: name.into(),
@@ -283,7 +311,27 @@ impl TypeSystem {
         rv
     }
 
-    pub fn apply_operation(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+    pub fn create_contraint(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> TypeRef {
+        self.generic_con(
+            "<constrained>",
+            vec![Constraint::Operation(OperationConstraint {
+                op,
+                args: inputs.clone(),
+            })],
+        )
+    }
+
+    pub fn apply_operation(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+        for ip in inputs.iter() {
+            match self.types[*ip].typ {
+                TypeEntryType::GenericType(_) => return Some(self.create_contraint(op, inputs)),
+                _ => (),
+            }
+        }
+        self.apply_operation_no_gen(op, inputs)
+    }
+
+    pub fn apply_operation_no_gen(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = self.operations.get(op).unwrap();
         for sig in operation.signatures.iter() {
             let mut matches = true;
@@ -299,5 +347,48 @@ impl TypeSystem {
             }
         }
         None
+    }
+
+    pub fn check_constraints(
+        &self,
+        typ: &TypeRef,
+        function_args: &Vec<TypeRef>,
+    ) -> Option<TypeRef> {
+        let (typ, cons) = match &self.types[*typ].typ {
+            TypeEntryType::GenericType(c) => (*typ, c),
+            _ => return Some(*typ),
+        };
+
+        let mut pros_typ = Uninitialized;
+        for con in cons.iter() {
+            let new_type = match con {
+                Constraint::Operation(c) => {
+                    let mut args = Vec::new();
+                    for arg in c.args.iter() {
+                        let t = self.check_constraints(arg, function_args)?;
+                        args.push(t)
+                    }
+                    self.apply_operation_no_gen(c.op, args)
+                }
+                Constraint::Type(t) => {
+                    if !self.convertable_to(&typ, t) {
+                        return None;
+                    }
+                    Some(typ)
+                }
+                Constraint::Arg(idx) => Some(function_args[*idx]),
+            };
+            let new_type = new_type?;
+            if pros_typ == Uninitialized || pros_typ == new_type {
+                pros_typ = new_type;
+                continue;
+            } else if self.convertable_to(&pros_typ, &new_type) {
+                pros_typ = new_type;
+                continue;
+            } else if self.convertable_to(&new_type, &pros_typ) {
+                continue;
+            }
+        }
+        Some(pros_typ)
     }
 }
