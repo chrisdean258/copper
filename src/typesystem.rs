@@ -1,30 +1,79 @@
 #![allow(dead_code)]
+#![allow(non_upper_case_globals)]
 use std::collections::HashMap;
 use std::collections::HashSet;
+
+pub type TypeRef = usize;
+pub type OpRef = usize;
+
+pub const Uninitialized: TypeRef = 0;
+pub const Null: TypeRef = 1;
+pub const Float: TypeRef = 2;
+pub const Int: TypeRef = 3;
+pub const Char: TypeRef = 4;
+pub const Bool: TypeRef = 5;
+
+pub const Plus: OpRef = 0;
+pub const Minus: OpRef = 1;
+pub const Times: OpRef = 2;
+pub const Div: OpRef = 3;
+
+pub const CmpEq: OpRef = 4;
+pub const CmpNotEq: OpRef = 5;
+pub const CmpGE: OpRef = 6;
+pub const CmpLE: OpRef = 7;
+pub const CmpGT: OpRef = 8;
+pub const CmpLT: OpRef = 9;
+
+pub const Mod: OpRef = 10;
+pub const BitOr: OpRef = 11;
+pub const BitAnd: OpRef = 12;
+pub const BitXor: OpRef = 13;
+pub const BitShiftLeft: OpRef = 14;
+pub const BitShiftRight: OpRef = 15;
+pub const Inc: OpRef = 16;
+pub const Dec: OpRef = 17;
+pub const BoolNot: OpRef = 18;
+pub const BitNot: OpRef = 19;
+pub const BoolOr: OpRef = 20;
+pub const BoolAnd: OpRef = 21;
+pub const BoolXor: OpRef = 22;
+pub const OrEq: OpRef = 23;
+pub const XorEq: OpRef = 24;
+pub const AndEq: OpRef = 25;
+pub const PlusEq: OpRef = 26;
+pub const MinusEq: OpRef = 27;
+pub const TimesEq: OpRef = 28;
+pub const DivEq: OpRef = 29;
+pub const ModEq: OpRef = 30;
+pub const BitShiftRightEq: OpRef = 31;
+pub const BitShiftLeftEq: OpRef = 32;
 
 #[derive(Debug, Clone)]
 pub struct TypeSystem {
     pub types: Vec<TypeEntry>,
-    pub types_by_name: HashMap<String, usize>,
-    pub conversions: Vec<Vec<usize>>,
+    pub types_by_name: HashMap<String, TypeRef>,
+    pub conversions: Vec<Vec<TypeRef>>,
     pub op_table: Vec<Operation>,
     pub operations: Vec<Operation>,
-    pub operations_by_name: HashMap<String, usize>,
+    pub operations_by_name: HashMap<String, OpRef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeEntry {
-    name: String,
-    typ: TypeEntryType,
+    pub name: String,
+    pub typ: TypeEntryType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeEntryType {
     BasicType,
-    CallableType(Vec<usize>, usize), // Lambda or function
-    UnionType(Vec<usize>),           // One of the underlying types
-    StructType(Vec<usize>),          // Struct or tuple
-    ListType(usize),                 // Lists
+    BuiltinFunction,                // Cannot typecheck yet
+    CallableType(Signature, usize), // Lambda or function, usize is num of args
+    UnionType(Vec<TypeRef>),        // One of the underlying types
+    StructType(Vec<TypeRef>),       // Struct or tuple
+    ListType(TypeRef),              // Lists
+    PlaceHolderType,                // Used for typechecking functions
 }
 
 #[derive(Debug, Clone)]
@@ -34,37 +83,58 @@ pub struct Operation {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct GenericSignature {
+    pub inputs: Vec<TypeRef>,
+    pub output: TypeRef,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    inputs: Vec<usize>,
-    output: usize,
+    pub inputs: Vec<TypeRef>,
+    pub output: TypeRef,
 }
 
 /* macro_rules! make_op {
-    ($ts: ident, $name: expr, $( ($($inp: expr),*$(,)? => $output:expr )),* $(,)? ) => {
-        let opcode = $ts.add_op($name);
-        $(
-            $ts.operations[opcode].signatures.push(Signature {
-            inputs: vec![$($inp,)*],
-            output: $output,
-            });
-        )*
-    };
+($ts: ident, $name: expr, $( ($($inp: expr),*$(,)? => $output:expr )),* $(,)? ) => {
+let opcode = $ts.add_op($name);
+$(
+$ts.operations[opcode].signatures.push(Signature {
+inputs: vec![$($inp,)*],
+output: $output,
+});
+)*
+};
 }*/
+
+impl Signature {
+    pub fn match_inputs(&self, other: &Vec<TypeRef>) -> bool {
+        if self.inputs.len() != other.len() {
+            return false;
+        }
+        for it in self.inputs.iter().zip(other.iter()) {
+            let (t1, t2) = it;
+            if t1 != t2 {
+                return false;
+            }
+        }
+        true
+    }
+}
 
 macro_rules! make_ops {
     ($ts: ident, [$($name: expr),+ $(,)?], $( ($($inp: expr),*$(,)? => $output:expr )),* $(,)? ) => {
         let mut opcodes = Vec::new();
         $(
             opcodes.push($ts.add_op($name));
-        )+
-        for opcode in opcodes {
-        $(
-            $ts.operations[opcode].signatures.push(Signature {
-               inputs: vec![$($inp,)*],
-               output: $output,
-            });
-        )*
-        }
+         )+
+            for opcode in opcodes {
+                $(
+                    $ts.operations[opcode].signatures.push(Signature {
+                        inputs: vec![$($inp,)*],
+                        output: $output,
+                    });
+                 )*
+            }
     };
 }
 
@@ -82,7 +152,9 @@ impl TypeSystem {
         rv
     }
 
-    pub fn init(&mut self) {
+    fn init(&mut self) {
+        self.basic("uninitialized");
+        self.basic("null");
         let float = self.basic("float");
         let int = self.basic("int");
         let chr = self.basic("char");
@@ -91,20 +163,20 @@ impl TypeSystem {
         self.add_conversion(chr, int);
         self.add_conversion(bol, chr);
         make_ops! {self, ["+", "-", "*", "/"],
-            (bol, bol => int),
-            (chr, chr => chr),
-            (int, int => int),
-            (float, float => float),
+        (bol, bol => int),
+        (chr, chr => chr),
+        (int, int => int),
+        (float, float => float),
         };
         make_ops! {self, ["==", "!=", ">=", "<=", ">", "<"],
-            (bol, bol => bol),
-            (chr, chr => bol),
-            (int, int => bol),
-            (float, float => bol),
+        (bol, bol => bol),
+        (chr, chr => bol),
+        (int, int => bol),
+        (float, float => bol),
         }
         make_ops! {self, ["%", "|", "&", "^", "<<", ">>"],
-            (chr, int => chr),
-            (int, int => int),
+        (chr, int => chr),
+        (int, int => int),
         }
         make_ops! {self, ["+", "-", "++", "--"],
             (chr => chr),
@@ -118,9 +190,17 @@ impl TypeSystem {
             (chr => chr),
             (int => int),
         };
+        make_ops! {self, ["||", "&&", "^^"],
+            (bol, bol => bol),
+        };
+        make_ops! {self, ["+=", "-=", "%=", "/="],
+            (chr, int => chr),
+            (int, int => int),
+            (float, float => float),
+        };
     }
 
-    pub fn new_entry(&mut self, val: TypeEntry) -> usize {
+    pub fn new_entry(&mut self, val: TypeEntry) -> TypeRef {
         if let Some(val) = self.types_by_name.get(&val.name) {
             return *val;
         }
@@ -131,14 +211,32 @@ impl TypeSystem {
         rv
     }
 
-    pub fn basic(&mut self, name: &str) -> usize {
+    pub fn replace(&mut self, idx: TypeRef, val: TypeEntry) {
+        self.types[idx] = val;
+    }
+
+    pub fn basic(&mut self, name: &str) -> TypeRef {
         self.new_entry(TypeEntry {
             name: name.into(),
             typ: TypeEntryType::BasicType,
         })
     }
 
-    pub fn list(&mut self, typ: usize) -> usize {
+    pub fn placeholder(&mut self, name: &str) -> TypeRef {
+        self.new_entry(TypeEntry {
+            name: name.into(),
+            typ: TypeEntryType::PlaceHolderType,
+        })
+    }
+
+    pub fn builtinfunction(&mut self, name: &str) -> TypeRef {
+        self.new_entry(TypeEntry {
+            name: name.into(),
+            typ: TypeEntryType::BuiltinFunction,
+        })
+    }
+
+    pub fn list(&mut self, typ: TypeRef) -> TypeRef {
         let name = format!("list<{}>", self.types[typ].name);
         self.new_entry(TypeEntry {
             name,
@@ -146,33 +244,33 @@ impl TypeSystem {
         })
     }
 
-    pub fn add_conversion(&mut self, from: usize, to: usize) {
+    pub fn add_conversion(&mut self, from: TypeRef, to: TypeRef) {
         self.conversions[from].push(to);
     }
 
-    pub fn get_conversions(&self, val: &usize) -> HashSet<usize> {
+    pub fn get_conversions(&self, val: &TypeRef) -> HashSet<TypeRef> {
         let mut visited: Vec<bool> = self.types.iter().map(|_| false).collect();
         self.get_conversions_int(val, &mut visited)
     }
 
-    pub fn get_conversions_int(&self, val: &usize, visited: &mut Vec<bool>) -> HashSet<usize> {
+    pub fn get_conversions_int(&self, val: &TypeRef, visited: &mut Vec<bool>) -> HashSet<TypeRef> {
         if visited[*val] {
             return HashSet::new();
         }
         visited[*val] = true;
         let mut conversions = HashSet::new();
         for u in self.conversions[*val].iter() {
-            let hs: HashSet<usize> = self.get_conversions_int(u, visited);
+            let hs: HashSet<TypeRef> = self.get_conversions_int(u, visited);
             conversions = conversions.union(&hs).map(|x| *x).collect();
         }
         conversions
     }
 
-    pub fn convertable_to(&self, from: &usize, to: &usize) -> bool {
+    pub fn convertable_to(&self, from: &TypeRef, to: &TypeRef) -> bool {
         self.get_conversions(from).contains(&to)
     }
 
-    pub fn add_op(&mut self, name: &str) -> usize {
+    pub fn add_op(&mut self, name: &str) -> OpRef {
         if let Some(val) = self.operations_by_name.get(name) {
             return *val;
         }
@@ -185,7 +283,7 @@ impl TypeSystem {
         rv
     }
 
-    pub fn apply_operation(&self, op: usize, inputs: Vec<usize>) -> Option<usize> {
+    pub fn apply_operation(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = self.operations.get(op).unwrap();
         for sig in operation.signatures.iter() {
             let mut matches = true;
