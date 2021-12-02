@@ -177,20 +177,20 @@ impl TypeSystem {
         self.add_conversion(chr, int);
         self.add_conversion(bol, chr);
         make_ops! {self, ["+", "-", "*", "/"],
-        (bol, bol => int),
-        (chr, chr => chr),
-        (int, int => int),
-        (float, float => float),
+            (bol, bol => int),
+            (chr, chr => chr),
+            (int, int => int),
+            (float, float => float),
         };
         make_ops! {self, ["==", "!=", ">=", "<=", ">", "<"],
-        (bol, bol => bol),
-        (chr, chr => bol),
-        (int, int => bol),
-        (float, float => bol),
+            (bol, bol => bol),
+            (chr, chr => bol),
+            (int, int => bol),
+            (float, float => bol),
         }
         make_ops! {self, ["%", "|", "&", "^", "<<", ">>"],
-        (chr, int => chr),
-        (int, int => int),
+            (chr, int => chr),
+            (int, int => int),
         }
         make_ops! {self, ["+", "-", "++", "--"],
             (chr => chr),
