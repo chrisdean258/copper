@@ -605,7 +605,8 @@ impl Evaluator {
     fn eval_list(&mut self, l: &mut List) -> Result<Value, String> {
         let mut rv: Vec<Value> = Vec::new();
         for expr in l.exprs.iter_mut() {
-            rv.push(self.eval_expr(expr)?);
+            let val = self.eval_expr(expr)?;
+            rv.push(Value::Reference(self.alloc(val), false));
         }
         Ok(Value::List(rv))
     }
@@ -740,13 +741,12 @@ impl Evaluator {
 
     fn eval_assign(&mut self, expr: &mut AssignExpr) -> Result<Value, String> {
         use crate::lex::TokenType;
+        let lhsidx = self.eval_assignable(expr.lhs.as_mut(), expr.allow_decl)?;
         let rhs = self.eval_expr(expr.rhs.as_mut())?;
         let rhs = match rhs {
             Value::Reference(u, _) => self.memory[u].clone(),
             _ => rhs,
         };
-
-        let lhsidx = self.eval_ref_expr_int(expr.lhs.as_ref(), expr.allow_decl)?;
 
         match &expr.op.token_type {
             TokenType::Equal => {
@@ -892,6 +892,21 @@ impl Evaluator {
         });
         self.closescope();
         rv
+    }
+
+    fn eval_assignable(
+        &mut self,
+        expr: &mut Expression,
+        allow_insert: bool,
+    ) -> Result<usize, String> {
+        match expr {
+            Expression::RefExpr(re) => self.eval_ref_expr_int(re, allow_insert),
+            Expression::IndexExpr(i) => match self.eval_index_expr(i)? {
+                Value::Reference(u, _) => Ok(u),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
     }
 
     fn eval_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Value, String> {

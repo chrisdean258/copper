@@ -82,15 +82,15 @@ impl TypeChecker {
             .insert(key.to_string(), idx);
     }
 
-    pub fn typecheck(&mut self, tree: &ParseTree) -> Result<TypeRef, String> {
+    pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, String> {
         let mut rv = typesystem::Uninitialized;
-        for statement in tree.statements.iter() {
-            rv = self.typecheck_statement(&statement)?;
+        for statement in tree.statements.iter_mut() {
+            rv = self.typecheck_statement(statement)?;
         }
         Ok(rv)
     }
 
-    fn typecheck_statement(&mut self, statement: &Statement) -> Result<TypeRef, String> {
+    fn typecheck_statement(&mut self, statement: &mut Statement) -> Result<TypeRef, String> {
         Ok(match statement {
             Statement::Expr(expr) => self.typecheck_expr(expr)?,
             Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd)?,
@@ -116,17 +116,17 @@ impl TypeChecker {
     }
 
     // ned to augment this to prevent type switching
-    fn typecheck_if(&mut self, i: &If) -> Result<TypeRef, String> {
+    fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, String> {
         let mut ran_first = self.typecheck_if_internal(i)?;
 
-        for ai in &i.and_bodies {
-            if let Some(rv) = self.typecheck_if_internal(&ai)? {
+        for ai in &mut i.and_bodies {
+            if let Some(rv) = self.typecheck_if_internal(ai)? {
                 ran_first = Some(rv);
             }
         }
 
         if ran_first.is_none() && i.else_body.is_some() {
-            ran_first = Some(self.typecheck_expr(i.else_body.as_ref().unwrap())?);
+            ran_first = Some(self.typecheck_expr(i.else_body.as_mut().unwrap())?);
         }
 
         match ran_first {
@@ -135,15 +135,15 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_if_internal(&mut self, i: &If) -> Result<Option<TypeRef>, String> {
-        let cond = self.typecheck_expr(&i.condition)?;
+    fn typecheck_if_internal(&mut self, i: &mut If) -> Result<Option<TypeRef>, String> {
+        let cond = self.typecheck_expr(i.condition.as_mut())?;
         Ok(match cond {
-            typesystem::Bool => Some(self.typecheck_expr(&*i.body)?),
+            typesystem::Bool => Some(self.typecheck_expr(i.body.as_mut())?),
             _ => {
                 match &mut self.system.types[cond].typ {
                     TypeEntryType::GenericType(cons) => {
                         cons.push(typesystem::Constraint::Type(typesystem::Bool));
-                        return Ok(Some(self.typecheck_expr(&*i.body)?));
+                        return Ok(Some(self.typecheck_expr(i.body.as_mut())?));
                     }
                     _ => (),
                 }
@@ -155,8 +155,8 @@ impl TypeChecker {
         })
     }
 
-    fn typecheck_while(&mut self, w: &While) -> Result<TypeRef, String> {
-        let cond = self.typecheck_expr(&*w.condition)?;
+    fn typecheck_while(&mut self, w: &mut While) -> Result<TypeRef, String> {
+        let cond = self.typecheck_expr(w.condition.as_mut())?;
         match cond {
             typesystem::Bool => (),
             _ => {
@@ -166,22 +166,22 @@ impl TypeChecker {
                 ))
             }
         }
-        self.typecheck_expr(&w.body)?;
+        self.typecheck_expr(w.body.as_mut())?;
         Ok(typesystem::Null)
     }
 
-    fn typecheck_block(&mut self, b: &BlockExpr) -> Result<TypeRef, String> {
+    fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, String> {
         let mut rv = typesystem::Null;
-        for statement in b.statements.iter() {
-            rv = self.typecheck_statement(&statement)?;
+        for statement in b.statements.iter_mut() {
+            rv = self.typecheck_statement(statement)?;
         }
         Ok(rv)
     }
 
-    fn typecheck_binop(&mut self, binop: &BinOp) -> Result<TypeRef, String> {
+    fn typecheck_binop(&mut self, binop: &mut BinOp) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
-        let lhs = self.typecheck_expr(&*binop.lhs)?;
-        let rhs = self.typecheck_expr(&*binop.rhs)?;
+        let lhs = self.typecheck_expr(binop.lhs.as_mut())?;
+        let rhs = self.typecheck_expr(binop.rhs.as_mut())?;
 
         let op = match binop.op.token_type {
             TokenType::Plus => typesystem::Plus,
@@ -216,12 +216,12 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_expr(&mut self, expr: &Expression) -> Result<usize, String> {
+    fn typecheck_expr(&mut self, expr: &mut Expression) -> Result<usize, String> {
         use crate::parser::Expression::*;
         match expr {
-            CallExpr(callexpr) => self.typecheck_call_expr(&callexpr),
-            RefExpr(refexpr) => self.typecheck_ref_expr(&refexpr, false),
-            Immediate(immediate) => self.typecheck_immediate(&immediate),
+            CallExpr(callexpr) => self.typecheck_call_expr(callexpr),
+            RefExpr(refexpr) => self.typecheck_ref_expr(refexpr, false),
+            Immediate(immediate) => self.typecheck_immediate(immediate),
             BlockExpr(blockexpr) => self.typecheck_block(blockexpr),
             BinOp(binop) => self.typecheck_binop(binop),
             AssignExpr(assignexpr) => self.typecheck_assign(assignexpr),
@@ -236,9 +236,9 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_list(&mut self, l: &List) -> Result<TypeRef, String> {
+    fn typecheck_list(&mut self, l: &mut List) -> Result<TypeRef, String> {
         let mut typ = typesystem::Uninitialized;
-        for expr in l.exprs.iter() {
+        for expr in l.exprs.iter_mut() {
             let rt = self.typecheck_expr(expr)?;
             if typ == typesystem::Uninitialized || rt == typ {
                 typ = rt;
@@ -287,7 +287,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_function_def(&mut self, f: &Function) -> Result<TypeRef, String> {
+    fn typecheck_function_def(&mut self, f: &mut Function) -> Result<TypeRef, String> {
         let mut inputs = Vec::new();
         let name = match &f.name {
             Some(s) => format!("fn {}({})", s, f.argnames.join(", ")),
@@ -304,7 +304,7 @@ impl TypeChecker {
             inputs.push(val);
             self.insert_scope_local(argname, val);
         }
-        let output = self.typecheck_expr(f.body.as_ref())?;
+        let output = self.typecheck_expr(f.body.as_mut())?;
         self.closescope();
         let sig = Signature { inputs, output };
 
@@ -320,7 +320,7 @@ impl TypeChecker {
         Ok(placeholder)
     }
 
-    fn typecheck_lambda_def(&mut self, f: &Lambda) -> Result<usize, String> {
+    fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<usize, String> {
         let mut inputs = Vec::new();
         let name = format!("lambda({})", f.num_args);
         let nametmp = format!("lambda--({})", f.num_args);
@@ -332,7 +332,7 @@ impl TypeChecker {
             inputs.push(val);
             self.insert_scope_local(&argname, val);
         }
-        let output = self.typecheck_expr(f.body.as_ref())?;
+        let output = self.typecheck_expr(f.body.as_mut())?;
         self.closescope();
         let sig = Signature { inputs, output };
 
@@ -370,12 +370,12 @@ impl TypeChecker {
         ))
     }
 
-    fn typecheck_assign(&mut self, expr: &AssignExpr) -> Result<usize, String> {
+    fn typecheck_assign(&mut self, expr: &mut AssignExpr) -> Result<usize, String> {
         use crate::lex::TokenType;
 
-        let rhs = self.typecheck_expr(&*expr.rhs)?;
-        let lhsidx = self.typecheck_ref_expr_int(&*expr.lhs, true)?;
+        let lhsidx = self.typecheck_assignable(expr.lhs.as_mut(), true)?;
         let lhs = self.memory[lhsidx];
+        let rhs = self.typecheck_expr(expr.rhs.as_mut())?;
 
         let op = match &expr.op.token_type {
             TokenType::Equal => return self.typecheck_assignment(expr, lhsidx, rhs),
@@ -398,10 +398,10 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_call_expr(&mut self, expr: &CallExpr) -> Result<usize, String> {
-        let func = self.typecheck_expr(&expr.function)?;
+    fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<usize, String> {
+        let func = self.typecheck_expr(expr.function.as_mut())?;
         let mut args = Vec::new();
-        for arg in expr.args.iter() {
+        for arg in expr.args.iter_mut() {
             args.push(self.typecheck_expr(arg)?);
         }
 
@@ -433,21 +433,21 @@ impl TypeChecker {
         rv
     }
 
-    fn typecheck_index_expr(&mut self, expr: &IndexExpr) -> Result<usize, String> {
-        let func = self.typecheck_expr(&expr.obj)?;
+    fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<usize, String> {
+        let func = self.typecheck_expr(expr.obj.as_mut())?;
         let mut args = Vec::new();
-        for arg in expr.args.iter() {
+        for arg in expr.args.iter_mut() {
             args.push(self.typecheck_expr(arg)?);
         }
 
         self.openscope();
 
-        let typ = self.system.types[func].clone();
+        let ltyp = self.system.types[func].clone();
         let callable = match self.system.types[func].fields.get("__index__") {
             None => {
                 return Err(format!(
                     "{}: cannot index type `{}`",
-                    expr.location, typ.name
+                    expr.location, ltyp.name
                 ))
             }
             Some(t) => *t,
@@ -455,7 +455,10 @@ impl TypeChecker {
 
         let typ = self.system.types[callable].clone();
         let rv = Ok(match &typ.typ {
-            TypeEntryType::BuiltinFunction => typesystem::Null,
+            TypeEntryType::BuiltinFunction => match ltyp.typ {
+                TypeEntryType::ListType(l) => self.alloc(l),
+                _ => unreachable!(),
+            },
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {
                     return Err(format!(
@@ -487,6 +490,18 @@ impl TypeChecker {
     ) -> Result<TypeRef, String> {
         let idx = self.typecheck_ref_expr_int(expr, allow_insert)?;
         Ok(self.memory[idx].clone())
+    }
+
+    fn typecheck_assignable(
+        &mut self,
+        expr: &mut Expression,
+        allow_insert: bool,
+    ) -> Result<usize, String> {
+        match expr {
+            Expression::RefExpr(re) => self.typecheck_ref_expr_int(re, allow_insert),
+            Expression::IndexExpr(i) => self.typecheck_index_expr(i),
+            _ => todo!(),
+        }
     }
 
     fn typecheck_ref_expr_int(

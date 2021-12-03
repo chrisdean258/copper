@@ -61,7 +61,7 @@ fn eval_cmd(cmd: &str, format: bool, typecheck_only: bool) -> Result<(), String>
         return Ok(());
     }
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&tree)?;
+    typechecker.typecheck(&mut tree)?;
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
         evaluator.eval(&mut tree)?;
@@ -93,7 +93,7 @@ fn repl(format: bool, typecheck_only: bool) {
                     println!("{}", tree);
                     continue;
                 }
-                match typechecker.typecheck(&tree) {
+                match typechecker.typecheck(&mut tree) {
                     Ok(_) => (),
                     Err(s) => {
                         println!("{}", s);
@@ -133,7 +133,7 @@ fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
     }
 
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&tree)?;
+    typechecker.typecheck(&mut tree)?;
 
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
@@ -153,7 +153,7 @@ fn eval_file(filename: &str, format: bool, typecheck_only: bool) -> Result<(), S
     }
 
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&tree)?;
+    typechecker.typecheck(&mut tree)?;
 
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();

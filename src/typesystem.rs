@@ -206,13 +206,7 @@ impl TypeSystem {
             (chr, int => chr),
             (int, int => int),
         };
-        let string = self.class("string", HashMap::new());
-        make_ops! {self, ["+", "+="],
-            (string, string => string),
-        }
-        make_ops! {self, ["==", "!=", ">=", "<=", ">", "<"],
-            (string, string => bol),
-        }
+        self.list_name("string", chr);
     }
 
     pub fn entry(&mut self, name: &str, typ: TypeEntryType) -> Result<TypeRef, String> {
@@ -265,10 +259,17 @@ impl TypeSystem {
     }
 
     pub fn list(&mut self, typ: TypeRef) -> TypeRef {
-        let name = format!("list<{}>", self.types[typ].name);
-        let rv = self.new_entry(&name, TypeEntryType::ListType(typ));
-        make_ops! {self, ["+", "+="],
-            (rv, rv => rv),
+        self.list_name(&format!("list<{}>", self.types[typ].name), typ)
+    }
+
+    pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
+        let rv = self.new_entry(name.into(), TypeEntryType::ListType(typ));
+        make_ops! {self, ["+", "+="], (rv, rv => rv), }
+        if self.apply_operation_no_gen(CmpEq, vec![typ, typ]).is_some() {
+            make_ops! {self, ["==", "!="], (rv, rv => Bool), }
+            if self.apply_operation_no_gen(CmpGT, vec![typ, typ]).is_some() {
+                make_ops! {self, [">=", "<=", ">", "<"], (rv, rv => Bool) }
+            }
         }
         let bif = self.builtinfunction("__index__");
         self.types[rv].fields.insert("__index__".into(), bif);

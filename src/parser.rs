@@ -118,7 +118,7 @@ pub struct BinOp {
 
 #[derive(Debug, Clone)]
 pub struct AssignExpr {
-    pub lhs: Box<RefExpr>,
+    pub lhs: Box<Expression>,
     pub op: Token,
     pub rhs: Box<Expression>,
     pub allow_decl: bool,
@@ -163,7 +163,7 @@ fn err_msg(token: &Token, reason: &str) -> String {
 }
 
 fn unexpected(token: &Token) -> String {
-    format!("{}: Unexpected {:?}", token.location, token.token_type)
+    panic!("{}: Unexpected `{}`", token.location, token.token_type)
 }
 
 macro_rules! binop {
@@ -372,24 +372,29 @@ impl ParseTree {
         use crate::lex::TokenType::*;
         let lhs = self.parse_boolean_op(lexer)?;
 
-        let token = match lexer.peek() {
+        let mut token = match lexer.peek() {
             Some(t) => t.clone(),
             None => return Ok(lhs),
         };
         let mut allow_decl = false;
-        let reflhs = match &token.token_type {
+        let reflhs = match &mut token.token_type {
             Equal => {
                 lexer.next();
                 allow_decl = true;
                 match lhs {
-                    Expression::RefExpr(re) => re,
+                    Expression::RefExpr(_) => lhs,
+                    Expression::IndexExpr(_) => lhs,
                     _ => return Err(unexpected(&token)),
                 }
             }
             AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq => match lhs {
-                Expression::RefExpr(re) => {
+                Expression::RefExpr(_) => {
                     lexer.next();
-                    re
+                    lhs
+                }
+                Expression::IndexExpr(_) => {
+                    lexer.next();
+                    lhs
                 }
                 _ => return Err(unexpected(&token)),
             },
