@@ -231,10 +231,29 @@ impl TypeChecker {
             Lambda(lambda) => self.typecheck_lambda_def(lambda),
             PreUnOp(u) => self.typecheck_unop_pre(u),
             PostUnOp(u) => self.typecheck_unop_post(u),
+            List(l) => self.typecheck_list(l),
         }
     }
 
-    fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<usize, String> {
+    fn typecheck_list(&mut self, l: &List) -> Result<TypeRef, String> {
+        let mut typ = typesystem::Uninitialized;
+        for expr in l.exprs.iter() {
+            let rt = self.typecheck_expr(expr)?;
+            if typ == typesystem::Uninitialized || rt == typ {
+                typ = rt;
+            } else {
+                return Err(format!(
+                    "{}: List expression has different type than established. Has `{}` needs `{}`",
+                    expr.location(),
+                    self.system.types[rt].name,
+                    self.system.types[typ].name,
+                ));
+            }
+        }
+        Ok(self.system.list(typ))
+    }
+
+    fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
         let rhs = self.typecheck_ref_expr(&*u.rhs, false)?;
         let op = match u.op.token_type {

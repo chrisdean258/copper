@@ -27,6 +27,27 @@ pub enum Expression {
     AssignExpr(AssignExpr),
     Function(Function),
     Lambda(Lambda),
+    List(List),
+}
+
+impl Expression {
+    pub fn location(&self) -> Location {
+        match self {
+            Expression::While(w) => w.location.clone(),
+            Expression::If(i) => i.location.clone(),
+            Expression::CallExpr(c) => c.location.clone(),
+            Expression::RefExpr(r) => r.value.location.clone(),
+            Expression::Immediate(i) => i.value.location.clone(),
+            Expression::BlockExpr(b) => b.location.clone(),
+            Expression::BinOp(b) => b.op.location.clone(),
+            Expression::PreUnOp(u) => u.op.location.clone(),
+            Expression::PostUnOp(u) => u.op.location.clone(),
+            Expression::AssignExpr(a) => a.op.location.clone(),
+            Expression::Function(f) => f.location.clone(),
+            Expression::Lambda(l) => l.location.clone(),
+            Expression::List(l) => l.location.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +140,12 @@ pub struct Lambda {
     pub location: Location,
     pub num_args: usize,
     pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct List {
+    pub location: Location,
+    pub exprs: Vec<Expression>,
 }
 
 #[allow(dead_code)]
@@ -567,6 +594,7 @@ impl ParseTree {
                 })),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),
+                TokenType::OpenBracket => self.parse_list(lexer),
                 TokenType::Function => self.parse_function(lexer),
                 TokenType::Lambda => self.parse_lambda(lexer),
                 TokenType::While => self.parse_while(lexer),
@@ -576,6 +604,19 @@ impl ParseTree {
         } else {
             self.parse_paren(lexer)
         }
+    }
+
+    fn parse_list<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let loc = expect!(lexer, TokenType::OpenBracket).location;
+        let exprs = self.parse_cse(lexer)?;
+        expect!(lexer, TokenType::CloseBracket);
+        Ok(Expression::List(List {
+            location: loc,
+            exprs: exprs,
+        }))
     }
 
     fn parse_paren<T: Iterator<Item = String>>(

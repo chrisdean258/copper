@@ -12,6 +12,7 @@ pub enum Value {
     BuiltinFunc(&'static str, fn(&mut Evaluator, Vec<Value>) -> Value),
     Reference(usize, bool),
     Str(Rc<String>),
+    List(Vec<Value>),
     Int(i64),
     Float(f64),
     Char(char),
@@ -34,10 +35,17 @@ impl Debug for Value {
         f.write_str("Value::")?;
         match self {
             BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name)),
-            Str(s) => f.write_fmt(format_args!("Str({:})", s)),
-            Int(i) => f.write_fmt(format_args!("Int({:})", i)),
-            Float(d) => f.write_fmt(format_args!("Float({:})", d)),
-            Char(c) => f.write_fmt(format_args!("Char({:})", c)),
+            Str(s) => f.write_fmt(format_args!("Str({:?})", s)),
+            List(l) => {
+                f.write_str("List([")?;
+                for expr in l.iter() {
+                    f.write_fmt(format_args!("{:?}, ", expr))?;
+                }
+                f.write_str("])")
+            }
+            Int(i) => f.write_fmt(format_args!("Int({:?})", i)),
+            Float(d) => f.write_fmt(format_args!("Float({:?})", d)),
+            Char(c) => f.write_fmt(format_args!("Char({:?})", c)),
             Reference(u, b) => f.write_fmt(format_args!(
                 "Reference({:x}{})",
                 u,
@@ -65,6 +73,13 @@ impl Display for Value {
             Char(c) => f.write_fmt(format_args!("{}", c))?,
             Reference(u, _) => f.write_fmt(format_args!("Reference(0x{:x})", u))?,
             Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" }))?,
+            List(l) => {
+                f.write_str("[")?;
+                for expr in l.iter() {
+                    f.write_fmt(format_args!("{}, ", expr))?;
+                }
+                f.write_str("]")?;
+            }
             Function(func, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
             }
@@ -542,7 +557,16 @@ impl Evaluator {
             Lambda(lambda) => self.eval_lambda_def(lambda),
             PreUnOp(u) => self.eval_unop_pre(u),
             PostUnOp(u) => self.eval_unop_post(u),
+            List(l) => self.eval_list(l),
         }
+    }
+
+    fn eval_list(&mut self, l: &mut List) -> Result<Value, String> {
+        let mut rv: Vec<Value> = Vec::new();
+        for expr in l.exprs.iter_mut() {
+            rv.push(self.eval_expr(expr)?);
+        }
+        Ok(Value::List(rv))
     }
 
     fn eval_unop_pre(&mut self, u: &PreUnOp) -> Result<Value, String> {
