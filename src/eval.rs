@@ -301,6 +301,11 @@ impl Evaluator {
                 (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 + b as u8) as char),
                 (Value::Char(a), Value::Int(b)) => Value::Char((a as i64 + b) as u8 as char),
                 (Value::Int(a), Value::Char(b)) => Value::Char((a + b as i64) as u8 as char),
+                (Value::List(a), Value::List(b)) => {
+                    let mut rv = a.clone();
+                    rv.append(&mut b.clone());
+                    Value::List(rv)
+                }
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot add two together. Not supported ({:?} + {:?})",
@@ -558,6 +563,42 @@ impl Evaluator {
             PreUnOp(u) => self.eval_unop_pre(u),
             PostUnOp(u) => self.eval_unop_post(u),
             List(l) => self.eval_list(l),
+            IndexExpr(i) => self.eval_index_expr(i),
+        }
+    }
+
+    fn eval_index_expr(&mut self, i: &mut IndexExpr) -> Result<Value, String> {
+        let obj = self.eval_expr(i.obj.as_mut())?;
+        let mut idxs = Vec::new();
+        for idx in i.args.iter_mut() {
+            idxs.push(self.eval_expr(idx)?);
+        }
+        let idx = if i.args.len() != 1 {
+            return Err(format!(
+                "{}: List types must be indexed with exactly one argument",
+                i.location
+            ));
+        } else {
+            match &idxs[0] {
+                Value::Int(i) => *i,
+                _ => {
+                    return Err(format!(
+                        "{}: List types must be indexed integers",
+                        i.args[0].location()
+                    ))
+                }
+            }
+        };
+        match obj {
+            Value::List(l) => {
+                let new_idx = if idx < 0 { idx + l.len() as i64 } else { idx };
+                if new_idx < 0 || new_idx > l.len() as i64 {
+                    Err(format!("{}: Index out of range", i.args[0].location()))
+                } else {
+                    Ok(l[new_idx as usize].clone())
+                }
+            }
+            _ => Err(format!("{}: Cannot index non list types", i.location)),
         }
     }
 
@@ -745,6 +786,7 @@ impl Evaluator {
                 (Value::Float(a), Value::Bool(b)) => *a += *b as f64,
                 (Value::Float(a), Value::Char(b)) => *a += (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a + *b as f64,
+                (Value::List(a), Value::List(b)) => a.append(&mut b.clone()),
                 _ => unreachable!(),
             },
             TokenType::MinusEq => match (&mut self.memory[lhsidx], &rhs) {

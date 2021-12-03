@@ -232,6 +232,7 @@ impl TypeChecker {
             PreUnOp(u) => self.typecheck_unop_pre(u),
             PostUnOp(u) => self.typecheck_unop_post(u),
             List(l) => self.typecheck_list(l),
+            IndexExpr(l) => self.typecheck_index_expr(l),
         }
     }
 
@@ -407,6 +408,53 @@ impl TypeChecker {
         self.openscope();
         let typ = self.system.types[func].typ.clone();
         let rv = Ok(match &typ {
+            TypeEntryType::BuiltinFunction => typesystem::Null,
+            TypeEntryType::CallableType(sig, arglen) => {
+                if args.len() != *arglen {
+                    return Err(format!(
+                        "{}: Trying to call function with wrong number of args. wanted {} found {}",
+                        expr.location,
+                        arglen,
+                        args.len(),
+                    ));
+                }
+                self.system.check_constraints(&sig.output, &args);
+                sig.output
+            }
+            TypeEntryType::GenericType(_) => self.system.constrain_callable(func, args.len()),
+            _ => {
+                return Err(format!(
+                    "{}: Trying to call `{:#?}`",
+                    expr.location, self.system.types[func]
+                ))
+            }
+        });
+        self.closescope();
+        rv
+    }
+
+    fn typecheck_index_expr(&mut self, expr: &IndexExpr) -> Result<usize, String> {
+        let func = self.typecheck_expr(&expr.obj)?;
+        let mut args = Vec::new();
+        for arg in expr.args.iter() {
+            args.push(self.typecheck_expr(arg)?);
+        }
+
+        self.openscope();
+
+        let typ = self.system.types[func].clone();
+        let callable = match self.system.types[func].fields.get("__index__") {
+            None => {
+                return Err(format!(
+                    "{}: cannot index type `{}`",
+                    expr.location, typ.name
+                ))
+            }
+            Some(t) => *t,
+        };
+
+        let typ = self.system.types[callable].clone();
+        let rv = Ok(match &typ.typ {
             TypeEntryType::BuiltinFunction => typesystem::Null,
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {

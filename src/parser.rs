@@ -28,6 +28,7 @@ pub enum Expression {
     Function(Function),
     Lambda(Lambda),
     List(List),
+    IndexExpr(IndexExpr),
 }
 
 impl Expression {
@@ -46,6 +47,7 @@ impl Expression {
             Expression::Function(f) => f.location.clone(),
             Expression::Lambda(l) => l.location.clone(),
             Expression::List(l) => l.location.clone(),
+            Expression::IndexExpr(l) => l.location.clone(),
         }
     }
 }
@@ -81,6 +83,13 @@ pub struct If {
 pub struct CallExpr {
     pub location: Location,
     pub function: Box<Expression>,
+    pub args: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexExpr {
+    pub location: Location,
+    pub obj: Box<Expression>,
     pub args: Vec<Expression>,
 }
 
@@ -468,7 +477,16 @@ impl ParseTree {
                         args,
                     })
                 }
-                TokenType::OpenBracket => todo!(),
+                TokenType::OpenBracket => {
+                    let location = expect!(lexer, TokenType::OpenBracket).location;
+                    let args = self.parse_cse(lexer)?;
+                    expect!(lexer, TokenType::CloseBracket).location;
+                    Expression::IndexExpr(IndexExpr {
+                        location: location,
+                        obj: Box::new(lhs),
+                        args,
+                    })
+                }
                 _ => return Ok(lhs),
             }
         }

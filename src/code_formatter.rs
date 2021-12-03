@@ -74,7 +74,24 @@ impl Display for Expression {
             Expression::Function(x) => f.write_fmt(format_args!("{}", x)),
             Expression::Lambda(x) => f.write_fmt(format_args!("{}", x)),
             Expression::List(x) => f.write_fmt(format_args!("{}", x)),
+            Expression::IndexExpr(x) => f.write_fmt(format_args!("{}", x)),
         }
+    }
+}
+
+impl Display for IndexExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut first = true;
+        f.write_fmt(format_args!("{}[", self.obj.as_ref()))?;
+        for arg in &self.args {
+            if !first {
+                f.write_str(", ")?;
+                first = false;
+            }
+            f.write_fmt(format_args!("{}", arg))?;
+        }
+        f.write_str("]")?;
+        Ok(())
     }
 }
 

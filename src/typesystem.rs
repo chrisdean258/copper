@@ -266,7 +266,13 @@ impl TypeSystem {
 
     pub fn list(&mut self, typ: TypeRef) -> TypeRef {
         let name = format!("list<{}>", self.types[typ].name);
-        self.new_entry(&name, TypeEntryType::ListType(typ))
+        let rv = self.new_entry(&name, TypeEntryType::ListType(typ));
+        make_ops! {self, ["+", "+="],
+            (rv, rv => rv),
+        }
+        let bif = self.builtinfunction("__index__");
+        self.types[rv].fields.insert("__index__".into(), bif);
+        rv
     }
 
     pub fn class(&mut self, name: &str, fields: HashMap<String, TypeRef>) -> TypeRef {
