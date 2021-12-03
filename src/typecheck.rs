@@ -5,7 +5,6 @@ use crate::typesystem;
 use crate::typesystem::{Signature, TypeEntry, TypeEntryType, TypeRef, TypeSystem};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::mem::swap;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -294,6 +293,7 @@ impl TypeChecker {
             TypeEntry {
                 name: name,
                 typ: TypeEntryType::CallableType(sig, f.argnames.len()),
+                fields: HashMap::new(),
             },
         );
 
@@ -303,18 +303,17 @@ impl TypeChecker {
     fn typecheck_lambda_def(&mut self, f: &Lambda) -> Result<usize, String> {
         let mut inputs = Vec::new();
         let name = format!("lambda({})", f.num_args);
-        let placeholder = self.system.placeholder(&name);
-        let mut saved = self.scopes.clone();
+        let nametmp = format!("lambda--({})", f.num_args);
+        let placeholder = self.system.placeholder(&nametmp);
         self.openscope();
         for num in 0..f.num_args {
             let argname = format!("\\{}", num);
-            let val = self.system.placeholder(&name);
+            let val = self.system.generic(&argname);
             inputs.push(val);
             self.insert_scope_local(&argname, val);
         }
         let output = self.typecheck_expr(f.body.as_ref())?;
         self.closescope();
-        swap(&mut self.scopes, &mut saved);
         let sig = Signature { inputs, output };
 
         self.system.replace(
@@ -322,6 +321,7 @@ impl TypeChecker {
             TypeEntry {
                 name: name,
                 typ: TypeEntryType::CallableType(sig, f.num_args),
+                fields: HashMap::new(),
             },
         );
         Ok(placeholder)
@@ -386,7 +386,8 @@ impl TypeChecker {
         }
 
         self.openscope();
-        let rv = Ok(match &self.system.types[func].typ {
+        let typ = self.system.types[func].typ.clone();
+        let rv = Ok(match &typ {
             TypeEntryType::BuiltinFunction => typesystem::Null,
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {
@@ -397,14 +398,14 @@ impl TypeChecker {
                         args.len(),
                     ));
                 }
-                // TODO: Need to check constraints
                 self.system.check_constraints(&sig.output, &args);
                 sig.output
             }
+            TypeEntryType::GenericType(_) => self.system.constrain_callable(func, args.len()),
             _ => {
                 return Err(format!(
-                    "{}: Trying to call `{}`",
-                    expr.location, self.system.types[func].name
+                    "{}: Trying to call `{:#?}`",
+                    expr.location, self.system.types[func]
                 ))
             }
         });
@@ -454,6 +455,7 @@ impl TypeChecker {
     fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<usize, String> {
         use crate::lex::TokenType;
         Ok(match immediate.value.token_type {
+            TokenType::Str(_) => typesystem::Str,
             TokenType::Int(_) => typesystem::Int,
             TokenType::Float(_) => typesystem::Float,
             TokenType::Char(_) => typesystem::Char,
@@ -474,7 +476,7 @@ impl TypeChecker {
             operator.location,
             operator.token_type,
             self.system.types[*ltyp].name,
-            self.system.types[*rtyp].name
+            self.system.types[*rtyp].name,
         )
     }
 
