@@ -102,6 +102,7 @@ pub enum Constraint {
     Type(TypeRef),
     Arg(usize),
     Callable(usize, TypeRef),
+    Indexable(usize, TypeRef),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -248,7 +249,8 @@ impl TypeSystem {
     }
 
     pub fn generic(&mut self, name: &str) -> TypeRef {
-        self.new_entry(name, TypeEntryType::GenericType(Vec::new()))
+        let name = format!("generic<{}>", name);
+        self.generic_con(&name, Vec::new())
     }
 
     pub fn generic_con(&mut self, name: &str, con: Vec<Constraint>) -> TypeRef {
@@ -319,6 +321,27 @@ impl TypeSystem {
         self.get_conversions(from).contains(&to)
     }
 
+    pub fn is_assignable(&mut self, lhs: &TypeRef, rhs: &TypeRef) -> bool {
+        use TypeEntryType::*;
+        if rhs == lhs {
+            return true;
+        }
+        if self.convertable_to(rhs, lhs) {
+            return true;
+        }
+        match (self.types[*lhs].typ.clone(), &mut self.types[*rhs].typ) {
+            (Iterable(t), Iterable(l)) => {
+                let l = *l;
+                self.is_assignable(&t, &l)
+            }
+            (_, GenericType(cons)) => {
+                cons.push(Constraint::Type(*lhs));
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn add_op(&mut self, name: &str) -> OpRef {
         if let Some(val) = self.operations_by_name.get(name) {
             return *val;
@@ -353,7 +376,16 @@ impl TypeSystem {
             TypeEntryType::GenericType(c) => c.push(Constraint::Callable(num_args, output)),
             _ => (),
         }
-        typ
+        output
+    }
+
+    pub fn constrain_idx(&mut self, typ: TypeRef, num_args: usize) -> TypeRef {
+        let output = self.generic("<index output>");
+        match &mut self.types[typ].typ {
+            TypeEntryType::GenericType(c) => c.push(Constraint::Indexable(num_args, output)),
+            _ => (),
+        }
+        output
     }
 
     pub fn apply_operation(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
@@ -416,6 +448,12 @@ impl TypeSystem {
                 }
                 Constraint::Arg(idx) => Some(function_args[*idx]),
                 Constraint::Callable(num_args, output) => {
+                    if *num_args != function_args.len() {
+                        return None;
+                    }
+                    Some(*output)
+                }
+                Constraint::Indexable(num_args, output) => {
                     if *num_args != function_args.len() {
                         return None;
                     }

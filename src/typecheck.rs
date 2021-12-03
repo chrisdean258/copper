@@ -247,6 +247,8 @@ impl TypeChecker {
             let rt = self.typecheck_expr(expr)?;
             if typ == typesystem::Uninitialized || rt == typ {
                 typ = rt;
+            } else if let TypeEntryType::GenericType(cons) = &mut self.system.types[typ].typ {
+                cons.push(typesystem::Constraint::Type(rt));
             } else {
                 return Err(format!(
                     "{}: List expression has different type than established. Has `{}` needs `{}`",
@@ -360,6 +362,9 @@ impl TypeChecker {
     ) -> Result<TypeRef, String> {
         let lhs = self.memory[lhsidx];
 
+        if self.system.is_assignable(&lhs, &rhs) {
+            return Ok(lhs);
+        }
         if lhs == rhs {
             return Ok(rhs);
         }
@@ -367,6 +372,11 @@ impl TypeChecker {
         if lhs == typesystem::Uninitialized {
             self.memory[lhsidx] = rhs;
             return Ok(rhs);
+        }
+
+        if let TypeEntryType::GenericType(cons) = &mut self.system.types[rhs].typ {
+            cons.push(typesystem::Constraint::Type(lhs));
+            return Ok(lhs);
         }
 
         Err(format!(
@@ -443,6 +453,11 @@ impl TypeChecker {
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
             args.push(self.typecheck_expr(arg)?);
+        }
+
+        match self.system.types[obj].typ {
+            TypeEntryType::GenericType(_) => return Ok(self.system.constrain_idx(obj, args.len())),
+            _ => (),
         }
 
         self.openscope();

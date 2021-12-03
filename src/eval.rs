@@ -303,8 +303,8 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => Value::Int(a + b as i64),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 + b),
                 (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 + b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Char((a as i64 + b) as u8 as char),
-                (Value::Int(a), Value::Char(b)) => Value::Char((a + b as i64) as u8 as char),
+                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 + b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a + b as i64),
                 (Value::List(a), Value::List(b)) => {
                     let mut rv = a.clone();
                     rv.append(&mut b.clone());
@@ -335,6 +335,8 @@ impl Evaluator {
                 }
             },
             Times => match (lhs, rhs) {
+                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 * b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a * b as i64),
                 (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
                 (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
                 (Value::Float(a), Value::Int(b)) => Value::Float(a * b as f64),
@@ -761,11 +763,7 @@ impl Evaluator {
         use crate::lex::TokenType;
         let lhsidx = self.eval_assignable(expr.lhs.as_mut(), expr.allow_decl)?;
         let rhs = self.eval_expr(expr.rhs.as_mut())?;
-        let rhs = match rhs {
-            Value::Reference(u, _) => self.memory[u].clone(),
-            _ => rhs,
-        };
-
+        let rhs = self.deref(rhs);
         match &expr.op.token_type {
             TokenType::Equal => {
                 self.memory[lhsidx] = rhs;
@@ -805,7 +803,7 @@ impl Evaluator {
                 (Value::Float(a), Value::Char(b)) => *a += (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a + *b as f64,
                 (Value::List(a), Value::List(b)) => a.append(&mut b.clone()),
-                _ => unreachable!(),
+                _ => unreachable!("{} += {}", self.memory[lhsidx], rhs),
             },
             TokenType::MinusEq => match (&mut self.memory[lhsidx], &rhs) {
                 (Value::Int(a), Value::Int(b)) => *a -= *b,

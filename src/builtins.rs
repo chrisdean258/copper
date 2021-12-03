@@ -35,6 +35,7 @@ fn copper_print_list(ctx: &mut Evaluator, vals: &Vec<Value>) {
 pub fn copper_getline(_: &mut Evaluator, _: Vec<Value>) -> Value {
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
+        Ok(0) => Value::Null,
         Ok(_) => Value::Str(Rc::new(buffer)),
         Err(_) => Value::Null,
     }
