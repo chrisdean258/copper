@@ -73,7 +73,15 @@ impl Display for Expression {
             Expression::AssignExpr(x) => f.write_fmt(format_args!("{}", x)),
             Expression::Function(x) => f.write_fmt(format_args!("{}", x)),
             Expression::Lambda(x) => f.write_fmt(format_args!("{}", x)),
+            Expression::List(x) => f.write_fmt(format_args!("{}", x)),
         }
+    }
+}
+
+impl Display for List {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let exprs: Vec<String> = self.exprs.iter().map(|e| format!("{}", e)).collect();
+        f.write_fmt(format_args!("[{}]", exprs.join(", ")))
     }
 }
 

@@ -1,124 +1,21 @@
 #![allow(dead_code)]
 use crate::lex;
 use crate::parser::*;
+use crate::typesystem;
+use crate::typesystem::{Signature, TypeEntry, TypeEntryType, TypeRef, TypeSystem};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::mem::swap;
 use std::rc::Rc;
-
-#[derive(Clone, Debug)]
-pub enum Type {
-    BuiltinFunc,
-    Str,
-    Int,
-    Float,
-    Char,
-    Bool,
-    Null,
-    Nullable(Box<Type>),
-    Reference(Box<Type>),
-    Function(
-        Function,
-        Vec<Signature>,
-        Vec<Rc<RefCell<HashMap<String, usize>>>>,
-    ), //Note all signatures must have the same number of args
-    Lambda(
-        Lambda,
-        Vec<Signature>,
-        Vec<Rc<RefCell<HashMap<String, usize>>>>,
-    ),
-    Unininitialized,
-}
-
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        use Type::*;
-        match self {
-            BuiltinFunc => f.write_str("BuiltinFunc"),
-            Str => f.write_str("Str"),
-            Int => f.write_str("Int"),
-            Float => f.write_str("Float"),
-            Char => f.write_str("Char"),
-            Bool => f.write_str("Bool"),
-            Null => f.write_str("Null"),
-            Nullable(t) => f.write_fmt(format_args!("Nullable({})", t.as_ref())),
-            Reference(t) => f.write_fmt(format_args!("Reference({})", t.as_ref())),
-            Function(func, _, _) => {
-                f.write_fmt(format_args!("Function({})", func.argnames.join(", "),))
-            }
-            Lambda(lambda, _, _) => f.write_fmt(format_args!("Lambda(args={})", lambda.num_args)),
-            Unininitialized => f.write_str("Unininitialized"),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct TypeChecker {
     scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
-    memory: Vec<Type>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Signature {
-    ins: Vec<Type>,
-    out: Box<Type>,
-}
-
-impl Signature {
-    fn inputs_match_same_len(&self, inputs: &Vec<Type>) -> bool {
-        use std::mem::discriminant as disc;
-        for tup in self.ins.iter().zip(inputs) {
-            let (known, new) = tup;
-            if disc(known) != disc(&new) {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn input_match(&self, inputs: &Vec<Type>) -> bool {
-        if self.ins.len() == inputs.len() {
-            self.inputs_match_same_len(inputs)
-        } else {
-            false
-        }
-    }
-}
-
-fn unop_err(operator: &lex::Token, typ: &Type) -> String {
-    format!(
-        "{}: Cannot apply operator `{}` to type `{}`",
-        operator.location, operator.token_type, typ
-    )
-}
-
-fn binop_err(operator: &lex::Token, ltyp: &Type, rtyp: &Type) -> String {
-    format!(
-        "{}: Cannot apply operator `{}` to types `{}` and `{}`",
-        operator.location, operator.token_type, ltyp, rtyp
-    )
+    memory: Vec<TypeRef>,
+    system: TypeSystem,
 }
 
 fn scope_error(id: &str, token: &lex::Token) -> String {
     format!("{}: No such name in scope `{}`", token.location, id)
-}
-
-fn sig_partial_match(s1: &Vec<Signature>, s2: &Vec<Signature>) -> bool {
-    if s1.len() == 0 || s2.len() == 0 {
-        return true;
-    }
-    if s1[0].ins.len() != s2[0].ins.len() {
-        return false;
-    }
-    for sig1 in s1.iter() {
-        for sig2 in s2.iter() {
-            if sig1.inputs_match_same_len(&sig2.ins) {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 impl TypeChecker {
@@ -126,15 +23,18 @@ impl TypeChecker {
         let mut tc = TypeChecker {
             scopes: Vec::new(),
             memory: Vec::new(),
+            system: TypeSystem::new(),
         };
         let mut builtins = HashMap::new();
-        builtins.insert(String::from("print"), tc.alloc(Type::BuiltinFunc));
-        builtins.insert(String::from("prints"), tc.alloc(Type::BuiltinFunc));
+        let pt = tc.system.builtinfunction("print");
+        let pts = tc.system.builtinfunction("print");
+        builtins.insert(String::from("print"), tc.alloc(pt));
+        builtins.insert(String::from("prints"), tc.alloc(pts));
         tc.scopes.push(Rc::new(RefCell::new(builtins)));
         tc
     }
 
-    fn alloc(&mut self, typ: Type) -> usize {
+    fn alloc(&mut self, typ: usize) -> usize {
         self.memory.push(typ);
         self.memory.len() - 1
     }
@@ -165,7 +65,7 @@ impl TypeChecker {
             .and_then(|u| Some(*u))
     }
 
-    fn setdefault_scope_local(&mut self, key: &str, default: Type) -> usize {
+    fn setdefault_scope_local(&mut self, key: &str, default: usize) -> usize {
         if let Some(_) = self.lookup_scope_local(key) {
         } else {
             self.insert_scope_local(key, default.clone());
@@ -173,7 +73,7 @@ impl TypeChecker {
         self.lookup_scope_local(key).unwrap()
     }
 
-    fn insert_scope_local(&mut self, key: &str, val: Type) {
+    fn insert_scope_local(&mut self, key: &str, val: usize) {
         let idx = self.alloc(val);
         self.scopes
             .last_mut()
@@ -182,22 +82,22 @@ impl TypeChecker {
             .insert(key.to_string(), idx);
     }
 
-    pub fn typecheck(&mut self, tree: &ParseTree) -> Result<Type, String> {
-        let mut rv = Type::Null;
+    pub fn typecheck(&mut self, tree: &ParseTree) -> Result<TypeRef, String> {
+        let mut rv = typesystem::Uninitialized;
         for statement in tree.statements.iter() {
             rv = self.typecheck_statement(&statement)?;
         }
         Ok(rv)
     }
 
-    fn typecheck_statement(&mut self, statement: &Statement) -> Result<Type, String> {
+    fn typecheck_statement(&mut self, statement: &Statement) -> Result<TypeRef, String> {
         Ok(match statement {
             Statement::Expr(expr) => self.typecheck_expr(expr)?,
             Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd)?,
         })
     }
 
-    fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<Type, String> {
+    fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
         let id = match &gd.token.token_type {
             TokenType::Identifier(s) => s,
@@ -216,7 +116,7 @@ impl TypeChecker {
     }
 
     // ned to augment this to prevent type switching
-    fn typecheck_if(&mut self, i: &If) -> Result<Type, String> {
+    fn typecheck_if(&mut self, i: &If) -> Result<TypeRef, String> {
         let mut ran_first = self.typecheck_if_internal(i)?;
 
         for ai in &i.and_bodies {
@@ -231,153 +131,92 @@ impl TypeChecker {
 
         match ran_first {
             Some(a) => Ok(a),
-            None => Ok(Type::Null),
+            None => Ok(typesystem::Null),
         }
     }
 
-    fn typecheck_if_internal(&mut self, i: &If) -> Result<Option<Type>, String> {
+    fn typecheck_if_internal(&mut self, i: &If) -> Result<Option<TypeRef>, String> {
         let cond = self.typecheck_expr(&i.condition)?;
         Ok(match cond {
-            Type::Bool => Some(self.typecheck_expr(&*i.body)?),
+            typesystem::Bool => Some(self.typecheck_expr(&*i.body)?),
             _ => {
+                match &mut self.system.types[cond].typ {
+                    TypeEntryType::GenericType(cons) => {
+                        cons.push(typesystem::Constraint::Type(typesystem::Bool));
+                        return Ok(Some(self.typecheck_expr(&*i.body)?));
+                    }
+                    _ => (),
+                }
                 return Err(format!(
                     "{}: If expressions must have boolean conditions not {:?}",
-                    i.location, cond
-                ))
+                    i.location, self.system.types[cond].name
+                ));
             }
         })
     }
 
-    fn typecheck_while(&mut self, w: &While) -> Result<Type, String> {
+    fn typecheck_while(&mut self, w: &While) -> Result<TypeRef, String> {
         let cond = self.typecheck_expr(&*w.condition)?;
         match cond {
-            Type::Bool => (),
+            typesystem::Bool => (),
             _ => {
                 return Err(format!(
                     "{}: While loops must have boolean conditions not {:?}",
-                    w.location, cond
+                    w.location, self.system.types[cond].name
                 ))
             }
         }
         self.typecheck_expr(&w.body)?;
-        Ok(Type::Null)
+        Ok(typesystem::Null)
     }
 
-    fn typecheck_block(&mut self, b: &BlockExpr) -> Result<Type, String> {
-        let mut rv = Type::Null;
+    fn typecheck_block(&mut self, b: &BlockExpr) -> Result<TypeRef, String> {
+        let mut rv = typesystem::Null;
         for statement in b.statements.iter() {
             rv = self.typecheck_statement(&statement)?;
         }
         Ok(rv)
     }
 
-    fn typecheck_binop(&mut self, binop: &BinOp) -> Result<Type, String> {
-        use crate::lex::TokenType::*;
-
+    fn typecheck_binop(&mut self, binop: &BinOp) -> Result<TypeRef, String> {
+        use crate::lex::TokenType;
         let lhs = self.typecheck_expr(&*binop.lhs)?;
         let rhs = self.typecheck_expr(&*binop.rhs)?;
 
-        Ok(match binop.op.token_type {
-            Plus => match (lhs, rhs) {
-                (Type::Str, Type::Str) => Type::Str,
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (Type::Int, Type::Float) => Type::Float,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Bool, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Char, Type::Int) => Type::Char,
-                (Type::Int, Type::Char) => Type::Char,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            Minus => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (Type::Int, Type::Float) => Type::Float,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Bool, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Char, Type::Int) => Type::Char,
-                (Type::Int, Type::Char) => Type::Char,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            Times => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (Type::Int, Type::Float) => Type::Float,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Bool, Type::Int) => Type::Int,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            Div => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (Type::Int, Type::Float) => Type::Float,
-                (Type::Bool, Type::Int) => Type::Int,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            Mod => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Int) => Type::Int,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            CmpEq | CmpNotEq => match (lhs, rhs) {
-                (Type::Str, Type::Str) => Type::Bool,
-                (Type::Int, Type::Int) => Type::Bool,
-                (Type::Bool, Type::Bool) => Type::Bool,
-                (Type::Char, Type::Char) => Type::Bool,
-                (Type::Char, Type::Int) => Type::Bool,
-                (Type::Int, Type::Float) => Type::Bool,
-                (Type::Float, Type::Int) => Type::Bool,
-                (Type::Float, Type::Float) => Type::Bool,
-                (Type::Nullable(_), Type::Null) => Type::Bool,
-                (Type::Null, Type::Nullable(_)) => Type::Bool,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            CmpGE | CmpGT | CmpLE | CmpLT => match (lhs, rhs) {
-                (Type::Str, Type::Str) => Type::Bool,
-                (Type::Int, Type::Int) => Type::Bool,
-                (Type::Bool, Type::Bool) => Type::Bool,
-                (Type::Char, Type::Char) => Type::Bool,
-                (Type::Char, Type::Int) => Type::Bool,
-                (Type::Int, Type::Float) => Type::Bool,
-                (Type::Float, Type::Int) => Type::Bool,
-                (Type::Float, Type::Float) => Type::Bool,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            BitOr | BitAnd | BitXor => match (lhs, rhs) {
-                (Type::Bool, Type::Bool) => Type::Bool,
-                (Type::Bool, Type::Int) => Type::Int,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Char, Type::Int) => Type::Int,
-                (Type::Int, Type::Char) => Type::Int,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            BoolOr | BoolAnd | BoolXor => match (lhs, rhs) {
-                (Type::Bool, Type::Bool) => Type::Bool,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
-            BitShiftRight | BitShiftLeft => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Int) => Type::Int,
-                (a, b) => return Err(binop_err(&binop.op, &a, &b)),
-            },
+        let op = match binop.op.token_type {
+            TokenType::Plus => typesystem::Plus,
+            TokenType::Minus => typesystem::Minus,
+            TokenType::Times => typesystem::Times,
+            TokenType::Div => typesystem::Div,
+            TokenType::Mod => typesystem::Mod,
+            TokenType::CmpEq => typesystem::CmpEq,
+            TokenType::CmpNotEq => typesystem::CmpNotEq,
+            TokenType::CmpGE => typesystem::CmpGE,
+            TokenType::CmpGT => typesystem::CmpGT,
+            TokenType::CmpLE => typesystem::CmpLE,
+            TokenType::CmpLT => typesystem::CmpLT,
+            TokenType::BitOr => typesystem::BitOr,
+            TokenType::BitAnd => typesystem::BitAnd,
+            TokenType::BitXor => typesystem::BitXor,
+            TokenType::BoolOr => typesystem::BoolOr,
+            TokenType::BoolAnd => typesystem::BoolAnd,
+            TokenType::BoolXor => typesystem::BoolXor,
+            TokenType::BitShiftRight => typesystem::BitShiftRight,
+            TokenType::BitShiftLeft => typesystem::BitShiftLeft,
             _ => {
                 return Err(format!(
                     "{}: {:?}, unimplemented",
                     binop.op.location, binop.op.token_type
                 ))
             }
-        })
+        };
+        match self.system.apply_operation(op, vec![lhs, rhs]) {
+            Some(t) => Ok(t),
+            None => Err(self.binop_err(&binop.op, &lhs, &rhs)),
+        }
     }
 
-    fn typecheck_expr(&mut self, expr: &Expression) -> Result<Type, String> {
+    fn typecheck_expr(&mut self, expr: &Expression) -> Result<usize, String> {
         use crate::parser::Expression::*;
         match expr {
             CallExpr(callexpr) => self.typecheck_call_expr(&callexpr),
@@ -392,272 +231,212 @@ impl TypeChecker {
             Lambda(lambda) => self.typecheck_lambda_def(lambda),
             PreUnOp(u) => self.typecheck_unop_pre(u),
             PostUnOp(u) => self.typecheck_unop_post(u),
+            List(l) => self.typecheck_list(l),
         }
     }
 
-    fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<Type, String> {
-        use crate::lex::TokenType;
-        let rhsidx = self.typecheck_ref_expr_int(&*u.rhs, false)?;
-        let rhs = self.memory[rhsidx].clone();
-        Ok(match u.op.token_type {
-            TokenType::BoolNot => match rhs {
-                Type::Bool => Type::Bool,
-                Type::Int => Type::Bool,
-                Type::Char => Type::Bool,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::BitNot => match rhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::Minus => match rhs {
-                Type::Int => Type::Int,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::Plus => match rhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::Inc => match rhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::Dec => match rhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            TokenType::Times => match rhs {
-                //nullable dereferencing
-                Type::Nullable(t) => t.as_ref().clone(),
-                _ => return Err(unop_err(&u.op, &rhs)),
-            },
-            _ => unreachable!(),
-        })
+    fn typecheck_list(&mut self, l: &List) -> Result<TypeRef, String> {
+        let mut typ = typesystem::Uninitialized;
+        for expr in l.exprs.iter() {
+            let rt = self.typecheck_expr(expr)?;
+            if typ == typesystem::Uninitialized || rt == typ {
+                typ = rt;
+            } else {
+                return Err(format!(
+                    "{}: List expression has different type than established. Has `{}` needs `{}`",
+                    expr.location(),
+                    self.system.types[rt].name,
+                    self.system.types[typ].name,
+                ));
+            }
+        }
+        Ok(self.system.list(typ))
     }
 
-    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<Type, String> {
+    fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
-        let lhsidx = self.typecheck_ref_expr_int(&*u.lhs, false)?;
-        let lhs = self.memory[lhsidx].clone();
-        Ok(match u.op.token_type {
-            TokenType::Inc => match lhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &lhs)),
-            },
-            TokenType::Dec => match lhs {
-                Type::Int => Type::Int,
-                Type::Char => Type::Char,
-                _ => return Err(unop_err(&u.op, &lhs)),
-            },
+        let rhs = self.typecheck_ref_expr(&*u.rhs, false)?;
+        let op = match u.op.token_type {
+            TokenType::BoolNot => typesystem::BoolNot,
+            TokenType::BitNot => typesystem::BitNot,
+            TokenType::Minus => typesystem::Minus,
+            TokenType::Plus => typesystem::Plus,
+            TokenType::Inc => typesystem::Inc,
+            TokenType::Dec => typesystem::Dec,
+            TokenType::Times => typesystem::Times,
             _ => unreachable!(),
-        })
+        };
+        match self.system.apply_operation(op, vec![rhs]) {
+            Some(t) => Ok(t),
+            None => Err(self.unop_err(&u.op, &rhs)),
+        }
     }
 
-    fn typecheck_function_def(&mut self, f: &Function) -> Result<Type, String> {
-        let rv = Type::Function(f.clone(), Vec::new(), self.scopes.clone());
+    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<usize, String> {
+        use crate::lex::TokenType;
+        let lhs = self.typecheck_ref_expr(&*u.lhs, false)?;
+        let op = match u.op.token_type {
+            TokenType::Inc => typesystem::Inc,
+            TokenType::Dec => typesystem::Dec,
+            _ => unreachable!(),
+        };
+        match self.system.apply_operation(op, vec![lhs]) {
+            Some(t) => Ok(t),
+            None => Err(self.unop_err(&u.op, &lhs)),
+        }
+    }
+
+    fn typecheck_function_def(&mut self, f: &Function) -> Result<TypeRef, String> {
+        let mut inputs = Vec::new();
+        let name = match &f.name {
+            Some(s) => format!("fn {}({})", s, f.argnames.join(", ")),
+            None => format!("fn <anonymous>({})", f.argnames.join(", ")),
+        };
+        let placeholder = self.system.placeholder(&name);
         if f.name.is_some() {
-            self.insert_scope_local(f.name.as_ref().unwrap(), rv.clone());
+            self.insert_scope_local(f.name.as_ref().unwrap(), placeholder);
         }
-        Ok(rv)
+
+        self.openscope();
+        for argname in f.argnames.iter() {
+            let val = self.system.generic(argname);
+            inputs.push(val);
+            self.insert_scope_local(argname, val);
+        }
+        let output = self.typecheck_expr(f.body.as_ref())?;
+        self.closescope();
+        let sig = Signature { inputs, output };
+
+        self.system.replace(
+            placeholder,
+            TypeEntry {
+                name: name,
+                typ: TypeEntryType::CallableType(sig, f.argnames.len()),
+                fields: HashMap::new(),
+            },
+        );
+
+        Ok(placeholder)
     }
 
-    fn typecheck_lambda_def(&mut self, f: &Lambda) -> Result<Type, String> {
-        Ok(Type::Lambda(f.clone(), Vec::new(), self.scopes.clone()))
+    fn typecheck_lambda_def(&mut self, f: &Lambda) -> Result<usize, String> {
+        let mut inputs = Vec::new();
+        let name = format!("lambda({})", f.num_args);
+        let nametmp = format!("lambda--({})", f.num_args);
+        let placeholder = self.system.placeholder(&nametmp);
+        self.openscope();
+        for num in 0..f.num_args {
+            let argname = format!("\\{}", num);
+            let val = self.system.generic(&argname);
+            inputs.push(val);
+            self.insert_scope_local(&argname, val);
+        }
+        let output = self.typecheck_expr(f.body.as_ref())?;
+        self.closescope();
+        let sig = Signature { inputs, output };
+
+        self.system.replace(
+            placeholder,
+            TypeEntry {
+                name: name,
+                typ: TypeEntryType::CallableType(sig, f.num_args),
+                fields: HashMap::new(),
+            },
+        );
+        Ok(placeholder)
     }
 
     fn typecheck_assignment(
         &mut self,
         expr: &AssignExpr,
         lhsidx: usize,
-        rhs: Type,
-    ) -> Result<Type, String> {
-        use std::mem::discriminant as disc;
-        let olhs = self.memory[lhsidx].clone();
-        let lhs = match &olhs {
-            Type::Unininitialized => {
-                self.memory[lhsidx] = rhs.clone();
-                return Ok(rhs);
-            }
-            Type::Null => match rhs {
-                Type::Null => Type::Null,
-                _ => {
-                    self.memory[lhsidx] = Type::Nullable(Box::new(rhs.clone()));
-                    return Ok(Type::Nullable(Box::new(rhs.clone())));
-                }
-            },
-            Type::Nullable(t) => match rhs {
-                Type::Null => return Ok(olhs),
-                _ => *t.clone(),
-            },
-            t => match rhs {
-                Type::Nullable(_) => {
-                    return Err(format!(
-                            "{}: Cannot assign type {} = type {}. Try nonnulling the right side of the expression with `*`",
-                            expr.op.location, olhs, rhs
-                            ));
-                }
-                _ => t.clone(),
-            },
-        };
-        if disc(&lhs) == disc(&rhs) {
-            return Ok(olhs);
+        rhs: TypeRef,
+    ) -> Result<TypeRef, String> {
+        let lhs = self.memory[lhsidx];
+
+        if lhs == rhs {
+            return Ok(rhs);
         }
+
+        if lhs == typesystem::Uninitialized {
+            self.memory[lhsidx] = rhs;
+            return Ok(rhs);
+        }
+
         Err(format!(
             "{}: Cannot assign type {} = type {}",
-            expr.op.location, olhs, rhs
+            expr.op.location, lhs, rhs
         ))
     }
 
-    fn typecheck_assign(&mut self, expr: &AssignExpr) -> Result<Type, String> {
-        use crate::lex::TokenType::*;
+    fn typecheck_assign(&mut self, expr: &AssignExpr) -> Result<usize, String> {
+        use crate::lex::TokenType;
 
         let rhs = self.typecheck_expr(&*expr.rhs)?;
+        let lhsidx = self.typecheck_ref_expr_int(&*expr.lhs, true)?;
+        let lhs = self.memory[lhsidx];
 
-        let rhs = match rhs {
-            Type::Reference(t) => *t.clone(),
-            _ => rhs,
+        let op = match &expr.op.token_type {
+            TokenType::Equal => return self.typecheck_assignment(expr, lhsidx, rhs),
+            TokenType::OrEq => typesystem::OrEq,
+            TokenType::XorEq => typesystem::XorEq,
+            TokenType::AndEq => typesystem::AndEq,
+            TokenType::PlusEq => typesystem::PlusEq,
+            TokenType::MinusEq => typesystem::MinusEq,
+            TokenType::TimesEq => typesystem::TimesEq,
+            TokenType::DivEq => typesystem::DivEq,
+            TokenType::ModEq => typesystem::ModEq,
+            TokenType::BitShiftRightEq => typesystem::BitShiftRightEq,
+            TokenType::BitShiftLeftEq => typesystem::BitShiftLeftEq,
+            _ => unreachable!(),
         };
 
-        let lhsidx = self.typecheck_ref_expr_int(&*expr.lhs, true)?;
-        let lhs = self.memory[lhsidx].clone();
-
-        Ok(match &expr.op.token_type {
-            Equal => self.typecheck_assignment(expr, lhsidx, rhs)?,
-            OrEq | XorEq | AndEq => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Int, Type::Char) => Type::Int,
-                (Type::Char, Type::Int) => Type::Char,
-                (a, b) => return Err(binop_err(&expr.op, &a, &b)),
-            },
-            PlusEq | MinusEq => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Int, Type::Bool) => Type::Bool,
-                (Type::Int, Type::Char) => Type::Int,
-                (Type::Char, Type::Int) => Type::Char,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Bool) => Type::Float,
-                (Type::Float, Type::Char) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (a, b) => return Err(binop_err(&expr.op, &a, &b)),
-            },
-            TimesEq => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Int, Type::Bool) => Type::Int,
-                (Type::Int, Type::Char) => Type::Int,
-                (Type::Char, Type::Int) => Type::Char,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Bool) => Type::Float,
-                (Type::Float, Type::Char) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (a, b) => return Err(binop_err(&expr.op, &a, &b)),
-            },
-            DivEq => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Char) => Type::Char,
-                (Type::Int, Type::Char) => Type::Int,
-                (Type::Char, Type::Int) => Type::Char,
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Float, Type::Char) => Type::Float,
-                (Type::Float, Type::Int) => Type::Float,
-                (a, b) => return Err(binop_err(&expr.op, &a, &b)),
-            },
-            ModEq | BitShiftRightEq | BitShiftLeftEq => match (lhs, rhs) {
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::Char, Type::Int) => Type::Char,
-                (a, b) => return Err(binop_err(&expr.op, &a, &b)),
-            },
-            _ => unreachable!(),
-        })
+        match self.system.apply_operation(op, vec![rhs, lhs]) {
+            Some(t) => Ok(t),
+            None => Err(self.binop_err(&expr.op, &rhs, &lhs)),
+        }
     }
 
-    fn typecheck_call_expr(&mut self, expr: &CallExpr) -> Result<Type, String> {
-        let mut func = self.typecheck_expr(&expr.function)?;
+    fn typecheck_call_expr(&mut self, expr: &CallExpr) -> Result<usize, String> {
+        let func = self.typecheck_expr(&expr.function)?;
         let mut args = Vec::new();
         for arg in expr.args.iter() {
             args.push(self.typecheck_expr(arg)?);
         }
 
         self.openscope();
-        let rv = Ok(match &mut func {
-            Type::BuiltinFunc => Type::Null,
-            Type::Function(f, sigs, scopes) => {
-                if args.len() != f.argnames.len() {
+        let typ = self.system.types[func].typ.clone();
+        let rv = Ok(match &typ {
+            TypeEntryType::BuiltinFunction => typesystem::Null,
+            TypeEntryType::CallableType(sig, arglen) => {
+                if args.len() != *arglen {
                     return Err(format!(
                         "{}: Trying to call function with wrong number of args. wanted {} found {}",
                         expr.location,
-                        f.argnames.len(),
+                        arglen,
                         args.len(),
                     ));
                 }
-                // we have the types of all the args. We should check against known signatures
-                for sig in sigs.iter() {
-                    if sig.inputs_match_same_len(&args) {
-                        return Ok(*sig.out.clone());
-                    }
-                }
-                let mut tmp = scopes.clone();
-                swap(&mut self.scopes, &mut tmp);
-                self.openscope();
-                for it in f.argnames.iter().zip(args.iter()) {
-                    let (name, arg) = it;
-                    self.insert_scope_local(name, arg.clone());
-                }
-                let rv = self.typecheck_expr(&*f.body)?;
-                self.closescope();
-                swap(&mut self.scopes, &mut tmp);
-                sigs.push(Signature {
-                    ins: args,
-                    out: Box::new(rv.clone()),
-                });
-                rv
+                self.system.check_constraints(&sig.output, &args);
+                sig.output
             }
-            Type::Lambda(l, sigs, scopes) => {
-                if args.len() != l.num_args {
-                    return Err(format!(
-                        "{}: Trying to call lambda with wrong number of args. wanted {} found {}",
-                        expr.location,
-                        l.num_args,
-                        args.len(),
-                    ));
-                }
-                for sig in sigs.iter() {
-                    if sig.inputs_match_same_len(&args) {
-                        return Ok(*sig.out.clone());
-                    }
-                }
-                let mut tmp = scopes.clone();
-                swap(&mut self.scopes, &mut tmp);
-                self.openscope();
-                for it in args.iter().enumerate() {
-                    let (arg_num, arg) = it;
-                    let label = format!("\\{}", arg_num);
-                    self.insert_scope_local(&label, arg.clone());
-                }
-                let rv = self.typecheck_expr(&*l.body)?;
-                self.closescope();
-                swap(&mut self.scopes, &mut tmp);
-                sigs.push(Signature {
-                    ins: args,
-                    out: Box::new(rv.clone()),
-                });
-                rv
+            TypeEntryType::GenericType(_) => self.system.constrain_callable(func, args.len()),
+            _ => {
+                return Err(format!(
+                    "{}: Trying to call `{:#?}`",
+                    expr.location, self.system.types[func]
+                ))
             }
-            f => return Err(format!("{}: Tried to call {:#?}", expr.location, f)),
         });
         self.closescope();
         rv
     }
 
-    fn typecheck_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Type, String> {
+    fn typecheck_ref_expr(
+        &mut self,
+        expr: &RefExpr,
+        allow_insert: bool,
+    ) -> Result<TypeRef, String> {
         let idx = self.typecheck_ref_expr_int(expr, allow_insert)?;
         Ok(self.memory[idx].clone())
     }
@@ -667,21 +446,21 @@ impl TypeChecker {
         expr: &RefExpr,
         allow_insert: bool,
     ) -> Result<usize, String> {
-        use crate::lex::TokenType::*;
+        use crate::lex::TokenType;
         match &expr.value.token_type {
-            Identifier(s) => {
+            TokenType::Identifier(s) => {
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, Type::Unininitialized))
+                    Ok(self.setdefault_scope_local(&s, typesystem::Uninitialized))
                 } else if let Some(typ) = self.lookup_scope(s) {
                     Ok(typ)
                 } else {
                     Err(scope_error(&s, &expr.value))
                 }
             }
-            LambdaArg(u) => {
+            TokenType::LambdaArg(u) => {
                 let s = format!("\\{}", u);
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, Type::Unininitialized))
+                    Ok(self.setdefault_scope_local(&s, typesystem::Uninitialized))
                 } else if let Some(typ) = self.lookup_scope(&s) {
                     Ok(typ)
                 } else {
@@ -692,15 +471,15 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<Type, String> {
+    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<usize, String> {
         use crate::lex::TokenType;
         Ok(match immediate.value.token_type {
-            TokenType::Str(_) => Type::Str,
-            TokenType::Int(_) => Type::Int,
-            TokenType::Float(_) => Type::Float,
-            TokenType::Char(_) => Type::Char,
-            TokenType::Bool(_) => Type::Bool,
-            TokenType::Null => Type::Null,
+            TokenType::Str(_) => typesystem::Str,
+            TokenType::Int(_) => typesystem::Int,
+            TokenType::Float(_) => typesystem::Float,
+            TokenType::Char(_) => typesystem::Char,
+            TokenType::Bool(_) => typesystem::Bool,
+            TokenType::Null => typesystem::Null,
             _ => {
                 return Err(format!(
                     "{}: Unexpected immediate value {}",
@@ -708,5 +487,22 @@ impl TypeChecker {
                 ))
             }
         })
+    }
+
+    fn binop_err(&self, operator: &lex::Token, ltyp: &TypeRef, rtyp: &TypeRef) -> String {
+        format!(
+            "{}: Cannot apply operator `{}` to types `{}` and `{}`",
+            operator.location,
+            operator.token_type,
+            self.system.types[*ltyp].name,
+            self.system.types[*rtyp].name,
+        )
+    }
+
+    fn unop_err(&self, operator: &lex::Token, typ: &TypeRef) -> String {
+        format!(
+            "{}: Cannot apply operator `{}` to type `{}`",
+            operator.location, operator.token_type, self.system.types[*typ].name
+        )
     }
 }
