@@ -254,9 +254,9 @@ impl TypeChecker {
         Ok(self.system.list(typ))
     }
 
-    fn typecheck_unop_pre(&mut self, u: &PreUnOp) -> Result<TypeRef, String> {
+    fn typecheck_unop_pre(&mut self, u: &mut PreUnOp) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
-        let rhs = self.typecheck_ref_expr(&*u.rhs, false)?;
+        let rhs = self.typecheck_expr(u.rhs.as_mut())?;
         let op = match u.op.token_type {
             TokenType::BoolNot => typesystem::BoolNot,
             TokenType::BitNot => typesystem::BitNot,

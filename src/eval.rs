@@ -569,6 +569,7 @@ impl Evaluator {
 
     fn eval_index_expr(&mut self, i: &mut IndexExpr) -> Result<Value, String> {
         let obj = self.eval_expr(i.obj.as_mut())?;
+        let obj = self.deref(obj);
         let mut idxs = Vec::new();
         for idx in i.args.iter_mut() {
             idxs.push(self.eval_expr(idx)?);
@@ -598,6 +599,15 @@ impl Evaluator {
                     Ok(l[new_idx as usize].clone())
                 }
             }
+            Value::Str(s) => {
+                let new_idx = if idx < 0 { idx + s.len() as i64 } else { idx };
+                if new_idx < 0 || new_idx > s.len() as i64 {
+                    Err(format!("{}: Index out of range", i.args[0].location()))
+                } else {
+                    let chars: Vec<char> = s.chars().collect();
+                    Ok(Value::Char(chars[new_idx as usize].clone()))
+                }
+            }
             _ => Err(format!("{}: Cannot index non list types", i.location)),
         }
     }
@@ -611,11 +621,14 @@ impl Evaluator {
         Ok(Value::List(rv))
     }
 
-    fn eval_unop_pre(&mut self, u: &PreUnOp) -> Result<Value, String> {
+    fn eval_unop_pre(&mut self, u: &mut PreUnOp) -> Result<Value, String> {
         use crate::lex::TokenType;
-        let rhsidx = self.eval_ref_expr_int(&*u.rhs, false)?;
-        let derefedidx = self.deref_idx(rhsidx);
-        let rhs = self.memory[derefedidx].clone();
+        let rhs = self.eval_expr(u.rhs.as_mut())?;
+        let ref_idx = match rhs {
+            Value::Reference(u, _) => Some(u),
+            _ => None,
+        };
+        let rhs = self.deref(rhs);
 
         Ok(match u.op.token_type {
             TokenType::BoolNot => match rhs {
@@ -644,14 +657,14 @@ impl Evaluator {
             },
             TokenType::Inc => match rhs {
                 Value::Int(i) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[ref_idx.unwrap()] {
                         Value::Int(ii) => *ii += 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i + 1)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[ref_idx.unwrap()] {
                         Value::Char(cc) => *cc = ((*cc as u8) + 1) as char,
                         _ => unreachable!(),
                     }
@@ -661,14 +674,14 @@ impl Evaluator {
             },
             TokenType::Dec => match rhs {
                 Value::Int(i) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[ref_idx.unwrap()] {
                         Value::Int(ii) => *ii -= 1,
                         _ => unreachable!(),
                     }
                     Value::Int(i - 1)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[ref_idx.unwrap()] {
                         Value::Char(cc) => *cc = ((*cc as u8) - 1) as char,
                         _ => unreachable!(),
                     }
@@ -911,7 +924,7 @@ impl Evaluator {
 
     fn eval_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Value, String> {
         let idx = self.eval_ref_expr_int(expr, allow_insert)?;
-        Ok(self.memory[idx].clone())
+        Ok(Value::Reference(idx, false))
     }
 
     fn eval_ref_expr_int(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<usize, String> {

@@ -8,10 +8,10 @@ pub fn copper_print(ctx: &mut Evaluator, args: Vec<Value>) -> Value {
 
 pub fn copper_print_no_newline(ctx: &mut Evaluator, args: Vec<Value>) -> Value {
     for arg in args {
-        match &arg {
-            Value::Reference(_, _) => print!("{}", ctx.deref(arg)),
+        let val = ctx.deref(arg);
+        match &val {
             Value::List(v) => copper_print_list(ctx, v),
-            _ => print!("{}", arg),
+            _ => print!("{}", val),
         }
     }
     Value::Null

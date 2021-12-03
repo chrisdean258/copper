@@ -127,7 +127,7 @@ pub struct AssignExpr {
 #[derive(Debug, Clone)]
 pub struct PreUnOp {
     pub op: Token,
-    pub rhs: Box<RefExpr>,
+    pub rhs: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -427,22 +427,29 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
+            let mut needs_ref = false;
             match token.token_type {
                 TokenType::BoolNot => (),
                 TokenType::BitNot => (),
                 TokenType::Minus => (),
                 TokenType::Plus => (),
-                TokenType::Inc => (),
-                TokenType::Dec => (),
+                TokenType::Inc => {
+                    needs_ref = true;
+                }
+                TokenType::Dec => {
+                    needs_ref = true;
+                }
                 TokenType::Times => (),
                 _ => return self.parse_post_unary(lexer),
             }
             let token = lexer.next().unwrap();
             let rhs = self.parse_pre_unary(lexer)?;
-            let rhs = match rhs {
-                Expression::RefExpr(re) => re,
-                _ => return Err(unexpected(&token)),
-            };
+            if needs_ref {
+                match rhs {
+                    Expression::RefExpr(_) => (),
+                    _ => return Err(unexpected(&token)),
+                };
+            }
             Ok(Expression::PreUnOp(PreUnOp {
                 op: token,
                 rhs: Box::new(rhs),
