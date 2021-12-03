@@ -104,6 +104,10 @@ impl Evaluator {
         builtins.insert(String::from("print"), idx);
         let idx = eval.alloc(Value::BuiltinFunc("prints", copper_print_no_newline));
         builtins.insert(String::from("prints"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("getline", copper_getline));
+        builtins.insert(String::from("getline"), idx);
+        let idx = eval.alloc(Value::BuiltinFunc("len", copper_len));
+        builtins.insert(String::from("len"), idx);
 
         eval.scopes.push(Rc::new(RefCell::new(builtins)));
 
@@ -572,7 +576,8 @@ impl Evaluator {
         let obj = self.deref(obj);
         let mut idxs = Vec::new();
         for idx in i.args.iter_mut() {
-            idxs.push(self.eval_expr(idx)?);
+            let out = self.eval_expr(idx)?;
+            idxs.push(self.deref(out));
         }
         let idx = if i.args.len() != 1 {
             return Err(format!(

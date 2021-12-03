@@ -68,11 +68,12 @@ pub struct TypeEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeEntryType {
     BasicType,
-    BuiltinFunction,                     // Cannot typecheck yet
+    BuiltinFunction(String, TypeRef),    // Cannot typecheck yet
     CallableType(Signature, usize),      // Lambda or function, usize is num of args
     UnionType(Vec<TypeRef>),             // One of the underlying types
     ClassType(HashMap<String, TypeRef>), // Class or tuple
-    ListType(TypeRef),                   // Lists
+    Iterable(TypeRef),                   // Lists
+    Optional(TypeRef),                   // Option types
     PlaceHolderType,                     // Used for typechecking functions
     GenericType(Vec<Constraint>),        // Used for typechecking functions
 }
@@ -254,16 +255,17 @@ impl TypeSystem {
         self.new_entry(name, TypeEntryType::GenericType(con))
     }
 
-    pub fn builtinfunction(&mut self, name: &str) -> TypeRef {
-        self.new_entry(name, TypeEntryType::BuiltinFunction)
+    pub fn builtinfunction(&mut self, name: &str, rt: TypeRef) -> TypeRef {
+        let nname = format!("builtin_function<'{}'>", name);
+        self.new_entry(&nname, TypeEntryType::BuiltinFunction(name.into(), rt))
     }
 
     pub fn list(&mut self, typ: TypeRef) -> TypeRef {
-        self.list_name(&format!("list<{}>", self.types[typ].name), typ)
+        self.list_name(&format!("iterable<{}>", self.types[typ].name), typ)
     }
 
     pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
-        let rv = self.new_entry(name.into(), TypeEntryType::ListType(typ));
+        let rv = self.new_entry(name.into(), TypeEntryType::Iterable(typ));
         make_ops! {self, ["+", "+="], (rv, rv => rv), }
         if self.apply_operation_no_gen(CmpEq, vec![typ, typ]).is_some() {
             make_ops! {self, ["==", "!="], (rv, rv => Bool), }
@@ -271,8 +273,22 @@ impl TypeSystem {
                 make_ops! {self, [">=", "<=", ">", "<"], (rv, rv => Bool) }
             }
         }
-        let bif = self.builtinfunction("__index__");
+        let bifname = format!("{}.__index__", name);
+        let bif = self.builtinfunction(&bifname, typ);
         self.types[rv].fields.insert("__index__".into(), bif);
+        rv
+    }
+
+    pub fn optional(&mut self, typ: TypeRef) -> TypeRef {
+        self.optional_name(&format!("optional<{}>", self.types[typ].name), typ)
+    }
+
+    pub fn optional_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
+        let rv = self.new_entry(name.into(), TypeEntryType::Optional(typ));
+        make_ops! {self, ["*"], (rv => typ), }
+        make_ops! {self, ["==", "!="],
+            (rv, Null => Bool),
+        }
         rv
     }
 

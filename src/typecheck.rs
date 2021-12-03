@@ -26,10 +26,15 @@ impl TypeChecker {
             system: TypeSystem::new(),
         };
         let mut builtins = HashMap::new();
-        let pt = tc.system.builtinfunction("print");
-        let pts = tc.system.builtinfunction("print");
+        let pt = tc.system.builtinfunction("print", typesystem::Null);
+        let pts = tc.system.builtinfunction("print", typesystem::Null);
+        let rt = tc.system.optional(typesystem::Str);
+        let getline = tc.system.builtinfunction("getline", rt);
+        let len = tc.system.builtinfunction("len", typesystem::Int);
         builtins.insert(String::from("print"), tc.alloc(pt));
         builtins.insert(String::from("prints"), tc.alloc(pts));
+        builtins.insert(String::from("getline"), tc.alloc(getline));
+        builtins.insert(String::from("len"), tc.alloc(len));
         tc.scopes.push(Rc::new(RefCell::new(builtins)));
         tc
     }
@@ -365,8 +370,8 @@ impl TypeChecker {
         }
 
         Err(format!(
-            "{}: Cannot assign type {} = type {}",
-            expr.op.location, lhs, rhs
+            "{}: Cannot assign type `{}` = type `{}`",
+            expr.op.location, self.system.types[lhs].name, self.system.types[rhs].name
         ))
     }
 
@@ -408,7 +413,7 @@ impl TypeChecker {
         self.openscope();
         let typ = self.system.types[func].typ.clone();
         let rv = Ok(match &typ {
-            TypeEntryType::BuiltinFunction => typesystem::Null,
+            TypeEntryType::BuiltinFunction(_, rt) => *rt,
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {
                     return Err(format!(
@@ -434,7 +439,7 @@ impl TypeChecker {
     }
 
     fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<usize, String> {
-        let func = self.typecheck_expr(expr.obj.as_mut())?;
+        let obj = self.typecheck_expr(expr.obj.as_mut())?;
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
             args.push(self.typecheck_expr(arg)?);
@@ -442,8 +447,8 @@ impl TypeChecker {
 
         self.openscope();
 
-        let ltyp = self.system.types[func].clone();
-        let callable = match self.system.types[func].fields.get("__index__") {
+        let ltyp = self.system.types[obj].clone();
+        let callable = match self.system.types[obj].fields.get("__index__") {
             None => {
                 return Err(format!(
                     "{}: cannot index type `{}`",
@@ -455,14 +460,11 @@ impl TypeChecker {
 
         let typ = self.system.types[callable].clone();
         let rv = Ok(match &typ.typ {
-            TypeEntryType::BuiltinFunction => match ltyp.typ {
-                TypeEntryType::ListType(l) => self.alloc(l),
-                _ => unreachable!(),
-            },
+            TypeEntryType::BuiltinFunction(_, rt) => self.alloc(*rt),
             TypeEntryType::CallableType(sig, arglen) => {
                 if args.len() != *arglen {
                     return Err(format!(
-                        "{}: Trying to call function with wrong number of args. wanted {} found {}",
+                        "{}: Trying to index with wrong number of args. wanted {} found {}",
                         expr.location,
                         arglen,
                         args.len(),
@@ -471,14 +473,15 @@ impl TypeChecker {
                 self.system.check_constraints(&sig.output, &args);
                 sig.output
             }
-            TypeEntryType::GenericType(_) => self.system.constrain_callable(func, args.len()),
+            TypeEntryType::GenericType(_) => self.system.constrain_callable(obj, args.len()),
             _ => {
                 return Err(format!(
-                    "{}: Trying to call `{:#?}`",
-                    expr.location, self.system.types[func]
+                    "{}: Trying to index `{:#?}`",
+                    expr.location, self.system.types[obj]
                 ))
             }
         });
+
         self.closescope();
         rv
     }
