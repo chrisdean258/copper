@@ -165,10 +165,17 @@ impl TypeChecker {
         match cond {
             typesystem::Bool => (),
             _ => {
+                match &mut self.system.types[cond].typ {
+                    TypeEntryType::GenericType(cons) => {
+                        cons.push(typesystem::Constraint::Type(typesystem::Bool));
+                        return Ok(self.typecheck_expr(w.body.as_mut())?);
+                    }
+                    _ => (),
+                }
                 return Err(format!(
                     "{}: While loops must have boolean conditions not {:?}",
                     w.location, self.system.types[cond].name
-                ))
+                ));
             }
         }
         self.typecheck_expr(w.body.as_mut())?;

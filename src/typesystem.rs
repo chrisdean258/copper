@@ -211,6 +211,64 @@ impl TypeSystem {
         self.list_name("string", chr);
     }
 
+    pub fn typename(&self, typ: TypeRef) -> String {
+        self.types[typ].name.clone()
+    }
+
+    pub fn opname(&self, op: OpRef) -> String {
+        self.operations[op].name.clone()
+    }
+
+    pub fn print_ops(&self) {
+        let mut i = 0;
+        for op in self.operations.iter() {
+            print!("{}: `{}`: [", i, op.name);
+            i += 1;
+            for sig in op.signatures.iter() {
+                print!("\n    ");
+                self.print_sig(sig);
+            }
+            println!("\n]");
+        }
+    }
+
+    pub fn print_op(&self, op: OpRef) {
+        let op = &self.operations[op];
+        print!("`{}`: [", op.name);
+        for sig in op.signatures.iter() {
+            print!("\n    ");
+            self.print_sig(sig);
+        }
+        println!("\n]");
+    }
+
+    pub fn print_types(&self) {
+        let mut i = 0;
+        for op in self.types.iter() {
+            println!("{}: {:#?}", i, op);
+            i += 1;
+        }
+    }
+
+    pub fn print_sig(&self, sig: &Signature) {
+        let mut first = true;
+        print!("(");
+        for typ in sig.inputs.iter() {
+            if !first {
+                print!(", ");
+            }
+            self.print_type(*typ);
+            first = false;
+        }
+        print!(" => ");
+        self.print_type(sig.output);
+        print!(")");
+    }
+
+    pub fn print_type(&self, typ: TypeRef) {
+        print!("{}", self.typename(typ))
+    }
+
     pub fn entry(&mut self, name: &str, typ: TypeEntryType) -> Result<TypeRef, String> {
         if let Some(val) = self.types_by_name.get(name) {
             if self.types[*val].typ == typ {
@@ -267,7 +325,9 @@ impl TypeSystem {
     }
 
     pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
-        let rv = self.new_entry(name.into(), TypeEntryType::Iterable(typ));
+        let rv = self
+            .entry(name.into(), TypeEntryType::Iterable(typ))
+            .unwrap();
         make_ops! {self, ["+", "+="], (rv, rv => rv), }
         if self.apply_operation_no_gen(CmpEq, vec![typ, typ]).is_some() {
             make_ops! {self, ["==", "!="], (rv, rv => Bool), }
@@ -395,21 +455,22 @@ impl TypeSystem {
                 _ => (),
             }
         }
+
         self.apply_operation_no_gen(op, inputs)
     }
 
     pub fn apply_operation_no_gen(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = self.operations.get(op).unwrap();
         for sig in operation.signatures.iter() {
+            if inputs.len() != sig.inputs.len() {
+                continue;
+            }
             let mut matches = true;
-            if inputs.len() == sig.inputs.len() {
-                matches = true;
-                for ipts in inputs.iter().zip(sig.inputs.iter()) {
-                    let (ip, sg) = ipts;
-                    if !self.convertable_to(ip, sg) {
-                        matches = false;
-                        break;
-                    }
+            for ipts in inputs.iter().zip(sig.inputs.iter()) {
+                let (ip, sg) = ipts;
+                if !self.convertable_to(ip, sg) {
+                    matches = false;
+                    break;
                 }
             }
             if matches {

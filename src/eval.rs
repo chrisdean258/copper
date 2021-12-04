@@ -325,8 +325,8 @@ impl Evaluator {
                 (Value::Int(a), Value::Bool(b)) => Value::Int(a - b as i64),
                 (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 - b),
                 (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 - b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Char((a as i64 - b) as u8 as char),
-                (Value::Int(a), Value::Char(b)) => Value::Char((a - b as i64) as u8 as char),
+                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 - b),
+                (Value::Int(a), Value::Char(b)) => Value::Int(a - b as i64),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot subtract these two. Not supported ({:?} - {:?})",
