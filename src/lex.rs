@@ -29,6 +29,8 @@ pub enum TokenType {
     Else,
     And,
     While,
+    For,
+    In,
     Function,
     Lambda,
     Global,
@@ -94,6 +96,8 @@ impl Display for TokenType {
             Else => f.write_str("else")?,
             And => f.write_str("and")?,
             While => f.write_str("while")?,
+            For => f.write_str("for")?,
+            In => f.write_str("in")?,
             Function => f.write_str("fn")?,
             Global => f.write_str("global")?,
             Lambda => f.write_str("\\")?,
@@ -241,6 +245,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
         match &chars[..] {
             "while" => TokenType::While,
+            "for" => TokenType::For,
+            "in" => TokenType::In,
             "if" => TokenType::If,
             "else" => TokenType::Else,
             "and" => TokenType::And,

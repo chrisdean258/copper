@@ -62,6 +62,7 @@ impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Expression::While(x) => f.write_fmt(format_args!("{}", x)),
+            Expression::For(x) => f.write_fmt(format_args!("{}", x)),
             Expression::If(x) => f.write_fmt(format_args!("{}", x)),
             Expression::CallExpr(x) => f.write_fmt(format_args!("{}", x)),
             Expression::RefExpr(x) => f.write_fmt(format_args!("{}", x)),
@@ -111,6 +112,18 @@ impl Display for While {
         ))
     }
 }
+
+impl Display for For {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!(
+            "for ({} in {}) {}",
+            self.reference.as_ref(),
+            self.items.as_ref(),
+            self.body.as_ref()
+        ))
+    }
+}
+
 impl Display for If {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.write_fmt(format_args!(

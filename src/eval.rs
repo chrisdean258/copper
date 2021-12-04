@@ -258,6 +258,39 @@ impl Evaluator {
         })
     }
 
+    fn eval_for(&mut self, f: &mut For) -> Result<Value, String> {
+        let mut iterable = self.eval_expr(f.items.as_mut())?;
+        match self.eval_expr(f.items.as_mut())? {
+            Value::List(l) => {
+                for val in l {
+                    let item = self.eval_assignable(f.reference.as_mut(), true)?;
+                    self.memory[item] = val;
+                    self.eval_expr(f.body.as_mut())?;
+                }
+                return Ok(Value::Null);
+            }
+            Value::Str(s) => {
+                for chr in s.chars() {
+                    let item = self.eval_assignable(f.reference.as_mut(), true)?;
+                    self.memory[item] = Value::Char(chr);
+                    self.eval_expr(f.body.as_mut())?;
+                }
+                return Ok(Value::Null);
+            }
+            _ => (),
+        }
+        loop {
+            let item = self.eval_assignable(f.reference.as_mut(), true)?;
+            self.memory[item] = iterable;
+            self.eval_expr(f.body.as_mut())?;
+            iterable = self.eval_expr(f.items.as_mut())?;
+            match &iterable {
+                Value::Null => break Ok(Value::Null),
+                _ => (),
+            }
+        }
+    }
+
     fn eval_while(&mut self, w: &mut While) -> Result<Value, String> {
         loop {
             let cond = self.eval_expr(w.condition.as_mut())?;
@@ -563,6 +596,7 @@ impl Evaluator {
             BinOp(binop) => self.eval_binop(binop),
             AssignExpr(assignexpr) => self.eval_assign(assignexpr),
             While(w) => self.eval_while(w),
+            For(f) => self.eval_for(f),
             If(i) => self.eval_if(i),
             Function(f) => self.eval_function_def(f),
             Lambda(lambda) => self.eval_lambda_def(lambda),

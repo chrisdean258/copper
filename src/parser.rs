@@ -16,6 +16,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     While(While),
+    For(For),
     If(If),
     CallExpr(CallExpr),
     RefExpr(RefExpr),
@@ -35,6 +36,7 @@ impl Expression {
     pub fn location(&self) -> Location {
         match self {
             Expression::While(w) => w.location.clone(),
+            Expression::For(f) => f.location.clone(),
             Expression::If(i) => i.location.clone(),
             Expression::CallExpr(c) => c.location.clone(),
             Expression::RefExpr(r) => r.value.location.clone(),
@@ -67,6 +69,14 @@ pub struct ParseTree {
 pub struct While {
     pub location: Location,
     pub condition: Box<Expression>,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct For {
+    pub location: Location,
+    pub reference: Box<Expression>,
+    pub items: Box<Expression>,
     pub body: Box<Expression>,
 }
 
@@ -285,6 +295,26 @@ impl ParseTree {
         Ok(Expression::BlockExpr(BlockExpr {
             location,
             statements: rv,
+        }))
+    }
+
+    fn parse_for<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Expression, String> {
+        let location = expect!(lexer, TokenType::For).location;
+        expect!(lexer, TokenType::OpenParen);
+        let reference = Box::new(self.parse_ref(lexer)?);
+        expect!(lexer, TokenType::In);
+        let items = Box::new(self.parse_expr(lexer)?);
+        expect!(lexer, TokenType::CloseParen);
+        let body = Box::new(self.parse_expr(lexer)?);
+
+        Ok(Expression::For(For {
+            location,
+            reference,
+            items,
+            body,
         }))
     }
 
@@ -628,6 +658,7 @@ impl ParseTree {
                 TokenType::Function => self.parse_function(lexer),
                 TokenType::Lambda => self.parse_lambda(lexer),
                 TokenType::While => self.parse_while(lexer),
+                TokenType::For => self.parse_for(lexer),
                 TokenType::If => self.parse_if(lexer),
                 _ => Err(unexpected(&token)),
             }
@@ -641,8 +672,13 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let loc = expect!(lexer, TokenType::OpenBracket).location;
-        let exprs = self.parse_cse(lexer)?;
-        expect!(lexer, TokenType::CloseBracket);
+        let exprs = if if_expect!(lexer, TokenType::CloseBracket) {
+            Vec::new()
+        } else {
+            let r = self.parse_cse(lexer)?;
+            expect!(lexer, TokenType::CloseBracket);
+            r
+        };
         Ok(Expression::List(List {
             location: loc,
             exprs: exprs,

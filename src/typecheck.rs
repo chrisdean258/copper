@@ -7,9 +7,20 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[derive(Clone, Debug, Copy)]
+struct MemRef {
+    pub idx: usize,
+}
+
+impl MemRef {
+    fn new(idx: usize) -> MemRef {
+        MemRef { idx }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TypeChecker {
-    scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
     memory: Vec<TypeRef>,
     system: TypeSystem,
 }
@@ -39,9 +50,9 @@ impl TypeChecker {
         tc
     }
 
-    fn alloc(&mut self, typ: usize) -> usize {
+    fn alloc(&mut self, typ: TypeRef) -> MemRef {
         self.memory.push(typ);
-        self.memory.len() - 1
+        MemRef::new(self.memory.len() - 1)
     }
 
     fn openscope(&mut self) {
@@ -52,7 +63,7 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    fn lookup_scope(&mut self, key: &str) -> Option<usize> {
+    fn lookup_scope(&mut self, key: &str) -> Option<MemRef> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(val) = scope.borrow().get(key) {
                 return Some(*val);
@@ -61,7 +72,7 @@ impl TypeChecker {
         None
     }
 
-    fn lookup_scope_local(&self, key: &str) -> Option<usize> {
+    fn lookup_scope_local(&self, key: &str) -> Option<MemRef> {
         self.scopes
             .last()
             .unwrap()
@@ -70,7 +81,7 @@ impl TypeChecker {
             .and_then(|u| Some(*u))
     }
 
-    fn setdefault_scope_local(&mut self, key: &str, default: usize) -> usize {
+    fn setdefault_scope_local(&mut self, key: &str, default: TypeRef) -> MemRef {
         if let Some(_) = self.lookup_scope_local(key) {
         } else {
             self.insert_scope_local(key, default.clone());
@@ -78,7 +89,7 @@ impl TypeChecker {
         self.lookup_scope_local(key).unwrap()
     }
 
-    fn insert_scope_local(&mut self, key: &str, val: usize) {
+    fn insert_scope_local(&mut self, key: &str, val: TypeRef) {
         let idx = self.alloc(val);
         self.scopes
             .last_mut()
@@ -109,12 +120,12 @@ impl TypeChecker {
             _ => unreachable!(),
         };
 
-        let idx = match self.lookup_scope(id) {
+        let idx: MemRef = match self.lookup_scope(id) {
             Some(i) => i,
             None => return Err(scope_error(id, &gd.token)),
         };
 
-        let rv = self.memory[idx].clone();
+        let rv = self.memory[idx.idx].clone();
 
         self.insert_scope_local(id, rv.clone());
         Ok(rv)
@@ -145,7 +156,7 @@ impl TypeChecker {
         Ok(match cond {
             typesystem::Bool => Some(self.typecheck_expr(i.body.as_mut())?),
             _ => {
-                match &mut self.system.types[cond].typ {
+                match &mut self.system.types[cond.idx].typ {
                     TypeEntryType::GenericType(cons) => {
                         cons.push(typesystem::Constraint::Type(typesystem::Bool));
                         return Ok(Some(self.typecheck_expr(i.body.as_mut())?));
@@ -154,7 +165,7 @@ impl TypeChecker {
                 }
                 return Err(format!(
                     "{}: If expressions must have boolean conditions not {:?}",
-                    i.location, self.system.types[cond].name
+                    i.location, self.system.types[cond.idx].name
                 ));
             }
         })
@@ -165,7 +176,7 @@ impl TypeChecker {
         match cond {
             typesystem::Bool => (),
             _ => {
-                match &mut self.system.types[cond].typ {
+                match &mut self.system.types[cond.idx].typ {
                     TypeEntryType::GenericType(cons) => {
                         cons.push(typesystem::Constraint::Type(typesystem::Bool));
                         return Ok(self.typecheck_expr(w.body.as_mut())?);
@@ -174,11 +185,44 @@ impl TypeChecker {
                 }
                 return Err(format!(
                     "{}: While loops must have boolean conditions not {:?}",
-                    w.location, self.system.types[cond].name
+                    w.location, self.system.types[cond.idx].name
                 ));
             }
         }
         self.typecheck_expr(w.body.as_mut())?;
+        Ok(typesystem::Null)
+    }
+
+    fn typecheck_for(&mut self, f: &mut For) -> Result<TypeRef, String> {
+        let reftypidx: MemRef = self.typecheck_assignable(f.reference.as_mut(), true)?;
+        let iterable = self.typecheck_expr(f.items.as_mut())?;
+        let mut reftyp = self.memory[reftypidx.idx];
+
+        let itertype = match self.system.types[iterable.idx].typ {
+            TypeEntryType::Container(t) => t,
+            _ => {
+                return Err(format!(
+                    "{}: Must be a container type to iterate over",
+                    f.items.location()
+                ))
+            }
+        };
+
+        if reftyp == typesystem::Uninitialized {
+            self.memory[reftypidx.idx] = itertype;
+            reftyp = self.memory[reftypidx.idx];
+        }
+
+        if !self.system.is_assignable(&reftyp, &itertype) {
+            return Err(format!(
+                "{}: Cannot assign `{}` = `{}`",
+                f.reference.location(),
+                self.system.types[reftyp.idx].name,
+                self.system.types[itertype.idx].name,
+            ));
+        }
+
+        self.typecheck_expr(f.body.as_mut())?;
         Ok(typesystem::Null)
     }
 
@@ -228,7 +272,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_expr(&mut self, expr: &mut Expression) -> Result<usize, String> {
+    fn typecheck_expr(&mut self, expr: &mut Expression) -> Result<TypeRef, String> {
         use crate::parser::Expression::*;
         match expr {
             CallExpr(callexpr) => self.typecheck_call_expr(callexpr),
@@ -238,6 +282,7 @@ impl TypeChecker {
             BinOp(binop) => self.typecheck_binop(binop),
             AssignExpr(assignexpr) => self.typecheck_assign(assignexpr),
             While(w) => self.typecheck_while(w),
+            For(f) => self.typecheck_for(f),
             If(i) => self.typecheck_if(i),
             Function(f) => self.typecheck_function_def(f),
             Lambda(lambda) => self.typecheck_lambda_def(lambda),
@@ -254,18 +299,22 @@ impl TypeChecker {
             let rt = self.typecheck_expr(expr)?;
             if typ == typesystem::Uninitialized || rt == typ {
                 typ = rt;
-            } else if let TypeEntryType::GenericType(cons) = &mut self.system.types[typ].typ {
+            } else if let TypeEntryType::GenericType(cons) = &mut self.system.types[typ.idx].typ {
                 cons.push(typesystem::Constraint::Type(rt));
             } else {
                 return Err(format!(
                     "{}: List expression has different type than established. Has `{}` needs `{}`",
                     expr.location(),
-                    self.system.types[rt].name,
-                    self.system.types[typ].name,
+                    self.system.types[rt.idx].name,
+                    self.system.types[typ.idx].name,
                 ));
             }
         }
-        Ok(self.system.list(typ))
+        if typ == typesystem::Uninitialized {
+            Ok(typesystem::EmptyList)
+        } else {
+            Ok(self.system.list(typ))
+        }
     }
 
     fn typecheck_unop_pre(&mut self, u: &mut PreUnOp) -> Result<TypeRef, String> {
@@ -287,7 +336,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<usize, String> {
+    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
         let lhs = self.typecheck_ref_expr(&*u.lhs, false)?;
         let op = match u.op.token_type {
@@ -334,7 +383,7 @@ impl TypeChecker {
         Ok(placeholder)
     }
 
-    fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<usize, String> {
+    fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<TypeRef, String> {
         let mut inputs = Vec::new();
         let name = format!("lambda({})", f.num_args);
         let nametmp = format!("lambda--({})", f.num_args);
@@ -364,10 +413,10 @@ impl TypeChecker {
     fn typecheck_assignment(
         &mut self,
         expr: &AssignExpr,
-        lhsidx: usize,
+        lhsidx: MemRef,
         rhs: TypeRef,
     ) -> Result<TypeRef, String> {
-        let lhs = self.memory[lhsidx];
+        let lhs = self.memory[lhsidx.idx];
 
         if self.system.is_assignable(&lhs, &rhs) {
             return Ok(lhs);
@@ -377,26 +426,26 @@ impl TypeChecker {
         }
 
         if lhs == typesystem::Uninitialized {
-            self.memory[lhsidx] = rhs;
+            self.memory[lhsidx.idx] = rhs;
             return Ok(rhs);
         }
 
-        if let TypeEntryType::GenericType(cons) = &mut self.system.types[rhs].typ {
+        if let TypeEntryType::GenericType(cons) = &mut self.system.types[rhs.idx].typ {
             cons.push(typesystem::Constraint::Type(lhs));
             return Ok(lhs);
         }
 
         Err(format!(
             "{}: Cannot assign type `{}` = type `{}`",
-            expr.op.location, self.system.types[lhs].name, self.system.types[rhs].name
+            expr.op.location, self.system.types[lhs.idx].name, self.system.types[rhs.idx].name
         ))
     }
 
-    fn typecheck_assign(&mut self, expr: &mut AssignExpr) -> Result<usize, String> {
+    fn typecheck_assign(&mut self, expr: &mut AssignExpr) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
 
-        let lhsidx = self.typecheck_assignable(expr.lhs.as_mut(), true)?;
-        let lhs = self.memory[lhsidx];
+        let lhsidx: MemRef = self.typecheck_assignable(expr.lhs.as_mut(), true)?;
+        let lhs = self.memory[lhsidx.idx];
         let rhs = self.typecheck_expr(expr.rhs.as_mut())?;
 
         let op = match &expr.op.token_type {
@@ -416,11 +465,11 @@ impl TypeChecker {
 
         match self.system.apply_operation(op, vec![rhs, lhs]) {
             Some(t) => Ok(t),
-            None => Err(self.binop_err(&expr.op, &rhs, &lhs)),
+            None => Err(self.binop_err(&expr.op, &lhs, &rhs)),
         }
     }
 
-    fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<usize, String> {
+    fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<TypeRef, String> {
         let func = self.typecheck_expr(expr.function.as_mut())?;
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
@@ -428,7 +477,7 @@ impl TypeChecker {
         }
 
         self.openscope();
-        let typ = self.system.types[func].typ.clone();
+        let typ = self.system.types[func.idx].typ.clone();
         let rv = Ok(match &typ {
             TypeEntryType::BuiltinFunction(_, rt) => *rt,
             TypeEntryType::CallableType(sig, arglen) => {
@@ -447,7 +496,7 @@ impl TypeChecker {
             _ => {
                 return Err(format!(
                     "{}: Trying to call `{:#?}`",
-                    expr.location, self.system.types[func]
+                    expr.location, self.system.types[func.idx]
                 ))
             }
         });
@@ -455,22 +504,30 @@ impl TypeChecker {
         rv
     }
 
-    fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<usize, String> {
+    fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<TypeRef, String> {
+        let idx: MemRef = self.typecheck_index_expr_int(expr)?;
+        Ok(self.memory[idx.idx].clone())
+    }
+
+    fn typecheck_index_expr_int(&mut self, expr: &mut IndexExpr) -> Result<MemRef, String> {
         let obj = self.typecheck_expr(expr.obj.as_mut())?;
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
             args.push(self.typecheck_expr(arg)?);
         }
 
-        match self.system.types[obj].typ {
-            TypeEntryType::GenericType(_) => return Ok(self.system.constrain_idx(obj, args.len())),
+        match self.system.types[obj.idx].typ {
+            TypeEntryType::GenericType(_) => {
+                let typ = self.system.constrain_idx(obj, args.len());
+                return Ok(self.alloc(typ));
+            }
             _ => (),
         }
 
         self.openscope();
 
-        let ltyp = self.system.types[obj].clone();
-        let callable = match self.system.types[obj].fields.get("__index__") {
+        let ltyp = self.system.types[obj.idx].clone();
+        let callable = match self.system.types[obj.idx].fields.get("__index__") {
             None => {
                 return Err(format!(
                     "{}: cannot index type `{}`",
@@ -480,7 +537,7 @@ impl TypeChecker {
             Some(t) => *t,
         };
 
-        let typ = self.system.types[callable].clone();
+        let typ = self.system.types[callable.idx].clone();
         let rv = Ok(match &typ.typ {
             TypeEntryType::BuiltinFunction(_, rt) => self.alloc(*rt),
             TypeEntryType::CallableType(sig, arglen) => {
@@ -493,13 +550,16 @@ impl TypeChecker {
                     ));
                 }
                 self.system.check_constraints(&sig.output, &args);
-                sig.output
+                self.alloc(sig.output)
             }
-            TypeEntryType::GenericType(_) => self.system.constrain_callable(obj, args.len()),
+            TypeEntryType::GenericType(_) => {
+                let typ = self.system.constrain_callable(obj, args.len());
+                self.alloc(typ)
+            }
             _ => {
                 return Err(format!(
                     "{}: Trying to index `{:#?}`",
-                    expr.location, self.system.types[obj]
+                    expr.location, self.system.types[obj.idx]
                 ))
             }
         });
@@ -513,18 +573,18 @@ impl TypeChecker {
         expr: &RefExpr,
         allow_insert: bool,
     ) -> Result<TypeRef, String> {
-        let idx = self.typecheck_ref_expr_int(expr, allow_insert)?;
-        Ok(self.memory[idx].clone())
+        let idx: MemRef = self.typecheck_ref_expr_int(expr, allow_insert)?;
+        Ok(self.memory[idx.idx].clone())
     }
 
     fn typecheck_assignable(
         &mut self,
         expr: &mut Expression,
         allow_insert: bool,
-    ) -> Result<usize, String> {
+    ) -> Result<MemRef, String> {
         match expr {
             Expression::RefExpr(re) => self.typecheck_ref_expr_int(re, allow_insert),
-            Expression::IndexExpr(i) => self.typecheck_index_expr(i),
+            Expression::IndexExpr(i) => self.typecheck_index_expr_int(i),
             _ => todo!(),
         }
     }
@@ -533,7 +593,7 @@ impl TypeChecker {
         &mut self,
         expr: &RefExpr,
         allow_insert: bool,
-    ) -> Result<usize, String> {
+    ) -> Result<MemRef, String> {
         use crate::lex::TokenType;
         match &expr.value.token_type {
             TokenType::Identifier(s) => {
@@ -559,7 +619,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<usize, String> {
+    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<TypeRef, String> {
         use crate::lex::TokenType;
         Ok(match immediate.value.token_type {
             TokenType::Str(_) => typesystem::Str,
@@ -582,15 +642,15 @@ impl TypeChecker {
             "{}: Cannot apply operator `{}` to types `{}` and `{}`",
             operator.location,
             operator.token_type,
-            self.system.types[*ltyp].name,
-            self.system.types[*rtyp].name,
+            self.system.types[ltyp.idx].name,
+            self.system.types[rtyp.idx].name,
         )
     }
 
     fn unop_err(&self, operator: &lex::Token, typ: &TypeRef) -> String {
         format!(
             "{}: Cannot apply operator `{}` to type `{}`",
-            operator.location, operator.token_type, self.system.types[*typ].name
+            operator.location, operator.token_type, self.system.types[typ.idx].name
         )
     }
 }
