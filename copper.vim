@@ -49,7 +49,7 @@ syn match copperOperator '\/='
 syn match copperOperator '\~'
 
 
-syn match copperNumber '[-+]\?\d\+\(\.\d\+\)\?'
+syn match copperNumber '\<\d\+\(\.\d\+\)\?'
 syn match copperString '"\([^"\\]\|\\.\)*"'
 syn match copperChar '\'\([^"\\]\|\\.\)\''
 syn match copperLambdaArg '\\\d\+'

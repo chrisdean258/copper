@@ -163,7 +163,7 @@ fn err_msg(token: &Token, reason: &str) -> String {
 }
 
 fn unexpected(token: &Token) -> String {
-    panic!("{}: Unexpected `{}`", token.location, token.token_type)
+    format!("{}: Unexpected `{}`", token.location, token.token_type)
 }
 
 macro_rules! binop {
