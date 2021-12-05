@@ -198,11 +198,14 @@ impl TypeChecker {
         let iterable = self.typecheck_expr(f.items.as_mut())?;
         let mut reftyp = self.memory[reftypidx.idx];
 
-        let itertype = match self.system.types[iterable.idx].typ {
+        let typ = self.system.types[iterable.idx].typ.clone();
+        let itertype = match typ {
             TypeEntryType::Container(t) => t,
+            TypeEntryType::CallableType(f, 0) => f.output,
+            TypeEntryType::BuiltinFunction(_, t) => t,
             _ => {
                 return Err(format!(
-                    "{}: Must be a container type to iterate over",
+                    "{}: Must be a container type or function of 0 arguments to iterate over",
                     f.items.location()
                 ))
             }

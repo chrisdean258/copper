@@ -259,8 +259,9 @@ impl Evaluator {
     }
 
     fn eval_for(&mut self, f: &mut For) -> Result<Value, String> {
-        let mut iterable = self.eval_expr(f.items.as_mut())?;
-        match self.eval_expr(f.items.as_mut())? {
+        let iterable = self.eval_expr(f.items.as_mut())?;
+        let mut iterable = self.deref(iterable);
+        match iterable {
             Value::List(l) => {
                 for val in l {
                     let item = self.eval_assignable(f.reference.as_mut(), true)?;
@@ -277,17 +278,20 @@ impl Evaluator {
                 }
                 return Ok(Value::Null);
             }
-            _ => (),
-        }
+            Value::Function(_, _) => (),
+            Value::Lambda(_, _) => (),
+            Value::BuiltinFunc(_, _) => (),
+            _ => unreachable!("{}", iterable),
+        };
         loop {
-            let item = self.eval_assignable(f.reference.as_mut(), true)?;
-            self.memory[item] = iterable;
-            self.eval_expr(f.body.as_mut())?;
-            iterable = self.eval_expr(f.items.as_mut())?;
-            match &iterable {
+            let item = self.eval_callable(&mut iterable, Vec::new())?.clone();
+            match &item {
                 Value::Null => break Ok(Value::Null),
                 _ => (),
             }
+            let memloc = self.eval_assignable(f.reference.as_mut(), true)?;
+            self.memory[memloc] = item;
+            self.eval_expr(f.body.as_mut())?;
         }
     }
 
@@ -904,9 +908,12 @@ impl Evaluator {
         for arg in expr.args.iter_mut() {
             args.push(self.eval_expr(arg)?);
         }
+        self.eval_callable(&mut func, args)
+    }
 
+    fn eval_callable(&mut self, func: &mut Value, args: Vec<Value>) -> Result<Value, String> {
         self.openscope();
-        let rv = Ok(match &mut func {
+        let rv = Ok(match func {
             Value::BuiltinFunc(_, f) => f(self, args),
             Value::Function(f, scopes) => {
                 assert_eq!(args.len(), f.argnames.len());
