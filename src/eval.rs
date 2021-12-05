@@ -638,7 +638,7 @@ impl Evaluator {
         match obj {
             Value::List(l) => {
                 let new_idx = if idx < 0 { idx + l.len() as i64 } else { idx };
-                if new_idx < 0 || new_idx > l.len() as i64 {
+                if new_idx < 0 || new_idx >= l.len() as i64 {
                     Err(format!("{}: Index out of range", i.args[0].location()))
                 } else {
                     Ok(l[new_idx as usize].clone())
@@ -646,7 +646,7 @@ impl Evaluator {
             }
             Value::Str(s) => {
                 let new_idx = if idx < 0 { idx + s.len() as i64 } else { idx };
-                if new_idx < 0 || new_idx > s.len() as i64 {
+                if new_idx < 0 || new_idx >= s.len() as i64 {
                     Err(format!("{}: Index out of range", i.args[0].location()))
                 } else {
                     let chars: Vec<char> = s.chars().collect();

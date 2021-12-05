@@ -36,7 +36,15 @@ pub fn copper_getline(_: &mut Evaluator, _: Vec<Value>) -> Value {
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
         Ok(0) => Value::Null,
-        Ok(_) => Value::Str(Rc::new(buffer)),
+        Ok(_) => {
+            if buffer.ends_with('\n') {
+                buffer.pop();
+                if buffer.ends_with('\r') {
+                    buffer.pop();
+                }
+            }
+            Value::Str(Rc::new(buffer))
+        }
         Err(_) => Value::Null,
     }
 }

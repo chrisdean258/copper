@@ -2,6 +2,7 @@
 #![allow(non_upper_case_globals)]
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
 pub struct TypeRef {
@@ -18,8 +19,8 @@ pub const Float: TypeRef = TypeRef { idx: 2 };
 pub const Int: TypeRef = TypeRef { idx: 3 };
 pub const Char: TypeRef = TypeRef { idx: 4 };
 pub const Bool: TypeRef = TypeRef { idx: 5 };
-pub const Str: TypeRef = TypeRef { idx: 6 };
-pub const EmptyList: TypeRef = TypeRef { idx: 7 };
+pub const EmptyList: TypeRef = TypeRef { idx: 6 };
+pub const Str: TypeRef = TypeRef { idx: 7 };
 
 pub const Plus: OpRef = OpRef { idx: 0 };
 pub const Minus: OpRef = OpRef { idx: 1 };
@@ -56,8 +57,8 @@ pub const BitShiftRightEq: OpRef = OpRef { idx: 31 };
 pub const BitShiftLeftEq: OpRef = OpRef { idx: 32 };
 
 #[derive(Debug, Clone)]
-pub struct TypeSystem {
-    pub types: Vec<TypeEntry>,
+pub struct TypeSystem<T: Clone + Debug> {
+    pub types: Vec<TypeEntry<T>>,
     pub types_by_name: HashMap<String, TypeRef>,
     pub conversions: Vec<Vec<TypeRef>>,
     pub op_table: Vec<Operation>,
@@ -65,23 +66,23 @@ pub struct TypeSystem {
     pub operations_by_name: HashMap<String, OpRef>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypeEntry {
+#[derive(Debug, Clone)]
+pub struct TypeEntry<T: Clone + Debug> {
     pub name: String,
-    pub typ: TypeEntryType,
+    pub typ: TypeEntryType<T>,
     pub fields: HashMap<String, TypeRef>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TypeEntryType {
+#[derive(Debug, Clone)]
+pub enum TypeEntryType<T: Clone + Debug> {
     BasicType,
     BuiltinFunction(String, TypeRef),    // Cannot typecheck yet
-    CallableType(Signature, usize),      // Lambda or function, usize is num of args
+    Callable(usize, T),                  // Lambda or function, usize is num of args
     UnionType(Vec<TypeRef>),             // One of the underlying types
     ClassType(HashMap<String, TypeRef>), // Class or tuple
-    Container(TypeRef),
-    PlaceHolderType,              // Used for typechecking functions
-    GenericType(Vec<Constraint>), // Used for typechecking functions
+    Iterable(TypeRef),                   // Lists so far
+    Container(TypeRef),                  // Options
+    PlaceHolderType,                     // Used for typechecking functions
 }
 
 #[derive(Debug, Clone)]
@@ -90,28 +91,19 @@ pub struct Operation {
     signatures: Vec<Signature>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct GenericSignature {
     pub inputs: Vec<TypeRef>,
     pub output: TypeRef,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Signature {
     pub inputs: Vec<TypeRef>,
     pub output: TypeRef,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Constraint {
-    Operation(OperationConstraint),
-    Type(TypeRef),
-    Arg(usize),
-    Callable(usize, TypeRef),
-    Indexable(usize, TypeRef),
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct OperationConstraint {
     op: OpRef,
     args: Vec<TypeRef>,
@@ -149,8 +141,8 @@ macro_rules! make_ops {
     };
 }
 
-impl TypeSystem {
-    pub fn new() -> TypeSystem {
+impl<T: Clone + Debug> TypeSystem<T> {
+    pub fn new() -> TypeSystem<T> {
         let mut rv = TypeSystem {
             types: Vec::new(),
             types_by_name: HashMap::new(),
@@ -214,8 +206,8 @@ impl TypeSystem {
             (chr, int => chr),
             (int, int => int),
         };
-        self.list_name("string", chr);
         self.basic("EmptyList");
+        self.list_name("string", chr);
     }
 
     pub fn typename(&self, typ: TypeRef) -> String {
@@ -276,18 +268,14 @@ impl TypeSystem {
         print!("{}", self.typename(typ))
     }
 
-    pub fn entry(&mut self, name: &str, typ: TypeEntryType) -> Result<TypeRef, String> {
+    pub fn entry(&mut self, name: &str, typ: TypeEntryType<T>) -> Result<TypeRef, String> {
         if let Some(val) = self.types_by_name.get(name) {
-            if self.types[val.idx].typ == typ {
-                return Ok(*val);
-            } else {
-                return Err(format!("Cannot redefine type `{}`", name));
-            }
+            return Ok(*val);
         }
         Ok(self.new_entry(name, typ))
     }
 
-    pub fn new_entry(&mut self, name: &str, typ: TypeEntryType) -> TypeRef {
+    pub fn new_entry(&mut self, name: &str, typ: TypeEntryType<T>) -> TypeRef {
         let val = TypeEntry {
             name: name.into(),
             typ,
@@ -303,7 +291,7 @@ impl TypeSystem {
         rv
     }
 
-    pub fn replace(&mut self, idx: TypeRef, val: TypeEntry) {
+    pub fn replace(&mut self, idx: TypeRef, val: TypeEntry<T>) {
         self.types[idx.idx] = val;
     }
 
@@ -313,15 +301,6 @@ impl TypeSystem {
 
     pub fn placeholder(&mut self, name: &str) -> TypeRef {
         self.new_entry(name, TypeEntryType::PlaceHolderType)
-    }
-
-    pub fn generic(&mut self, name: &str) -> TypeRef {
-        let name = format!("generic<{}>", name);
-        self.generic_con(&name, Vec::new())
-    }
-
-    pub fn generic_con(&mut self, name: &str, con: Vec<Constraint>) -> TypeRef {
-        self.new_entry(name, TypeEntryType::GenericType(con))
     }
 
     pub fn builtinfunction(&mut self, name: &str, rt: TypeRef) -> TypeRef {
@@ -335,16 +314,16 @@ impl TypeSystem {
 
     pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
         let rv = self
-            .entry(name.into(), TypeEntryType::Container(typ))
+            .entry(name.into(), TypeEntryType::Iterable(typ))
             .unwrap();
         make_ops! {self, ["+", "+="],
             (rv, rv => rv),
             (EmptyList, rv => rv),
             (rv, EmptyList => rv),
         }
-        if self.apply_operation_no_gen(CmpEq, vec![typ, typ]).is_some() {
+        if self.apply_operation(CmpEq, vec![typ, typ]).is_some() {
             make_ops! {self, ["==", "!="], (rv, rv => Bool), }
-            if self.apply_operation_no_gen(CmpGT, vec![typ, typ]).is_some() {
+            if self.apply_operation(CmpGT, vec![typ, typ]).is_some() {
                 make_ops! {self, [">=", "<=", ">", "<"], (rv, rv => Bool) }
             }
         }
@@ -352,6 +331,10 @@ impl TypeSystem {
         let bif = self.builtinfunction(&bifname, typ);
         self.types[rv.idx].fields.insert("__index__".into(), bif);
         rv
+    }
+
+    pub fn function(&mut self, name: &str, num_args: usize, extra: T) -> TypeRef {
+        self.new_entry(name, TypeEntryType::Callable(num_args, extra))
     }
 
     pub fn optional(&mut self, typ: TypeRef) -> TypeRef {
@@ -410,10 +393,6 @@ impl TypeSystem {
                 let l = *l;
                 self.is_assignable(&t, &l)
             }
-            (_, GenericType(cons)) => {
-                cons.push(Constraint::Type(*lhs));
-                true
-            }
             _ => false,
         }
     }
@@ -433,54 +412,7 @@ impl TypeSystem {
         rv
     }
 
-    pub fn constrain_operation(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> TypeRef {
-        let typenames: Vec<String> = inputs
-            .iter()
-            .map(|x| self.types[x.idx].name.clone())
-            .collect();
-        self.generic_con(
-            &format!(
-                "<constrained `{}` ({})>",
-                self.operations[op.idx].name,
-                typenames.join(", ")
-            ),
-            vec![Constraint::Operation(OperationConstraint {
-                op,
-                args: inputs.clone(),
-            })],
-        )
-    }
-
-    pub fn constrain_callable(&mut self, typ: TypeRef, num_args: usize) -> TypeRef {
-        let output = self.generic("<callable output>");
-        match &mut self.types[typ.idx].typ {
-            TypeEntryType::GenericType(c) => c.push(Constraint::Callable(num_args, output)),
-            _ => (),
-        }
-        output
-    }
-
-    pub fn constrain_idx(&mut self, typ: TypeRef, num_args: usize) -> TypeRef {
-        let output = self.generic("<index output>");
-        match &mut self.types[typ.idx].typ {
-            TypeEntryType::GenericType(c) => c.push(Constraint::Indexable(num_args, output)),
-            _ => (),
-        }
-        output
-    }
-
-    pub fn apply_operation(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
-        for ip in inputs.iter() {
-            match self.types[ip.idx].typ {
-                TypeEntryType::GenericType(_) => return Some(self.constrain_operation(op, inputs)),
-                _ => (),
-            }
-        }
-
-        self.apply_operation_no_gen(op, inputs)
-    }
-
-    pub fn apply_operation_no_gen(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+    pub fn apply_operation(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = &self.operations[op.idx];
         for sig in operation.signatures.iter() {
             if inputs.len() != sig.inputs.len() {
@@ -499,60 +431,5 @@ impl TypeSystem {
             }
         }
         None
-    }
-
-    pub fn check_constraints(
-        &self,
-        typ: &TypeRef,
-        function_args: &Vec<TypeRef>,
-    ) -> Option<TypeRef> {
-        let (typ, cons) = match &self.types[typ.idx].typ {
-            TypeEntryType::GenericType(c) => (*typ, c),
-            _ => return Some(*typ),
-        };
-
-        let mut pros_typ = Uninitialized;
-        for con in cons.iter() {
-            let new_type = match con {
-                Constraint::Operation(c) => {
-                    let mut args = Vec::new();
-                    for arg in c.args.iter() {
-                        let t = self.check_constraints(arg, function_args)?;
-                        args.push(t)
-                    }
-                    self.apply_operation_no_gen(c.op, args)
-                }
-                Constraint::Type(t) => {
-                    if !self.convertable_to(&typ, t) {
-                        return None;
-                    }
-                    Some(typ)
-                }
-                Constraint::Arg(idx) => Some(function_args[*idx]),
-                Constraint::Callable(num_args, output) => {
-                    if *num_args != function_args.len() {
-                        return None;
-                    }
-                    Some(*output)
-                }
-                Constraint::Indexable(num_args, output) => {
-                    if *num_args != function_args.len() {
-                        return None;
-                    }
-                    Some(*output)
-                }
-            };
-            let new_type = new_type?;
-            if pros_typ == Uninitialized || pros_typ == new_type {
-                pros_typ = new_type;
-                continue;
-            } else if self.convertable_to(&pros_typ, &new_type) {
-                pros_typ = new_type;
-                continue;
-            } else if self.convertable_to(&new_type, &pros_typ) {
-                continue;
-            }
-        }
-        Some(pros_typ)
     }
 }

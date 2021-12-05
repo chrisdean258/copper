@@ -2,12 +2,12 @@
 use crate::lex;
 use crate::parser::*;
 use crate::typesystem;
-use crate::typesystem::{Signature, TypeEntry, TypeEntryType, TypeRef, TypeSystem};
+use crate::typesystem::{TypeEntryType, TypeRef, TypeSystem};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 struct MemRef {
     pub idx: usize,
 }
@@ -19,10 +19,17 @@ impl MemRef {
 }
 
 #[derive(Clone, Debug)]
+struct FunctionCall {
+    scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
+    arg_names: Vec<String>,
+    body: Expression,
+}
+
+#[derive(Clone, Debug)]
 pub struct TypeChecker {
     scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
     memory: Vec<TypeRef>,
-    system: TypeSystem,
+    system: TypeSystem<FunctionCall>,
 }
 
 fn scope_error(id: &str, token: &lex::Token) -> String {
@@ -156,13 +163,6 @@ impl TypeChecker {
         Ok(match cond {
             typesystem::Bool => Some(self.typecheck_expr(i.body.as_mut())?),
             _ => {
-                match &mut self.system.types[cond.idx].typ {
-                    TypeEntryType::GenericType(cons) => {
-                        cons.push(typesystem::Constraint::Type(typesystem::Bool));
-                        return Ok(Some(self.typecheck_expr(i.body.as_mut())?));
-                    }
-                    _ => (),
-                }
                 return Err(format!(
                     "{}: If expressions must have boolean conditions not {:?}",
                     i.location, self.system.types[cond.idx].name
@@ -176,13 +176,6 @@ impl TypeChecker {
         match cond {
             typesystem::Bool => (),
             _ => {
-                match &mut self.system.types[cond.idx].typ {
-                    TypeEntryType::GenericType(cons) => {
-                        cons.push(typesystem::Constraint::Type(typesystem::Bool));
-                        return Ok(self.typecheck_expr(w.body.as_mut())?);
-                    }
-                    _ => (),
-                }
                 return Err(format!(
                     "{}: While loops must have boolean conditions not {:?}",
                     w.location, self.system.types[cond.idx].name
@@ -198,11 +191,27 @@ impl TypeChecker {
         let iterable = self.typecheck_expr(f.items.as_mut())?;
         let mut reftyp = self.memory[reftypidx.idx];
 
-        let typ = self.system.types[iterable.idx].typ.clone();
-        let itertype = match typ {
-            TypeEntryType::Container(t) => t,
-            TypeEntryType::CallableType(f, 0) => f.output,
-            TypeEntryType::BuiltinFunction(_, t) => t,
+        let itertype = match &mut self.system.types[iterable.idx].typ.clone() {
+            TypeEntryType::Iterable(t) => *t,
+            TypeEntryType::Callable(0, fc) => {
+                let typ = match self.typecheck_function_call(fc, Vec::new()) {
+                    Ok(r) => r,
+                    Err(s) => Err(format!(
+                        "{}\n{}: Originating at this index expression",
+                        s, f.location
+                    ))?,
+                };
+                match self.system.types[typ.idx].typ {
+                    TypeEntryType::Container(t) => t,
+                    _ => typ,
+                }
+            }
+
+            TypeEntryType::BuiltinFunction(_, t) => match &mut self.system.types[t.idx].typ {
+                TypeEntryType::Container(a) => *a,
+                _ => *t,
+            },
+
             _ => {
                 return Err(format!(
                     "{}: Must be a container type or function of 0 arguments to iterate over",
@@ -302,8 +311,6 @@ impl TypeChecker {
             let rt = self.typecheck_expr(expr)?;
             if typ == typesystem::Uninitialized || rt == typ {
                 typ = rt;
-            } else if let TypeEntryType::GenericType(cons) = &mut self.system.types[typ.idx].typ {
-                cons.push(typesystem::Constraint::Type(rt));
             } else {
                 return Err(format!(
                     "{}: List expression has different type than established. Has `{}` needs `{}`",
@@ -353,64 +360,58 @@ impl TypeChecker {
         }
     }
 
+    fn typecheck_function_call(
+        &mut self,
+        f: &mut FunctionCall,
+        args: Vec<TypeRef>,
+    ) -> Result<TypeRef, String> {
+        let save = self.scopes.clone();
+        self.scopes = f.scopes.clone();
+        self.openscope();
+        for it in args.iter().zip(f.arg_names.iter()) {
+            let (arg, name) = it;
+            self.insert_scope_local(name, *arg);
+        }
+        let rv = self.typecheck_expr(&mut f.body)?;
+        self.scopes = save;
+        Ok(rv)
+    }
+
     fn typecheck_function_def(&mut self, f: &mut Function) -> Result<TypeRef, String> {
-        let mut inputs = Vec::new();
         let name = match &f.name {
             Some(s) => format!("fn {}({})", s, f.argnames.join(", ")),
             None => format!("fn <anonymous>({})", f.argnames.join(", ")),
         };
-        let placeholder = self.system.placeholder(&name);
-        if f.name.is_some() {
-            self.insert_scope_local(f.name.as_ref().unwrap(), placeholder);
-        }
 
-        self.openscope();
-        for argname in f.argnames.iter() {
-            let val = self.system.generic(argname);
-            inputs.push(val);
-            self.insert_scope_local(argname, val);
-        }
-        let output = self.typecheck_expr(f.body.as_mut())?;
-        self.closescope();
-        let sig = Signature { inputs, output };
-
-        self.system.replace(
-            placeholder,
-            TypeEntry {
-                name: name,
-                typ: TypeEntryType::CallableType(sig, f.argnames.len()),
-                fields: HashMap::new(),
+        let rv = self.system.function(
+            &name,
+            f.argnames.len(),
+            FunctionCall {
+                scopes: self.scopes.clone(),
+                arg_names: f.argnames.clone(),
+                body: f.body.as_ref().clone(),
             },
         );
 
-        Ok(placeholder)
+        if f.name.is_some() {
+            self.insert_scope_local(f.name.as_ref().unwrap(), rv);
+        }
+
+        Ok(rv)
     }
 
     fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<TypeRef, String> {
-        let mut inputs = Vec::new();
         let name = format!("lambda({})", f.num_args);
-        let nametmp = format!("lambda--({})", f.num_args);
-        let placeholder = self.system.placeholder(&nametmp);
-        self.openscope();
-        for num in 0..f.num_args {
-            let argname = format!("\\{}", num);
-            let val = self.system.generic(&argname);
-            inputs.push(val);
-            self.insert_scope_local(&argname, val);
-        }
-        let output = self.typecheck_expr(f.body.as_mut())?;
-        self.closescope();
-        let sig = Signature { inputs, output };
-
-        self.system.replace(
-            placeholder,
-            TypeEntry {
-                name: name,
-                typ: TypeEntryType::CallableType(sig, f.num_args),
-                fields: HashMap::new(),
+        let arg_names: Vec<String> = (0..f.num_args).map(|a| format!("\\{}", a)).collect();
+        Ok(self.system.function(
+            &name,
+            f.num_args,
+            FunctionCall {
+                scopes: self.scopes.clone(),
+                arg_names,
+                body: f.body.as_ref().clone(),
             },
-        );
-        Ok(placeholder)
+        ))
     }
 
     fn typecheck_assignment(
@@ -431,11 +432,6 @@ impl TypeChecker {
         if lhs == typesystem::Uninitialized {
             self.memory[lhsidx.idx] = rhs;
             return Ok(rhs);
-        }
-
-        if let TypeEntryType::GenericType(cons) = &mut self.system.types[rhs.idx].typ {
-            cons.push(typesystem::Constraint::Type(lhs));
-            return Ok(lhs);
         }
 
         Err(format!(
@@ -466,10 +462,12 @@ impl TypeChecker {
             _ => unreachable!(),
         };
 
-        match self.system.apply_operation(op, vec![rhs, lhs]) {
-            Some(t) => Ok(t),
-            None => Err(self.binop_err(&expr.op, &lhs, &rhs)),
-        }
+        let rv = match self.system.apply_operation(op, vec![rhs, lhs]) {
+            Some(t) => t,
+            None => return Err(self.binop_err(&expr.op, &lhs, &rhs)),
+        };
+        self.memory[lhsidx.idx] = rv;
+        Ok(rv)
     }
 
     fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<TypeRef, String> {
@@ -480,22 +478,16 @@ impl TypeChecker {
         }
 
         self.openscope();
-        let typ = self.system.types[func.idx].typ.clone();
-        let rv = Ok(match &typ {
+        let mut typ = self.system.types[func.idx].typ.clone();
+        let rv = Ok(match &mut typ {
             TypeEntryType::BuiltinFunction(_, rt) => *rt,
-            TypeEntryType::CallableType(sig, arglen) => {
-                if args.len() != *arglen {
-                    return Err(format!(
-                        "{}: Trying to call function with wrong number of args. wanted {} found {}",
-                        expr.location,
-                        arglen,
-                        args.len(),
-                    ));
-                }
-                self.system.check_constraints(&sig.output, &args);
-                sig.output
-            }
-            TypeEntryType::GenericType(_) => self.system.constrain_callable(func, args.len()),
+            TypeEntryType::Callable(_, fc) => match self.typecheck_function_call(fc, args) {
+                Ok(r) => r,
+                Err(s) => Err(format!(
+                    "{}\n{}: Originating at this index expression",
+                    s, expr.location
+                ))?,
+            },
             _ => {
                 return Err(format!(
                     "{}: Trying to call `{:#?}`",
@@ -519,45 +511,31 @@ impl TypeChecker {
             args.push(self.typecheck_expr(arg)?);
         }
 
-        match self.system.types[obj.idx].typ {
-            TypeEntryType::GenericType(_) => {
-                let typ = self.system.constrain_idx(obj, args.len());
-                return Ok(self.alloc(typ));
-            }
-            _ => (),
-        }
-
         self.openscope();
 
         let ltyp = self.system.types[obj.idx].clone();
         let callable = match self.system.types[obj.idx].fields.get("__index__") {
             None => {
                 return Err(format!(
-                    "{}: cannot index type `{}`",
-                    expr.location, ltyp.name
+                    "{}: cannot index type `{:#?}`",
+                    expr.location, ltyp
                 ))
             }
             Some(t) => *t,
         };
 
-        let typ = self.system.types[callable.idx].clone();
-        let rv = Ok(match &typ.typ {
+        let mut typ = self.system.types[callable.idx].clone();
+        let rv = Ok(match &mut typ.typ {
             TypeEntryType::BuiltinFunction(_, rt) => self.alloc(*rt),
-            TypeEntryType::CallableType(sig, arglen) => {
-                if args.len() != *arglen {
-                    return Err(format!(
-                        "{}: Trying to index with wrong number of args. wanted {} found {}",
-                        expr.location,
-                        arglen,
-                        args.len(),
-                    ));
-                }
-                self.system.check_constraints(&sig.output, &args);
-                self.alloc(sig.output)
-            }
-            TypeEntryType::GenericType(_) => {
-                let typ = self.system.constrain_callable(obj, args.len());
-                self.alloc(typ)
+            TypeEntryType::Callable(_, fc) => {
+                let rv = match self.typecheck_function_call(fc, args) {
+                    Ok(r) => r,
+                    Err(s) => Err(format!(
+                        "{}\n{}: Originating at this index expression",
+                        s, expr.location
+                    ))?,
+                };
+                self.alloc(rv)
             }
             _ => {
                 return Err(format!(
