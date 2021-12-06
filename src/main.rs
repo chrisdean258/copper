@@ -19,6 +19,7 @@ fn main() {
     let mut format = false;
     let mut file_or_cmd: Option<&str> = None;
     let mut is_cmd = false;
+    let mut use_stdin = false;
     for arg in args[1..].iter() {
         if arg == "-t" || arg == "--typecheck" {
             typecheck_only = true;
@@ -26,6 +27,8 @@ fn main() {
             format = true;
         } else if arg == "-c" {
             is_cmd = true;
+        } else if arg == "--stdin" {
+            use_stdin = true;
         } else {
             file_or_cmd = Some(arg);
             break;
@@ -35,8 +38,11 @@ fn main() {
     let rv = match file_or_cmd {
         Some(cmd) if is_cmd => eval_cmd(cmd, format, typecheck_only),
         Some(filename) => eval_file(filename, format, typecheck_only),
-        None if format => {
-            eval_stdin(format, typecheck_only).unwrap();
+        None if format || use_stdin => {
+            match eval_stdin(format, typecheck_only) {
+                Ok(_) => (),
+                Err(s) => println!("{}", s),
+            }
             return;
         }
         None => {

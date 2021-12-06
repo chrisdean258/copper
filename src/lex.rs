@@ -34,6 +34,7 @@ pub enum TokenType {
     Function,
     Lambda,
     Class,
+    Field,
     Global,
     Null,
     OpenParen,
@@ -103,6 +104,7 @@ impl Display for TokenType {
             Global => f.write_str("global")?,
             Lambda => f.write_str("\\")?,
             Class => f.write_str("class")?,
+            Field => f.write_str("field")?,
             Null => f.write_str("null")?,
             OpenParen => f.write_str("(")?,
             CloseParen => f.write_str(")")?,
@@ -127,8 +129,8 @@ impl Display for TokenType {
             BitShiftRightEq => f.write_str(">>=")?,
             BitShiftLeftEq => f.write_str("<<=")?,
             Semicolon => f.write_str(";")?,
-            OpenBrace => f.write_str("{{")?,
-            CloseBrace => f.write_str("}}")?,
+            OpenBrace => f.write_str("{")?,
+            CloseBrace => f.write_str("}")?,
             OpenBracket => f.write_str("[")?,
             CloseBracket => f.write_str("]")?,
             CmpEq => f.write_str("==")?,
@@ -254,6 +256,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
             "and" => TokenType::And,
             "fn" => TokenType::Function,
             "class" => TokenType::Class,
+            "field" => TokenType::Field,
             "null" => TokenType::Null,
             "global" => TokenType::Global,
             "true" => TokenType::Bool(1),
@@ -265,26 +268,16 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn chr(&mut self) -> TokenType {
         use TokenType::Char;
         self.expect_char('\'');
-        let c: char;
-        if let Some(cc) = self.chars.next() {
-            c = if cc == '\\' {
-                if let Some(ccc) = self.chars.next() {
-                    match ccc {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '0' => '\0',
-                        _ => ccc,
-                    }
-                } else {
-                    panic!("Unexpected End of File");
-                }
-            } else {
-                cc
+        let mut c = self.chars.next().expect("Unexpected EOF");
+        if c == '\\' {
+            c = match self.chars.next().expect("Unexpected EOF") {
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                '0' => '\0',
+                ch => ch,
             }
-        } else {
-            panic!("Unexpected End of File");
-        }
+        };
         self.expect_char('\'');
         return Char(c);
     }
@@ -295,16 +288,12 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         let mut chars: Vec<char> = Vec::new();
         while let Some(c) = self.chars.next() {
             chars.push(if c == '\\' {
-                if let Some(c) = self.chars.next() {
-                    match c {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '0' => '\0',
-                        _ => c,
-                    }
-                } else {
-                    panic!("Unexpected End of File");
+                match self.chars.next().expect("Unexpected EOF") {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '0' => '\0',
+                    ch => ch,
                 }
             } else if c == '"' {
                 break;
@@ -326,10 +315,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     }
 
     fn lambda_arg(&mut self) -> TokenType {
-        match self.chars.next().unwrap() {
-            '\\' => (),
-            _ => unreachable!(),
-        }
+        self.expect_char('\\');
 
         let mut chars = String::new();
 

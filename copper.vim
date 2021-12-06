@@ -7,7 +7,7 @@ if exists("b:current_syntax")
   finish
 endif
 
-syn keyword copperKeyword fn global class
+syn keyword copperKeyword fn global class field
 syn keyword copperConditional while if else and for
 syn keyword copperBuiltin print prints
 syn keyword copperBool true false

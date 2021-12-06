@@ -69,8 +69,10 @@ pub struct GlobalDecl {
 
 #[derive(Debug, Clone)]
 pub struct ClassDecl {
-    pub name: Token,
-    pub body: Expression,
+    pub location: Location,
+    pub name: String,
+    pub fields: Vec<String>,
+    pub methods: Vec<Function>,
 }
 
 #[derive(Debug, Clone)]
@@ -214,16 +216,13 @@ macro_rules! binop {
     }
 }
 macro_rules! expect {
-    ( $lexer:ident, $token:path ) => {
-        if let Some(token) = $lexer.peek() {
-            match &token.token_type {
-                $token => $lexer.next().unwrap(),
-                _ => return Err(unexpected(&token)),
-            }
-        } else {
-            return Err("Unexpected EOF".into());
+    ( $lexer:ident, $token:path ) => {{
+        let token = $lexer.peek().ok_or("Unexpected EOF")?;
+        match &token.token_type {
+            $token => $lexer.next().unwrap(),
+            _ => return Err(unexpected(&token)),
         }
-    };
+    }};
 }
 
 macro_rules! if_expect {
@@ -295,15 +294,51 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
-        expect!(lexer, TokenType::Class);
+        let location = expect!(lexer, TokenType::Class).location;
         let token = lexer.next().ok_or("Unexpected EOF")?;
-        match &token.token_type {
-            TokenType::Identifier(_) => (),
+        let name = match &token.token_type {
+            TokenType::Identifier(s) => s.clone(),
             _ => return Err(unexpected(&token)),
+        };
+
+        expect!(lexer, TokenType::OpenBrace);
+
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+        loop {
+            let token = lexer.peek().ok_or("Unexpected EOF")?;
+            match token.token_type {
+                TokenType::CloseBrace => {
+                    lexer.next();
+                    break;
+                }
+                TokenType::Function => methods.push(match self.parse_function(lexer)? {
+                    Expression::Function(f) => f,
+                    _ => unreachable!(),
+                }),
+                TokenType::Field => loop {
+                    lexer.next();
+                    let token = lexer.next().ok_or("Unexpected EOF")?;
+                    fields.push(match token.token_type {
+                        TokenType::Identifier(s) => s,
+                        _ => break,
+                    });
+                    if if_expect!(lexer, TokenType::Semicolon) {
+                        break;
+                    }
+                    if !if_expect!(lexer, TokenType::Comma) {
+                        break;
+                    }
+                },
+                _ => return Err(unexpected(&token)),
+            }
         }
+
         Ok(Statement::ClassDecl(ClassDecl {
-            name: token,
-            body: self.parse_expr(lexer)?,
+            location,
+            name,
+            fields,
+            methods,
         }))
     }
 
@@ -566,7 +601,7 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         let loctoken = expect!(lexer, TokenType::Function);
-        let token = lexer.peek().expect("Unexpected EOF".into());
+        let token = lexer.peek().ok_or("Unexpected EOF")?;
         let name = match &token.token_type {
             TokenType::Identifier(s) => {
                 let rv = s.clone();
@@ -578,13 +613,13 @@ impl ParseTree {
         expect!(lexer, TokenType::OpenParen);
         let mut args = Vec::new();
         loop {
-            let token = lexer.next().expect("Unexpected EOF".into());
+            let token = lexer.next().ok_or("Unexpected EOF")?;
             match &token.token_type {
                 TokenType::Identifier(s) => args.push(s.clone()),
                 TokenType::CloseParen => break,
                 _ => return Err(unexpected(&token)),
             }
-            let token = lexer.next().expect("Unexpected EOF".into());
+            let token = lexer.next().ok_or("Unexpected EOF")?;
             match &token.token_type {
                 TokenType::Comma => (),
                 TokenType::CloseParen => break,
