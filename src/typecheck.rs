@@ -121,7 +121,7 @@ impl TypeChecker {
         })
     }
 
-    fn typecheck_class_decl(&mut self, cd: &ClassDecl) -> Result<TypeRef, String> {
+    fn typecheck_class_decl(&mut self, _cd: &ClassDecl) -> Result<TypeRef, String> {
         todo!()
     }
 
@@ -307,6 +307,7 @@ impl TypeChecker {
             PostUnOp(u) => self.typecheck_unop_post(u),
             List(l) => self.typecheck_list(l),
             IndexExpr(l) => self.typecheck_index_expr(l),
+            DottedLookup(_) => todo!(),
         }
     }
 

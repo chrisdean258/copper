@@ -31,6 +31,7 @@ pub enum Expression {
     Lambda(Lambda),
     List(List),
     IndexExpr(IndexExpr),
+    DottedLookup(DottedLookup),
 }
 
 impl Expression {
@@ -51,6 +52,7 @@ impl Expression {
             Expression::Lambda(l) => l.location.clone(),
             Expression::List(l) => l.location.clone(),
             Expression::IndexExpr(l) => l.location.clone(),
+            Expression::DottedLookup(d) => d.location.clone(),
         }
     }
 }
@@ -177,13 +179,20 @@ pub struct List {
     pub exprs: Vec<Expression>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DottedLookup {
+    pub location: Location,
+    pub lhs: Box<Expression>,
+    pub rhs: String,
+}
+
 #[allow(dead_code)]
 fn err_msg(token: &Token, reason: &str) -> String {
     format!("{}: {}", token.location, reason)
 }
 
 fn unexpected(token: &Token) -> String {
-    format!("{}: Unexpected `{}`", token.location, token.token_type)
+    panic!("{}: Unexpected `{}`", token.location, token.token_type)
 }
 
 macro_rules! binop {
@@ -475,6 +484,7 @@ impl ParseTree {
                 match lhs {
                     Expression::RefExpr(_) => lhs,
                     Expression::IndexExpr(_) => lhs,
+                    Expression::DottedLookup(_) => lhs,
                     _ => return Err(unexpected(&token)),
                 }
             }
@@ -682,7 +692,7 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
-            match &token.token_type {
+            let mut rv = match &token.token_type {
                 TokenType::Identifier(_) => Ok(Expression::RefExpr(RefExpr {
                     value: lexer.next().unwrap(),
                 })),
@@ -722,10 +732,37 @@ impl ParseTree {
                 TokenType::For => self.parse_for(lexer),
                 TokenType::If => self.parse_if(lexer),
                 _ => Err(unexpected(&token)),
+            }?;
+            loop {
+                match lexer.peek().map(|x| &x.token_type) {
+                    Some(TokenType::Dot) => {
+                        rv = self.parse_dotted_lookup(lexer, rv)?;
+                    }
+                    _ => break,
+                }
             }
+            Ok(rv)
         } else {
             self.parse_paren(lexer)
         }
+    }
+
+    fn parse_dotted_lookup<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+        lhs: Expression,
+    ) -> Result<Expression, String> {
+        let location = expect!(lexer, TokenType::Dot).location;
+        let token = lexer.next().ok_or("Unexpected EOF")?;
+        let rhs = match token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => return Err(unexpected(&token)),
+        };
+        Ok(Expression::DottedLookup(DottedLookup {
+            location,
+            lhs: Box::new(lhs),
+            rhs,
+        }))
     }
 
     fn parse_list<T: Iterator<Item = String>>(

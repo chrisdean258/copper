@@ -31,7 +31,7 @@ if [ $# -eq 0 ]; then
 	echo "Passed $num_passed/$num_tests"
 else 
 	for t in "$@"; do 
-		file="$(find tests -name '*.cu' | grep "$t" | head -n 1)"
+		file="$(find ./test -name '*.cu' | grep "$t" | head -n 1)"
 		run-test "$file" 1
 	done
 fi

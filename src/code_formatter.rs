@@ -77,7 +77,14 @@ impl Display for Expression {
             Expression::Lambda(x) => f.write_fmt(format_args!("{}", x)),
             Expression::List(x) => f.write_fmt(format_args!("{}", x)),
             Expression::IndexExpr(x) => f.write_fmt(format_args!("{}", x)),
+            Expression::DottedLookup(x) => f.write_fmt(format_args!("{}", x)),
         }
+    }
+}
+
+impl Display for DottedLookup {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{}.{}", self.lhs.as_ref(), self.rhs))
     }
 }
 

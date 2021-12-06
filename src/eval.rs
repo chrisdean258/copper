@@ -205,7 +205,7 @@ impl Evaluator {
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
             GlobalDecl(gd) => self.eval_global_decl(gd)?,
-            ClassDecl(cd) => todo!(),
+            ClassDecl(_) => todo!(),
         })
     }
 
@@ -609,6 +609,7 @@ impl Evaluator {
             PostUnOp(u) => self.eval_unop_post(u),
             List(l) => self.eval_list(l),
             IndexExpr(i) => self.eval_index_expr(i),
+            DottedLookup(_) => todo!(),
         }
     }
 
