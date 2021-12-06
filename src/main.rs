@@ -11,7 +11,6 @@ use rustyline::Editor;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
-use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -41,7 +40,7 @@ fn main() {
         None if format || use_stdin => {
             match eval_stdin(format, typecheck_only) {
                 Ok(_) => (),
-                Err(s) => println!("{}", s),
+                Err(s) => eprintln!("{}", s),
             }
             return;
         }
@@ -91,7 +90,7 @@ fn repl(format: bool, typecheck_only: bool) {
                 let mut tree = match parser.parse() {
                     Ok(t) => t,
                     Err(s) => {
-                        println!("{}", s);
+                        eprintln!("{}", s);
                         continue;
                     }
                 };
@@ -102,7 +101,7 @@ fn repl(format: bool, typecheck_only: bool) {
                 match typechecker.typecheck(&mut tree) {
                     Ok(_) => (),
                     Err(s) => {
-                        println!("{}", s);
+                        eprintln!("{}", s);
                         continue;
                     }
                 }
@@ -111,7 +110,7 @@ fn repl(format: bool, typecheck_only: bool) {
                     match val {
                         Ok(eval::Value::Null) => (),
                         Ok(t) => println!("{}", t),
-                        Err(s) => println!("{}", s),
+                        Err(s) => eprintln!("{}", s),
                     }
                 }
             }
@@ -121,16 +120,18 @@ fn repl(format: bool, typecheck_only: bool) {
                 break;
             }
             Err(err) => {
-                println!("Error: {:?}", err);
+                eprintln!("Error: {:?}", err);
                 break;
             }
         }
     }
 }
 
-fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
-    let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
-    let lexer = lex::Lexer::new("<stdin>", &mut lines);
+fn eval_lexer<T: Iterator<Item = String>>(
+    lexer: lex::Lexer<T>,
+    format: bool,
+    typecheck_only: bool,
+) -> Result<(), String> {
     let parser = parser::Parser::new(lexer);
     let mut tree = parser.parse()?;
     if format {
@@ -146,32 +147,26 @@ fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
         evaluator.eval(&mut tree)?;
     }
     Ok(())
+}
+
+fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
+    let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
+    eval_lexer(
+        lex::Lexer::new("<stdin>", &mut lines),
+        format,
+        typecheck_only,
+    )
 }
 
 fn eval_file(filename: &str, format: bool, typecheck_only: bool) -> Result<(), String> {
-    let mut lines = read_lines(&filename).map(|s| s.unwrap());
-    let lexer = lex::Lexer::new(&filename, &mut lines);
-    let parser = parser::Parser::new(lexer);
-    let mut tree = parser.parse()?;
-    if format {
-        println!("{}", tree);
-        return Ok(());
-    }
-
-    let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&mut tree)?;
-
-    if !typecheck_only {
-        let mut evaluator = eval::Evaluator::new();
-        evaluator.eval(&mut tree)?;
-    }
-    Ok(())
-}
-
-fn read_lines<P>(filename: &P) -> io::Lines<io::BufReader<File>>
-where
-    P: AsRef<Path>,
-{
-    let file = File::open(filename).expect("No such file");
-    io::BufReader::new(file).lines()
+    let file = match File::open(filename) {
+        Ok(f) => f,
+        Err(_) => return Err(format!("{}: no such file", filename)),
+    };
+    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
+    eval_lexer(
+        lex::Lexer::new(&filename, &mut lines),
+        format,
+        typecheck_only,
+    )
 }
