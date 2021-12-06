@@ -44,6 +44,7 @@ impl Display for Statement {
         match self {
             Statement::Expr(e) => f.write_fmt(format_args!("{};", e)),
             Statement::GlobalDecl(g) => f.write_fmt(format_args!("{}", g)),
+            Statement::ClassDecl(_) => todo!(),
         }
     }
 }

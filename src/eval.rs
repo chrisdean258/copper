@@ -205,6 +205,7 @@ impl Evaluator {
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
             GlobalDecl(gd) => self.eval_global_decl(gd)?,
+            ClassDecl(cd) => todo!(),
         })
     }
 

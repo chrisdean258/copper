@@ -10,6 +10,7 @@ pub struct Parser<T: Iterator<Item = String>> {
 pub enum Statement {
     Expr(Expression),
     GlobalDecl(GlobalDecl),
+    ClassDecl(ClassDecl),
 }
 
 #[allow(dead_code)]
@@ -55,14 +56,21 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
+pub struct ParseTree {
+    pub statements: Vec<Statement>,
+    max_arg: Vec<usize>,
+    cur_class: Option<ClassDecl>,
+}
+
+#[derive(Debug, Clone)]
 pub struct GlobalDecl {
     pub token: Token,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParseTree {
-    pub statements: Vec<Statement>,
-    max_arg: Vec<usize>,
+pub struct ClassDecl {
+    pub name: Token,
+    pub body: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -239,6 +247,7 @@ impl ParseTree {
         ParseTree {
             statements: Vec::new(),
             max_arg: Vec::new(),
+            cur_class: None,
         }
     }
 
@@ -261,6 +270,7 @@ impl ParseTree {
         let token = lexer.peek().unwrap();
         let rv = Ok(match &token.token_type {
             TokenType::Global => self.parse_global_decl(lexer)?,
+            TokenType::Class => self.parse_class_decl(lexer)?,
             _ => Statement::Expr(self.parse_expr(lexer)?),
         });
         // eat all the semicolons
@@ -273,12 +283,28 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         expect!(lexer, TokenType::Global);
-        let token = lexer.next().expect("Unexpected EOF");
+        let token = lexer.next().ok_or("Unexpected EOF")?;
         match &token.token_type {
             TokenType::Identifier(_) => (),
             _ => return Err(unexpected(&token)),
         }
         Ok(Statement::GlobalDecl(GlobalDecl { token }))
+    }
+
+    fn parse_class_decl<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Statement, String> {
+        expect!(lexer, TokenType::Class);
+        let token = lexer.next().ok_or("Unexpected EOF")?;
+        match &token.token_type {
+            TokenType::Identifier(_) => (),
+            _ => return Err(unexpected(&token)),
+        }
+        Ok(Statement::ClassDecl(ClassDecl {
+            name: token,
+            body: self.parse_expr(lexer)?,
+        }))
     }
 
     fn parse_block<T: Iterator<Item = String>>(

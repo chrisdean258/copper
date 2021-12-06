@@ -117,7 +117,12 @@ impl TypeChecker {
         Ok(match statement {
             Statement::Expr(expr) => self.typecheck_expr(expr)?,
             Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd)?,
+            Statement::ClassDecl(cd) => self.typecheck_class_decl(cd)?,
         })
+    }
+
+    fn typecheck_class_decl(&mut self, cd: &ClassDecl) -> Result<TypeRef, String> {
+        todo!()
     }
 
     fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<TypeRef, String> {
