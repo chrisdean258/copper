@@ -8,4 +8,5 @@ class test {
 	}
 }
 
-a = test(1, 3, "lskdf")
+a = test(1, 3, "Hello, World!")
+print(a.c)

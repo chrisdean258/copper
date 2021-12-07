@@ -229,7 +229,7 @@ macro_rules! expect {
         let token = $lexer.peek().ok_or("Unexpected EOF")?;
         match &token.token_type {
             $token => $lexer.next().unwrap(),
-            _ => return Err(unexpected(&token)),
+            _ => return Err(format!("{}. Expected {}", unexpected(&token), $token)),
         }
     }};
 }

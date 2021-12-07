@@ -539,7 +539,7 @@ impl TypeChecker {
                 };
                 let inst = self.system.class_instance(func);
                 args.insert(0, inst);
-                let rv = match self.typecheck_function_call(&mut init, args) {
+                match self.typecheck_function_call(&mut init, args) {
                     Ok(r) => r,
                     Err(s) => Err(format!(
                         "{}\n{}: Originating at this index expression",
@@ -559,7 +559,7 @@ impl TypeChecker {
                         self.system.types[typ.idx] = self.system.types[tr.idx].clone();
                     }
                 }
-                rv
+                inst
             }
             _ => {
                 return Err(format!(
