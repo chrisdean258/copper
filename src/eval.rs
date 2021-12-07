@@ -17,9 +17,14 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(u8),
-    Function(Function, Vec<Rc<RefCell<HashMap<String, usize>>>>),
+    Function(
+        Function,
+        Vec<Value>,
+        Vec<Rc<RefCell<HashMap<String, usize>>>>,
+    ),
     Lambda(Lambda, Vec<Rc<RefCell<HashMap<String, usize>>>>),
-    Class(ClassDecl),
+    Class(Rc<ClassDecl>, Vec<Rc<RefCell<HashMap<String, usize>>>>),
+    Object(Object),
     Uninitialized,
     Null,
 }
@@ -28,6 +33,12 @@ pub enum Value {
 pub struct Evaluator {
     scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
     pub memory: Vec<Value>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Object {
+    pub fields: HashMap<String, Value>,
+    pub class: Rc<ClassDecl>,
 }
 
 impl Debug for Value {
@@ -53,11 +64,12 @@ impl Debug for Value {
                 if *b { "" } else { ", nonnullable" }
             )),
             Bool(b) => f.write_fmt(format_args!("Bool({})", b)),
-            Function(func, _) => {
+            Function(func, _, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", "),))
             }
             Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
-            Class(cd) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
+            Class(cd, _) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
+            Object(obj) => f.write_fmt(format_args!("<class {}>", obj.class.as_ref().name)),
             Null => f.write_str("Null"),
             Uninitialized => f.write_str("Uninitialized"),
         }
@@ -82,11 +94,12 @@ impl Display for Value {
                 }
                 f.write_str("]")
             }
-            Function(func, _) => {
+            Function(func, _, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", ")))
             }
             Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
-            Class(cd) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
+            Class(cd, _) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
+            Object(obj) => f.write_fmt(format_args!("<class {}>", obj.class.as_ref().name)),
             Null => f.write_str("null"),
             Uninitialized => f.write_str("Uninitialized"),
         }
@@ -212,7 +225,7 @@ impl Evaluator {
     }
 
     fn eval_class_decl(&mut self, cd: &ClassDecl) -> Result<Value, String> {
-        let val = self.alloc(Value::Class(cd.clone()));
+        let val = self.alloc(Value::Class(Rc::new(cd.clone()), self.scopes.clone()));
         self.insert_scope_local(&cd.name, val);
         Ok(Value::Null)
     }
@@ -287,7 +300,7 @@ impl Evaluator {
                 }
                 return Ok(Value::Null);
             }
-            Value::Function(_, _) => (),
+            Value::Function(_, _, _) => (),
             Value::Lambda(_, _) => (),
             Value::BuiltinFunc(_, _) => (),
             _ => unreachable!("{}", iterable),
@@ -617,8 +630,17 @@ impl Evaluator {
             PostUnOp(u) => self.eval_unop_post(u),
             List(l) => self.eval_list(l),
             IndexExpr(i) => self.eval_index_expr(i),
-            DottedLookup(_) => todo!(),
+            DottedLookup(d) => self.eval_dotted_lookup(d),
         }
+    }
+
+    fn eval_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Value, String> {
+        let obj = self.eval_expr(d.lhs.as_mut())?;
+        let obj = self.deref(obj);
+        Ok(match obj {
+            Value::Object(o) => o.fields.get(&d.rhs).unwrap().clone(),
+            t => unreachable!("{:?}", t),
+        })
     }
 
     fn eval_index_expr(&mut self, i: &mut IndexExpr) -> Result<Value, String> {
@@ -794,7 +816,7 @@ impl Evaluator {
     }
 
     fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
-        let idx = self.alloc(Value::Function(f.clone(), self.scopes.clone()));
+        let idx = self.alloc(Value::Function(f.clone(), Vec::new(), self.scopes.clone()));
         let rv = Value::Reference(idx, false);
         if f.name.is_some() {
             let idx = self.alloc(rv.clone());
@@ -921,17 +943,19 @@ impl Evaluator {
         self.eval_callable(&mut func, args)
     }
 
-    fn eval_callable(&mut self, func: &mut Value, args: Vec<Value>) -> Result<Value, String> {
+    fn eval_callable(&mut self, func: &mut Value, mut args: Vec<Value>) -> Result<Value, String> {
         self.openscope();
+        let func = self.deref(func.clone());
         let rv = Ok(match func {
             Value::BuiltinFunc(_, f) => f(self, args),
-            Value::Function(f, scopes) => {
-                assert_eq!(args.len(), f.argnames.len());
+            Value::Function(mut f, preset_args, scopes) => {
+                assert_eq!(args.len() + preset_args.len(), f.argnames.len());
                 let mut tmp = scopes.clone();
                 swap(&mut self.scopes, &mut tmp);
                 self.openscope();
-                for it in f.argnames.iter().zip(args.iter()) {
-                    let (name, arg) = it;
+                let mut fullargs = preset_args.clone();
+                fullargs.append(&mut args);
+                for (name, arg) in f.argnames.iter().zip(fullargs.iter()) {
                     let idx = self.alloc(arg.clone());
                     self.insert_scope_local(name, idx);
                 }
@@ -939,13 +963,12 @@ impl Evaluator {
                 swap(&mut self.scopes, &mut tmp);
                 rv
             }
-            Value::Lambda(l, scopes) => {
+            Value::Lambda(mut l, scopes) => {
                 assert_eq!(args.len(), l.num_args);
                 let mut tmp = scopes.clone();
                 swap(&mut self.scopes, &mut tmp);
                 self.openscope();
-                for it in args.iter().enumerate() {
-                    let (arg_num, arg) = it;
+                for (arg_num, arg) in args.iter().enumerate() {
                     let label = format!("\\{}", arg_num);
                     let idx = self.alloc(arg.clone());
                     self.insert_scope_local(&label, idx);
@@ -955,7 +978,36 @@ impl Evaluator {
                 swap(&mut self.scopes, &mut tmp);
                 rv
             }
-            _ => unreachable!(),
+            Value::Class(cd, scopes) => {
+                let mut obj = Object {
+                    fields: HashMap::new(),
+                    class: cd.clone(),
+                };
+                let val = self.alloc(Value::Null);
+                let mut init = 0;
+                for (name, func) in cd.methods.iter() {
+                    let memref = self.alloc(Value::Function(
+                        func.clone(),
+                        vec![Value::Reference(val, false)],
+                        scopes.clone(),
+                    ));
+                    if name == "__init__" {
+                        init = memref;
+                    }
+                    obj.fields
+                        .insert(name.clone(), Value::Reference(memref, false));
+                }
+                for name in cd.fields.iter() {
+                    obj.fields.insert(
+                        name.clone(),
+                        Value::Reference(self.alloc(Value::Null), false),
+                    );
+                }
+                self.memory[val] = Value::Object(obj);
+                self.eval_callable(&mut Value::Reference(init, false), args)?;
+                Value::Reference(val, false)
+            }
+            t => unreachable!("{}", t),
         });
         self.closescope();
         rv
@@ -969,6 +1021,10 @@ impl Evaluator {
         match expr {
             Expression::RefExpr(re) => self.eval_ref_expr_int(re, allow_insert),
             Expression::IndexExpr(i) => match self.eval_index_expr(i)? {
+                Value::Reference(u, _) => Ok(u),
+                _ => unreachable!(),
+            },
+            Expression::DottedLookup(i) => match self.eval_dotted_lookup(i)? {
                 Value::Reference(u, _) => Ok(u),
                 _ => unreachable!(),
             },

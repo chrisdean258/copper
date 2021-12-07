@@ -557,6 +557,10 @@ impl TypeChecker {
                     {
                         let tr = self.memory[u];
                         self.system.types[typ.idx] = self.system.types[tr.idx].clone();
+                    } else if let TypeEntryType::Callable(_, fc) =
+                        &mut self.system.types[typ.idx].typ
+                    {
+                        fc.preset_args.push(inst);
                     }
                 }
                 inst
@@ -652,19 +656,10 @@ impl TypeChecker {
     fn typecheck_dotted_lookup_int(&mut self, d: &mut DottedLookup) -> Result<MemRef, String> {
         let objidx = self.typecheck_expr(d.lhs.as_mut())?;
         let obj = &self.system.types[objidx.idx];
-        let resolvedidx = *obj.fields.get(&d.rhs).ok_or(format!(
+        let typ = *obj.fields.get(&d.rhs).ok_or(format!(
             "{}: `.{}` no such field on <class `{}`>",
             d.location, d.rhs, obj.name,
         ))?;
-
-        let typ = match self.system.types[resolvedidx.idx].typ.clone() {
-            TypeEntryType::Callable(_, mut fc) => {
-                let name = format!("{}.{}", obj.name, d.rhs);
-                fc.preset_args.push(objidx);
-                self.system.function(&name, fc.arg_names.len() - 1, fc)
-            }
-            _ => resolvedidx,
-        };
 
         let rv = self.alloc(typ);
         if typ == typesystem::Uninitialized {
