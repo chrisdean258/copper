@@ -320,7 +320,7 @@ impl TypeChecker {
             PostUnOp(u) => self.typecheck_unop_post(u),
             List(l) => self.typecheck_list(l),
             IndexExpr(l) => self.typecheck_index_expr(l),
-            DottedLookup(_) => todo!(),
+            DottedLookup(d) => self.typecheck_dotted_lookup(d),
         }
     }
 
@@ -642,6 +642,11 @@ impl TypeChecker {
             Expression::DottedLookup(d) => self.typecheck_dotted_lookup_int(d),
             _ => unreachable!("{}", expr),
         }
+    }
+
+    fn typecheck_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<TypeRef, String> {
+        let idx: MemRef = self.typecheck_dotted_lookup_int(d)?;
+        Ok(self.memory[idx.idx].clone())
     }
 
     fn typecheck_dotted_lookup_int(&mut self, d: &mut DottedLookup) -> Result<MemRef, String> {
