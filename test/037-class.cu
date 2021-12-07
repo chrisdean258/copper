@@ -1,9 +1,3 @@
-class string {
-	fn __len__(self) {
-		len(self)
-	}
-}
-
 class test {
 	field a, b, c
 
@@ -15,4 +9,3 @@ class test {
 }
 
 a = test(1, 3, "lskdf")
-b = "sldfk".__len__()
