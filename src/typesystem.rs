@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -57,8 +56,8 @@ pub const BitShiftRightEq: OpRef = OpRef { idx: 31 };
 pub const BitShiftLeftEq: OpRef = OpRef { idx: 32 };
 
 #[derive(Debug, Clone)]
-pub struct TypeSystem<T: Clone + Debug> {
-    pub types: Vec<TypeEntry<T>>,
+pub struct TypeSystem<T: Clone + Debug, U: Clone + Debug> {
+    pub types: Vec<TypeEntry<T, U>>,
     pub types_by_name: HashMap<String, TypeRef>,
     pub conversions: Vec<Vec<TypeRef>>,
     pub op_table: Vec<Operation>,
@@ -67,22 +66,25 @@ pub struct TypeSystem<T: Clone + Debug> {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeEntry<T: Clone + Debug> {
+pub struct TypeEntry<T: Clone + Debug, U: Clone + Debug> {
     pub name: String,
-    pub typ: TypeEntryType<T>,
+    pub typ: TypeEntryType<T, U>,
     pub fields: HashMap<String, TypeRef>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub enum TypeEntryType<T: Clone + Debug> {
+pub enum TypeEntryType<T: Clone + Debug, U: Clone + Debug> {
     BasicType,
-    BuiltinFunction(String, TypeRef),    // Cannot typecheck yet
-    Callable(usize, T),                  // Lambda or function, usize is num of args
-    UnionType(Vec<TypeRef>),             // One of the underlying types
-    ClassType(HashMap<String, TypeRef>), // Class or tuple
-    Iterable(TypeRef),                   // Lists so far
-    Container(TypeRef),                  // Options
-    PlaceHolderType,                     // Used for typechecking functions
+    BuiltinFunction(String, TypeRef), // Cannot typecheck yet
+    Callable(usize, T),               // Lambda or function, usize is num of args
+    UnionType(Vec<TypeRef>),          // One of the underlying types
+    Class(U),                         // A "type" object if you will
+    Object(TypeRef),                  // TypeRef refers to class
+    Iterable(TypeRef),                // Lists so far
+    Container(TypeRef),               // Options
+    UninitializedLocation(usize),     // Use solely for typechecking __init__ functions
+    PlaceHolderType,                  // Used for typechecking functions
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +112,7 @@ pub struct OperationConstraint {
 }
 
 impl Signature {
+    #[allow(dead_code)]
     pub fn match_inputs(&self, other: &Vec<TypeRef>) -> bool {
         if self.inputs.len() != other.len() {
             return false;
@@ -141,8 +144,8 @@ macro_rules! make_ops {
     };
 }
 
-impl<T: Clone + Debug> TypeSystem<T> {
-    pub fn new() -> TypeSystem<T> {
+impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
+    pub fn new() -> TypeSystem<T, U> {
         let mut rv = TypeSystem {
             types: Vec::new(),
             types_by_name: HashMap::new(),
@@ -210,14 +213,17 @@ impl<T: Clone + Debug> TypeSystem<T> {
         self.list_name("string", chr);
     }
 
+    #[allow(dead_code)]
     pub fn typename(&self, typ: TypeRef) -> String {
         self.types[typ.idx].name.clone()
     }
 
+    #[allow(dead_code)]
     pub fn opname(&self, op: OpRef) -> String {
         self.operations[op.idx].name.clone()
     }
 
+    #[allow(dead_code)]
     pub fn print_ops(&self) {
         let mut i = 0;
         for op in self.operations.iter() {
@@ -231,6 +237,7 @@ impl<T: Clone + Debug> TypeSystem<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn print_op(&self, op: OpRef) {
         let op = &self.operations[op.idx];
         print!("`{}`: [", op.name);
@@ -241,6 +248,7 @@ impl<T: Clone + Debug> TypeSystem<T> {
         println!("\n]");
     }
 
+    #[allow(dead_code)]
     pub fn print_types(&self) {
         let mut i = 0;
         for op in self.types.iter() {
@@ -268,14 +276,15 @@ impl<T: Clone + Debug> TypeSystem<T> {
         print!("{}", self.typename(typ))
     }
 
-    pub fn entry(&mut self, name: &str, typ: TypeEntryType<T>) -> Result<TypeRef, String> {
-        if let Some(val) = self.types_by_name.get(name) {
-            return Ok(*val);
-        }
-        Ok(self.new_entry(name, typ))
+    pub fn entry(&mut self, name: &str, typ: TypeEntryType<T, U>) -> TypeRef {
+        //cannot use map_or_else because of multiple self references
+        self.types_by_name
+            .get(name)
+            .map(|x| *x)
+            .unwrap_or_else(|| self.new_entry(name, typ))
     }
 
-    pub fn new_entry(&mut self, name: &str, typ: TypeEntryType<T>) -> TypeRef {
+    pub fn new_entry(&mut self, name: &str, typ: TypeEntryType<T, U>) -> TypeRef {
         let val = TypeEntry {
             name: name.into(),
             typ,
@@ -291,7 +300,8 @@ impl<T: Clone + Debug> TypeSystem<T> {
         rv
     }
 
-    pub fn replace(&mut self, idx: TypeRef, val: TypeEntry<T>) {
+    #[allow(dead_code)]
+    pub fn replace(&mut self, idx: TypeRef, val: TypeEntry<T, U>) {
         self.types[idx.idx] = val;
     }
 
@@ -299,6 +309,7 @@ impl<T: Clone + Debug> TypeSystem<T> {
         self.new_entry(name, TypeEntryType::BasicType)
     }
 
+    #[allow(dead_code)]
     pub fn placeholder(&mut self, name: &str) -> TypeRef {
         self.new_entry(name, TypeEntryType::PlaceHolderType)
     }
@@ -313,9 +324,7 @@ impl<T: Clone + Debug> TypeSystem<T> {
     }
 
     pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
-        let rv = self
-            .entry(name.into(), TypeEntryType::Iterable(typ))
-            .unwrap();
+        let rv = self.entry(name.into(), TypeEntryType::Iterable(typ));
         make_ops! {self, ["+", "+="],
             (rv, rv => rv),
             (EmptyList, rv => rv),
@@ -350,8 +359,29 @@ impl<T: Clone + Debug> TypeSystem<T> {
         rv
     }
 
-    pub fn class(&mut self, name: &str, fields: HashMap<String, TypeRef>) -> TypeRef {
-        self.new_entry(&name, TypeEntryType::ClassType(fields))
+    pub fn class(
+        &mut self,
+        name: &str,
+        fields: HashSet<String>,
+        methods: HashMap<String, TypeRef>,
+        extra: U,
+    ) -> TypeRef {
+        // we Just add the methods and fields to the name so we can extend funcitonality of predefinded
+        let entry = self.entry(name, TypeEntryType::Class(extra));
+        for (name, val) in methods {
+            self.types[entry.idx].fields.insert(name, val);
+        }
+        for name in fields {
+            self.types[entry.idx].fields.insert(name, Uninitialized);
+        }
+        entry
+    }
+
+    pub fn class_instance(&mut self, class: TypeRef) -> TypeRef {
+        let name = format!("<class `{}`>", self.types[class.idx].name);
+        let rv = self.new_entry(&name, TypeEntryType::Object(class));
+        self.types[rv.idx].fields = self.types[class.idx].fields.clone();
+        rv
     }
 
     pub fn add_conversion(&mut self, from: TypeRef, to: TypeRef) {

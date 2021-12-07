@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use crate::lex;
+use crate::location::Location;
 use crate::parser::*;
 use crate::typesystem;
 use crate::typesystem::{TypeEntryType, TypeRef, TypeSystem};
@@ -22,14 +23,16 @@ impl MemRef {
 struct FunctionCall {
     scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
     arg_names: Vec<String>,
+    preset_args: Vec<TypeRef>,
     body: Expression,
+    location: Location,
 }
 
 #[derive(Clone, Debug)]
 pub struct TypeChecker {
     scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
     memory: Vec<TypeRef>,
-    system: TypeSystem<FunctionCall>,
+    system: TypeSystem<FunctionCall, ClassDecl>,
 }
 
 fn scope_error(id: &str, token: &lex::Token) -> String {
@@ -121,8 +124,18 @@ impl TypeChecker {
         })
     }
 
-    fn typecheck_class_decl(&mut self, _cd: &ClassDecl) -> Result<TypeRef, String> {
-        todo!()
+    fn typecheck_class_decl(&mut self, cd: &mut ClassDecl) -> Result<TypeRef, String> {
+        let mut methods = HashMap::new();
+        for (key, func) in cd.methods.iter_mut() {
+            methods.insert(key.clone(), self.typecheck_function_def(func)?);
+        }
+
+        let rv = self
+            .system
+            .class(&cd.name, cd.fields.clone(), methods, cd.clone());
+
+        self.insert_scope_local(&cd.name, rv);
+        Ok(rv)
     }
 
     fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<TypeRef, String> {
@@ -369,13 +382,22 @@ impl TypeChecker {
     fn typecheck_function_call(
         &mut self,
         f: &mut FunctionCall,
-        args: Vec<TypeRef>,
+        mut args: Vec<TypeRef>,
     ) -> Result<TypeRef, String> {
         let save = self.scopes.clone();
         self.scopes = f.scopes.clone();
         self.openscope();
-        for it in args.iter().zip(f.arg_names.iter()) {
-            let (arg, name) = it;
+        let mut allargs = f.preset_args.clone();
+        allargs.append(&mut args);
+        if allargs.len() != f.arg_names.len() {
+            return Err(format!(
+                "{}: Trying to call function with wrong number of arguments. Needed {}  found {}",
+                f.location,
+                f.arg_names.len(),
+                allargs.len()
+            ));
+        }
+        for (arg, name) in allargs.iter().zip(f.arg_names.iter()) {
             self.insert_scope_local(name, *arg);
         }
         let rv = self.typecheck_expr(&mut f.body)?;
@@ -393,8 +415,10 @@ impl TypeChecker {
             &name,
             f.argnames.len(),
             FunctionCall {
+                location: f.location.clone(),
                 scopes: self.scopes.clone(),
                 arg_names: f.argnames.clone(),
+                preset_args: Vec::new(),
                 body: f.body.as_ref().clone(),
             },
         );
@@ -413,8 +437,10 @@ impl TypeChecker {
             &name,
             f.num_args,
             FunctionCall {
+                location: f.location.clone(),
                 scopes: self.scopes.clone(),
                 arg_names,
+                preset_args: Vec::new(),
                 body: f.body.as_ref().clone(),
             },
         ))
@@ -494,10 +520,51 @@ impl TypeChecker {
                     s, expr.location
                 ))?,
             },
+            TypeEntryType::Class(class) => {
+                let init = self.system.types[func.idx]
+                    .fields
+                    .get("__init__")
+                    .ok_or(format!(
+                        "{}: `<class {}>` lacks a __init__ method\n{}: Originating here",
+                        class.location, class.name, expr.location
+                    ))?;
+                let mut init = match self.system.types[init.idx].typ.clone() {
+                    TypeEntryType::Callable(_, fc) => fc,
+                    _ => {
+                        return Err(format!(
+                            "{}: `<class {}>.__init__` must be a function\n{}: Originating here",
+                            class.location, class.name, expr.location
+                        ))
+                    }
+                };
+                let inst = self.system.class_instance(func);
+                args.insert(0, inst);
+                let rv = match self.typecheck_function_call(&mut init, args) {
+                    Ok(r) => r,
+                    Err(s) => Err(format!(
+                        "{}\n{}: Originating at this index expression",
+                        s, expr.location
+                    ))?,
+                };
+                for (field, typ) in self.system.types[inst.idx].fields.clone() {
+                    if typ == typesystem::Uninitialized {
+                        return Err(format!(
+                            "{}: `__init__` method must initialize all fields. `.{}` was left uninitialized\n{}: Originating here",
+                            init.location, field, expr.location
+                        ));
+                    } else if let TypeEntryType::UninitializedLocation(u) =
+                        self.system.types[typ.idx].typ
+                    {
+                        let tr = self.memory[u];
+                        self.system.types[typ.idx] = self.system.types[tr.idx].clone();
+                    }
+                }
+                rv
+            }
             _ => {
                 return Err(format!(
-                    "{}: Trying to call `{:#?}`",
-                    expr.location, self.system.types[func.idx]
+                    "{}: Trying to call `{}`",
+                    expr.location, self.system.types[func.idx].name
                 ))
             }
         });
@@ -572,8 +639,41 @@ impl TypeChecker {
         match expr {
             Expression::RefExpr(re) => self.typecheck_ref_expr_int(re, allow_insert),
             Expression::IndexExpr(i) => self.typecheck_index_expr_int(i),
-            _ => todo!(),
+            Expression::DottedLookup(d) => self.typecheck_dotted_lookup_int(d),
+            _ => unreachable!("{}", expr),
         }
+    }
+
+    fn typecheck_dotted_lookup_int(&mut self, d: &mut DottedLookup) -> Result<MemRef, String> {
+        let objidx = self.typecheck_expr(d.lhs.as_mut())?;
+        let obj = &self.system.types[objidx.idx];
+        let resolvedidx = *obj.fields.get(&d.rhs).ok_or(format!(
+            "{}: `.{}` no such field on <class `{}`>",
+            d.location, d.rhs, obj.name,
+        ))?;
+
+        let typ = match self.system.types[resolvedidx.idx].typ.clone() {
+            TypeEntryType::Callable(_, mut fc) => {
+                let name = format!("{}.{}", obj.name, d.rhs);
+                fc.preset_args.push(objidx);
+                self.system.function(&name, fc.arg_names.len() - 1, fc)
+            }
+            _ => resolvedidx,
+        };
+
+        let rv = self.alloc(typ);
+        if typ == typesystem::Uninitialized {
+            // we must be in a __init__ otherwise all fields should be initialized
+            let name = format!("<Uninitialized `.{}`>", d.rhs);
+            *self.system.types[objidx.idx]
+                .fields
+                .get_mut(&d.rhs)
+                .unwrap() = self
+                .system
+                .new_entry(&name, TypeEntryType::UninitializedLocation(rv.idx));
+        }
+
+        Ok(rv)
     }
 
     fn typecheck_ref_expr_int(

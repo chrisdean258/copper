@@ -19,6 +19,7 @@ pub enum Value {
     Bool(u8),
     Function(Function, Vec<Rc<RefCell<HashMap<String, usize>>>>),
     Lambda(Lambda, Vec<Rc<RefCell<HashMap<String, usize>>>>),
+    Class(ClassDecl),
     Uninitialized,
     Null,
 }
@@ -56,6 +57,7 @@ impl Debug for Value {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", "),))
             }
             Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
+            Class(cd) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
             Null => f.write_str("Null"),
             Uninitialized => f.write_str("Uninitialized"),
         }
@@ -66,28 +68,28 @@ impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         use Value::*;
         match self {
-            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name))?,
-            Str(s) => f.write_fmt(format_args!("{}", s))?,
-            Int(i) => f.write_fmt(format_args!("{}", i))?,
-            Float(d) => f.write_fmt(format_args!("{}", d))?,
-            Char(c) => f.write_fmt(format_args!("{}", c))?,
-            Reference(u, _) => f.write_fmt(format_args!("Reference(0x{:x})", u))?,
-            Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" }))?,
+            BuiltinFunc(name, _) => f.write_fmt(format_args!("BuiltinFunc({})", name)),
+            Str(s) => f.write_fmt(format_args!("{}", s)),
+            Int(i) => f.write_fmt(format_args!("{}", i)),
+            Float(d) => f.write_fmt(format_args!("{}", d)),
+            Char(c) => f.write_fmt(format_args!("{}", c)),
+            Reference(u, _) => f.write_fmt(format_args!("Reference(0x{:x})", u)),
+            Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" })),
             List(l) => {
                 f.write_str("[")?;
                 for expr in l.iter() {
                     f.write_fmt(format_args!("{}, ", expr))?;
                 }
-                f.write_str("]")?;
+                f.write_str("]")
             }
             Function(func, _) => {
-                f.write_fmt(format_args!("function({})", func.argnames.join(", ")))?
+                f.write_fmt(format_args!("function({})", func.argnames.join(", ")))
             }
-            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args))?,
-            Null => f.write_str("null")?,
-            Uninitialized => f.write_str("Uninitialized")?,
-        };
-        Ok(())
+            Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
+            Class(cd) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
+            Null => f.write_str("null"),
+            Uninitialized => f.write_str("Uninitialized"),
+        }
     }
 }
 
@@ -205,8 +207,14 @@ impl Evaluator {
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
             GlobalDecl(gd) => self.eval_global_decl(gd)?,
-            ClassDecl(_) => todo!(),
+            ClassDecl(cd) => self.eval_class_decl(cd)?,
         })
+    }
+
+    fn eval_class_decl(&mut self, cd: &ClassDecl) -> Result<Value, String> {
+        let val = self.alloc(Value::Class(cd.clone()));
+        self.insert_scope_local(&cd.name, val);
+        Ok(Value::Null)
     }
 
     fn eval_global_decl(&mut self, gd: &GlobalDecl) -> Result<Value, String> {

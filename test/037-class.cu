@@ -1,11 +1,11 @@
 class test {
-	field a;
-	field b;
-	field c;
+	field a, b, c
 
-	fn __init__(a, b, c) {
+	fn __init__(self, a, b, c) {
 		self.a = a
 		self.b = b
 		self.c = c
 	}
 }
+
+a = test(1, 3, "lskdf")
