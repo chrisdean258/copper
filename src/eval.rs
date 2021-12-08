@@ -6,39 +6,37 @@ use std::fmt::{Debug, Display, Formatter};
 use std::mem::swap;
 use std::rc::Rc;
 
+#[derive(Clone, Debug)]
+pub struct Object {
+    pub value: Value,
+    pub fields: HashMap<String, usize>,
+}
+
+type ScopeTable = Vec<Rc<RefCell<HashMap<String, usize>>>>;
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum Value {
-    BuiltinFunc(&'static str, fn(&mut Evaluator, Vec<Value>) -> Value),
-    Reference(usize, bool),
+    BuiltinFunc(&'static str, fn(&mut Evaluator, Vec<Object>) -> Object),
+    Reference(usize),
     Str(Rc<String>),
-    List(Vec<Value>),
+    List(Vec<Object>),
     Int(i64),
     Float(f64),
     Char(char),
     Bool(u8),
-    Function(
-        Function,
-        Vec<Value>,
-        Vec<Rc<RefCell<HashMap<String, usize>>>>,
-    ),
-    Lambda(Lambda, Vec<Rc<RefCell<HashMap<String, usize>>>>),
-    Class(Rc<ClassDecl>, Vec<Rc<RefCell<HashMap<String, usize>>>>),
-    Object(Object),
-    Uninitialized,
+    Function(Function, Vec<Object>, ScopeTable),
+    Lambda(Lambda, ScopeTable),
+    Class(Rc<ClassDecl>, ScopeTable),
+    Object(Rc<ClassDecl>),
+    Undefined,
     Null,
 }
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
-    scopes: Vec<Rc<RefCell<HashMap<String, usize>>>>,
-    pub memory: Vec<Value>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Object {
-    pub fields: HashMap<String, Value>,
-    pub class: Rc<ClassDecl>,
+    scopes: ScopeTable,
+    pub memory: Vec<Object>,
 }
 
 impl Debug for Value {
@@ -58,20 +56,16 @@ impl Debug for Value {
             Int(i) => f.write_fmt(format_args!("Int({:?})", i)),
             Float(d) => f.write_fmt(format_args!("Float({:?})", d)),
             Char(c) => f.write_fmt(format_args!("Char({:?})", c)),
-            Reference(u, b) => f.write_fmt(format_args!(
-                "Reference({:x}{})",
-                u,
-                if *b { "" } else { ", nonnullable" }
-            )),
+            Reference(u) => f.write_fmt(format_args!("Reference({:x})", u)),
             Bool(b) => f.write_fmt(format_args!("Bool({})", b)),
             Function(func, _, _) => {
                 f.write_fmt(format_args!("function({})", func.argnames.join(", "),))
             }
             Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
             Class(cd, _) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
-            Object(obj) => f.write_fmt(format_args!("<class {}>", obj.class.as_ref().name)),
+            Object(cls) => f.write_fmt(format_args!("<class {}>", cls.name)),
             Null => f.write_str("Null"),
-            Uninitialized => f.write_str("Uninitialized"),
+            Undefined => f.write_str("Undefined"),
         }
     }
 }
@@ -85,12 +79,12 @@ impl Display for Value {
             Int(i) => f.write_fmt(format_args!("{}", i)),
             Float(d) => f.write_fmt(format_args!("{}", d)),
             Char(c) => f.write_fmt(format_args!("{}", c)),
-            Reference(u, _) => f.write_fmt(format_args!("Reference(0x{:x})", u)),
+            Reference(u) => f.write_fmt(format_args!("Reference(0x{:x})", u)),
             Bool(b) => f.write_fmt(format_args!("{}", if *b != 0 { "true" } else { "false" })),
             List(l) => {
                 f.write_str("[")?;
                 for expr in l.iter() {
-                    f.write_fmt(format_args!("{}, ", expr))?;
+                    f.write_fmt(format_args!("{}, ", expr.value))?;
                 }
                 f.write_str("]")
             }
@@ -99,9 +93,9 @@ impl Display for Value {
             }
             Lambda(lambda, _) => f.write_fmt(format_args!("lambda(args={})", lambda.num_args)),
             Class(cd, _) => f.write_fmt(format_args!("<type `class {}`>", cd.name)),
-            Object(obj) => f.write_fmt(format_args!("<class {}>", obj.class.as_ref().name)),
+            Object(cls) => f.write_fmt(format_args!("<class {}>", cls.name)),
             Null => f.write_str("null"),
-            Uninitialized => f.write_str("Uninitialized"),
+            Undefined => f.write_str("undefined"),
         }
     }
 }
@@ -115,13 +109,13 @@ impl Evaluator {
 
         let mut builtins = HashMap::new();
 
-        let idx = eval.alloc(Value::BuiltinFunc("print", copper_print));
+        let idx = eval.alloc_builtin_function("print", copper_print);
         builtins.insert(String::from("print"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("prints", copper_print_no_newline));
+        let idx = eval.alloc_builtin_function("prints", copper_print_no_newline);
         builtins.insert(String::from("prints"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("getline", copper_getline));
+        let idx = eval.alloc_builtin_function("getline", copper_getline);
         builtins.insert(String::from("getline"), idx);
-        let idx = eval.alloc(Value::BuiltinFunc("len", copper_len));
+        let idx = eval.alloc_builtin_function("len", copper_len);
         builtins.insert(String::from("len"), idx);
 
         eval.scopes.push(Rc::new(RefCell::new(builtins)));
@@ -129,7 +123,93 @@ impl Evaluator {
         eval
     }
 
-    fn alloc(&mut self, val: Value) -> usize {
+    pub fn object_fields(&self, value: Value, fields: HashMap<String, usize>) -> Object {
+        Object { value, fields }
+    }
+
+    pub fn object(&self, value: Value) -> Object {
+        self.object_fields(value, HashMap::new())
+    }
+
+    pub fn reference(&self, idx: usize) -> Object {
+        self.object(Value::Reference(idx))
+    }
+
+    pub fn undefined(&self) -> Object {
+        self.object(Value::Undefined)
+    }
+
+    pub fn null(&self) -> Object {
+        self.object(Value::Null)
+    }
+
+    pub fn alloc_builtin_function(
+        &mut self,
+        name: &'static str,
+        func: fn(&mut Evaluator, Vec<Object>) -> Object,
+    ) -> usize {
+        let rv = self.object(Value::BuiltinFunc(name, func));
+        let idx = self.alloc(rv);
+        self.memory[idx].fields.insert("__call__".into(), idx);
+        idx
+    }
+
+    pub fn class(&self, cd: &ClassDecl, scope: ScopeTable) -> Object {
+        self.object(Value::Class(Rc::new(cd.clone()), scope))
+    }
+
+    pub fn string(&self, s: Rc<String>) -> Object {
+        self.object(Value::Str(s))
+    }
+
+    pub fn list(&self, l: Vec<Object>) -> Object {
+        self.object(Value::List(l))
+    }
+
+    pub fn int(&self, i: i64) -> Object {
+        self.object(Value::Int(i))
+    }
+
+    pub fn float(&self, f: f64) -> Object {
+        self.object(Value::Float(f))
+    }
+
+    pub fn bool(&self, b: u8) -> Object {
+        self.object(Value::Bool(b))
+    }
+
+    pub fn char(&self, c: char) -> Object {
+        self.object(Value::Char(c))
+    }
+
+    pub fn alloc_function(&mut self, f: &Function) -> usize {
+        self.alloc_function_args(f, Vec::new(), self.scopes.clone())
+    }
+
+    pub fn alloc_function_args(
+        &mut self,
+        f: &Function,
+        args: Vec<Object>,
+        scopes: ScopeTable,
+    ) -> usize {
+        let val = Value::Function(f.clone(), args, scopes);
+        let idx = self.alloc(self.object(val));
+        self.memory[idx].fields.insert("__call__".into(), idx);
+        idx
+    }
+
+    pub fn alloc_lambda(&mut self, l: &Lambda) -> usize {
+        let val = Value::Lambda(l.clone(), self.scopes.clone());
+        let idx = self.alloc(self.object(val));
+        self.memory[idx].fields.insert("__call__".into(), idx);
+        idx
+    }
+
+    pub fn class_instance(&self, cls: &Rc<ClassDecl>) -> Object {
+        self.object(Value::Object(cls.clone()))
+    }
+
+    pub fn alloc(&mut self, val: Object) -> usize {
         self.memory.push(val);
         self.memory.len() - 1
     }
@@ -160,7 +240,7 @@ impl Evaluator {
             .and_then(|u| Some(*u))
     }
 
-    fn setdefault_scope_local(&mut self, key: &str, default: Value) -> usize {
+    fn setdefault_scope_local(&mut self, key: &str, default: Object) -> usize {
         if let Some(_) = self.lookup_scope_local(key) {
         } else {
             let idx = self.alloc(default.clone());
@@ -177,15 +257,15 @@ impl Evaluator {
             .insert(key.to_string(), idx);
     }
 
-    pub fn deref(&mut self, val: Value) -> Value {
-        let idx = match val {
-            Value::Reference(u, _) => u,
+    pub fn deref(&mut self, val: Object) -> Object {
+        let idx = match val.value {
+            Value::Reference(u) => u,
             _ => return val,
         };
         let mut curidx = idx;
         loop {
-            curidx = match self.memory[curidx] {
-                Value::Reference(u, _) => u,
+            curidx = match self.memory[curidx].value {
+                Value::Reference(u) => u,
                 _ => return self.memory[curidx].clone(),
             };
             if curidx == idx {
@@ -197,8 +277,8 @@ impl Evaluator {
     pub fn deref_idx(&mut self, idx: usize) -> usize {
         let mut curidx = idx;
         loop {
-            curidx = match self.memory[curidx] {
-                Value::Reference(u, _) => u,
+            curidx = match self.memory[curidx].value {
+                Value::Reference(u) => u,
                 _ => return curidx,
             };
             if curidx == idx {
@@ -207,15 +287,15 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, tree: &mut ParseTree) -> Result<Value, String> {
-        let mut rv = Value::Null;
+    pub fn eval(&mut self, tree: &mut ParseTree) -> Result<Object, String> {
+        let mut rv = self.undefined();
         for statement in tree.statements.iter_mut() {
             rv = self.eval_statement(statement)?;
         }
         Ok(self.deref(rv))
     }
 
-    fn eval_statement(&mut self, statement: &mut Statement) -> Result<Value, String> {
+    fn eval_statement(&mut self, statement: &mut Statement) -> Result<Object, String> {
         use crate::parser::Statement::*;
         Ok(match statement {
             Expr(expr) => self.eval_expr(expr)?,
@@ -224,13 +304,14 @@ impl Evaluator {
         })
     }
 
-    fn eval_class_decl(&mut self, cd: &ClassDecl) -> Result<Value, String> {
-        let val = self.alloc(Value::Class(Rc::new(cd.clone()), self.scopes.clone()));
-        self.insert_scope_local(&cd.name, val);
-        Ok(Value::Null)
+    fn eval_class_decl(&mut self, cd: &ClassDecl) -> Result<Object, String> {
+        let val = self.class(cd, self.scopes.clone());
+        let idx = self.alloc(val);
+        self.insert_scope_local(&cd.name, idx);
+        Ok(self.undefined())
     }
 
-    fn eval_global_decl(&mut self, gd: &GlobalDecl) -> Result<Value, String> {
+    fn eval_global_decl(&mut self, gd: &GlobalDecl) -> Result<Object, String> {
         use crate::lex::TokenType;
         let id = match &gd.token.token_type {
             TokenType::Identifier(s) => s,
@@ -241,12 +322,11 @@ impl Evaluator {
             Some(i) => i,
             None => unreachable!(),
         };
-        let rv = Value::Reference(idx, false);
         self.insert_scope_local(id, idx);
-        Ok(rv)
+        Ok(self.undefined())
     }
 
-    fn eval_if(&mut self, i: &mut If) -> Result<Value, String> {
+    fn eval_if(&mut self, i: &mut If) -> Result<Object, String> {
         let mut ran_first = self.eval_if_internal(i)?;
 
         for ai in i.and_bodies.iter_mut() {
@@ -261,14 +341,14 @@ impl Evaluator {
 
         match ran_first {
             Some(a) => Ok(a),
-            None => Ok(Value::Null),
+            None => Ok(self.undefined()),
         }
     }
 
-    fn eval_if_internal(&mut self, i: &mut If) -> Result<Option<Value>, String> {
+    fn eval_if_internal(&mut self, i: &mut If) -> Result<Option<Object>, String> {
         let cond = self.eval_expr(&mut i.condition)?;
         let derefed = self.deref(cond);
-        Ok(match derefed {
+        Ok(match derefed.value {
             Value::Bool(1) => Some(self.eval_expr(i.body.as_mut())?),
             Value::Bool(0) => None,
             _ => {
@@ -280,48 +360,49 @@ impl Evaluator {
         })
     }
 
-    fn eval_for(&mut self, f: &mut For) -> Result<Value, String> {
+    fn eval_for(&mut self, f: &mut For) -> Result<Object, String> {
         let iterable = self.eval_expr(f.items.as_mut())?;
         let mut iterable = self.deref(iterable);
-        match iterable {
+        match iterable.value {
             Value::List(l) => {
                 for val in l {
                     let item = self.eval_assignable(f.reference.as_mut(), true)?;
                     self.memory[item] = val;
                     self.eval_expr(f.body.as_mut())?;
                 }
-                return Ok(Value::Null);
+                return Ok(self.undefined());
             }
             Value::Str(s) => {
                 for chr in s.chars() {
                     let item = self.eval_assignable(f.reference.as_mut(), true)?;
-                    self.memory[item] = Value::Char(chr);
+                    self.memory[item] = self.char(chr);
                     self.eval_expr(f.body.as_mut())?;
                 }
-                return Ok(Value::Null);
+                return Ok(self.undefined());
             }
             Value::Function(_, _, _) => (),
             Value::Lambda(_, _) => (),
             Value::BuiltinFunc(_, _) => (),
-            _ => unreachable!("{}", iterable),
+            _ => unreachable!("{}", iterable.value),
         };
         loop {
             let item = self.eval_callable(&mut iterable, Vec::new())?.clone();
-            match &item {
-                Value::Null => break Ok(Value::Null),
+            match &item.value {
+                Value::Undefined => break,
                 _ => (),
             }
             let memloc = self.eval_assignable(f.reference.as_mut(), true)?;
             self.memory[memloc] = item;
             self.eval_expr(f.body.as_mut())?;
         }
+        Ok(self.undefined())
     }
 
-    fn eval_while(&mut self, w: &mut While) -> Result<Value, String> {
+    fn eval_while(&mut self, w: &mut While) -> Result<Object, String> {
         loop {
             let cond = self.eval_expr(w.condition.as_mut())?;
             let derefed = self.deref(cond);
-            match derefed {
+            match derefed.value {
                 Value::Bool(1) => (),
                 Value::Bool(0) => break,
                 _ => {
@@ -333,18 +414,18 @@ impl Evaluator {
             }
             self.eval_expr(&mut w.body)?;
         }
-        Ok(Value::Null)
+        Ok(self.undefined())
     }
 
-    fn eval_block(&mut self, b: &mut BlockExpr) -> Result<Value, String> {
-        let mut rv = Value::Null;
+    fn eval_block(&mut self, b: &mut BlockExpr) -> Result<Object, String> {
+        let mut rv = self.undefined();
         for statement in b.statements.iter_mut() {
             rv = self.eval_statement(statement)?;
         }
         Ok(rv)
     }
 
-    fn eval_binop(&mut self, binop: &mut BinOp) -> Result<Value, String> {
+    fn eval_binop(&mut self, binop: &mut BinOp) -> Result<Object, String> {
         use crate::lex::TokenType::*;
 
         let mut lhs = self.eval_expr(binop.lhs.as_mut())?;
@@ -353,21 +434,21 @@ impl Evaluator {
         rhs = self.deref(rhs);
 
         Ok(match binop.op.token_type {
-            Plus => match (lhs, rhs) {
-                (Value::Str(a), Value::Str(b)) => Value::Str(Rc::new(format!("{}{}", a, b))),
-                (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
-                (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
-                (Value::Float(a), Value::Int(b)) => Value::Float(a + b as f64),
-                (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 + b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a + b as i64),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 + b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 + b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 + b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a + b as i64),
+            Plus => match (lhs.value, rhs.value) {
+                (Value::Str(a), Value::Str(b)) => self.string(Rc::new(format!("{}{}", a, b))),
+                (Value::Int(a), Value::Int(b)) =>self.int(a + b),
+                (Value::Float(a), Value::Float(b)) => self.float(a + b),
+                (Value::Float(a), Value::Int(b)) => self.float(a + b as f64),
+                (Value::Int(a), Value::Float(b)) => self.float(a as f64 + b),
+                (Value::Int(a), Value::Bool(b)) =>self.int(a + b as i64),
+                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 + b),
+                (Value::Char(a), Value::Char(b)) => self.char((a as u8 + b as u8) as char),
+                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 + b),
+                (Value::Int(a), Value::Char(b)) =>self.int(a + b as i64),
                 (Value::List(a), Value::List(b)) => {
                     let mut rv = a.clone();
                     rv.append(&mut b.clone());
-                    Value::List(rv)
+                    self.list(rv)
                 }
                 (a, b) => {
                     return Err(format!(
@@ -376,16 +457,16 @@ impl Evaluator {
                             ))
                 }
             },
-            Minus => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
-                (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
-                (Value::Float(a), Value::Int(b)) => Value::Float(a - b as f64),
-                (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 - b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a - b as i64),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 - b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 - b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 - b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a - b as i64),
+            Minus => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Int(b)) =>self.int(a - b),
+                (Value::Float(a), Value::Float(b)) => self.float(a - b),
+                (Value::Float(a), Value::Int(b)) => self.float(a - b as f64),
+                (Value::Int(a), Value::Float(b)) => self.float(a as f64 - b),
+                (Value::Int(a), Value::Bool(b)) =>self.int(a - b as i64),
+                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 - b),
+                (Value::Char(a), Value::Char(b)) => self.char((a as u8 - b as u8) as char),
+                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 - b),
+                (Value::Int(a), Value::Char(b)) =>self.int(a - b as i64),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot subtract these two. Not supported ({:?} - {:?})",
@@ -393,15 +474,15 @@ impl Evaluator {
                             ))
                 }
             },
-            Times => match (lhs, rhs) {
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 * b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a * b as i64),
-                (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
-                (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
-                (Value::Float(a), Value::Int(b)) => Value::Float(a * b as f64),
-                (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 * b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a * b as i64),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 * b),
+            Times => match (lhs.value, rhs.value) {
+                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 * b),
+                (Value::Int(a), Value::Char(b)) =>self.int(a * b as i64),
+                (Value::Int(a), Value::Int(b)) =>self.int(a * b),
+                (Value::Float(a), Value::Float(b)) => self.float(a * b),
+                (Value::Float(a), Value::Int(b)) => self.float(a * b as f64),
+                (Value::Int(a), Value::Float(b)) => self.float(a as f64 * b),
+                (Value::Int(a), Value::Bool(b)) =>self.int(a * b as i64),
+                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 * b),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot multiply these two. Not supported ({:?} * {:?})",
@@ -409,12 +490,12 @@ impl Evaluator {
                             ))
                 }
             },
-            Div => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a / b),
-                (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
-                (Value::Float(a), Value::Int(b)) => Value::Float(a / b as f64),
-                (Value::Int(a), Value::Float(b)) => Value::Float(a as f64 / b),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 / b),
+            Div => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Int(b)) =>self.int(a / b),
+                (Value::Float(a), Value::Float(b)) => self.float(a / b),
+                (Value::Float(a), Value::Int(b)) => self.float(a / b as f64),
+                (Value::Int(a), Value::Float(b)) => self.float(a as f64 / b),
+                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 / b),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot divide these two. Not supported ({:?} / {:?})",
@@ -422,9 +503,9 @@ impl Evaluator {
                             ))
                 }
             },
-            Mod => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-                (Value::Char(a), Value::Int(b)) => Value::Int(a as i64 % b),
+            Mod => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Int(b)) =>self.int(a % b),
+                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 % b),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot divide these two. Not supported ({:?} % {:?})",
@@ -432,18 +513,18 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpEq => match (lhs, rhs) {
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a == b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a == b) as u8),
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool((a == b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a == b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 == b) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 == b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a == b as f64) as u8),
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a == b) as u8),
-                (Value::Null, Value::Null) => Value::Bool(1),
-                (Value::Null, _) => Value::Bool(0),
-                (_, Value::Null) => Value::Bool(0),
+            CmpEq => match (lhs.value, rhs.value) {
+                (Value::Str(a), Value::Str(b)) => self.bool((a == b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a == b) as u8),
+                (Value::Bool(a), Value::Bool(b)) => self.bool((a == b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a == b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 == b) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 == b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a == b as f64) as u8),
+                (Value::Float(a), Value::Float(b)) => self.bool((a == b) as u8),
+                (Value::Null, Value::Null) => self.bool(1),
+                (Value::Null, _) => self.bool(0),
+                (_, Value::Null) => self.bool(0),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
@@ -451,19 +532,19 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpNotEq => match (lhs, rhs) {
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a != b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a != b) as u8),
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool((a != b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a != b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 != b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a != b as i64) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 != b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a != b as f64) as u8),
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a != b) as u8),
-                (Value::Null, Value::Null) => Value::Bool(0),
-                (Value::Null, _) => Value::Bool(1),
-                (_, Value::Null) => Value::Bool(1),
+            CmpNotEq => match (lhs.value, rhs.value) {
+                (Value::Str(a), Value::Str(b)) => self.bool((a != b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a != b) as u8),
+                (Value::Bool(a), Value::Bool(b)) => self.bool((a != b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a != b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 != b) as u8),
+                (Value::Int(a), Value::Char(b)) => self.bool((a != b as i64) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 != b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a != b as f64) as u8),
+                (Value::Float(a), Value::Float(b)) => self.bool((a != b) as u8),
+                (Value::Null, Value::Null) => self.bool(0),
+                (Value::Null, _) => self.bool(1),
+                (_, Value::Null) => self.bool(1),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
@@ -471,15 +552,15 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpGE => match (lhs, rhs) {
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a >= b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a >= b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 >= b) as u8),
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a >= b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a >= b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a >= b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 >= b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a >= b as i64) as u8),
+            CmpGE => match (lhs.value, rhs.value) {
+                (Value::Float(a), Value::Float(b)) => self.bool((a >= b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a >= b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 >= b) as u8),
+                (Value::Str(a), Value::Str(b)) => self.bool((a >= b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a >= b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a >= b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 >= b) as u8),
+                (Value::Int(a), Value::Char(b)) => self.bool((a >= b as i64) as u8),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare order between these two. Not supported ({:?} >= {:?})",
@@ -487,15 +568,15 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpGT => match (lhs, rhs) {
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a > b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a > b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 > b) as u8),
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a > b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a > b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a > b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 > b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a > b as i64) as u8),
+            CmpGT => match (lhs.value, rhs.value) {
+                (Value::Float(a), Value::Float(b)) => self.bool((a > b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a > b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 > b) as u8),
+                (Value::Str(a), Value::Str(b)) => self.bool((a > b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a > b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a > b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 > b) as u8),
+                (Value::Int(a), Value::Char(b)) => self.bool((a > b as i64) as u8),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare order between these two. Not supported ({:?} > {:?})",
@@ -503,15 +584,15 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpLE => match (lhs, rhs) {
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a <= b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a <= b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool((a as f64 <= b) as u8),
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a <= b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a <= b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a <= b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool((a as i64 <= b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a <= b as i64) as u8),
+            CmpLE => match (lhs.value, rhs.value) {
+                (Value::Float(a), Value::Float(b)) => self.bool((a <= b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a <= b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 <= b) as u8),
+                (Value::Str(a), Value::Str(b)) => self.bool((a <= b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a <= b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a <= b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 <= b) as u8),
+                (Value::Int(a), Value::Char(b)) => self.bool((a <= b as i64) as u8),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare order between these two. Not supported ({:?} <= {:?})",
@@ -519,15 +600,15 @@ impl Evaluator {
                             ))
                 }
             },
-            CmpLT => match (lhs, rhs) {
-                (Value::Float(a), Value::Float(b)) => Value::Bool((a < b) as u8),
-                (Value::Float(a), Value::Int(b)) => Value::Bool((a < b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => Value::Bool(((a as f64) < b) as u8),
-                (Value::Str(a), Value::Str(b)) => Value::Bool((a < b) as u8),
-                (Value::Int(a), Value::Int(b)) => Value::Bool((a < b) as u8),
-                (Value::Char(a), Value::Char(b)) => Value::Bool((a < b) as u8),
-                (Value::Char(a), Value::Int(b)) => Value::Bool(((a as i64) < b) as u8),
-                (Value::Int(a), Value::Char(b)) => Value::Bool((a < b as i64) as u8),
+            CmpLT => match (lhs.value, rhs.value) {
+                (Value::Float(a), Value::Float(b)) => self.bool((a < b) as u8),
+                (Value::Float(a), Value::Int(b)) => self.bool((a < b as f64) as u8),
+                (Value::Int(a), Value::Float(b)) => self.bool(((a as f64) < b) as u8),
+                (Value::Str(a), Value::Str(b)) => self.bool((a < b) as u8),
+                (Value::Int(a), Value::Int(b)) => self.bool((a < b) as u8),
+                (Value::Char(a), Value::Char(b)) => self.bool((a < b) as u8),
+                (Value::Char(a), Value::Int(b)) => self.bool(((a as i64) < b) as u8),
+                (Value::Int(a), Value::Char(b)) => self.bool((a < b as i64) as u8),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compare order between these two. Not supported ({:?} < {:?})",
@@ -535,14 +616,14 @@ impl Evaluator {
                             ))
                 }
             },
-            BitOr => match (lhs, rhs) {
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 | b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a | b as i64),
-                (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 | b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) | b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a | b as i64),
+            BitOr => match (lhs.value, rhs.value) {
+                (Value::Bool(a), Value::Bool(b)) => self.bool(a | b),
+                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 | b),
+                (Value::Int(a), Value::Bool(b)) =>self.int(a | b as i64),
+                (Value::Int(a), Value::Int(b)) =>self.int(a | b),
+                (Value::Char(a), Value::Char(b)) => self.char((a as u8 | b as u8) as char),
+                (Value::Char(a), Value::Int(b)) =>self.int((a as i64) | b),
+                (Value::Int(a), Value::Char(b)) =>self.int(a | b as i64),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compute or between these two. Not supported ({:?} | {:?})",
@@ -550,14 +631,14 @@ impl Evaluator {
                             ))
                 }
             },
-            BitAnd => match (lhs, rhs) {
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 & b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a & b as i64),
-                (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 & b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) & b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a & b as i64),
+            BitAnd => match (lhs.value, rhs.value) {
+                (Value::Bool(a), Value::Bool(b)) => self.bool(a & b),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 & b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a & b as i64),
+                (Value::Int(a), Value::Int(b)) => self.int(a & b),
+                (Value::Char(a), Value::Char(b)) => self.char((a as u8 & b as u8) as char),
+                (Value::Char(a), Value::Int(b)) => self.int((a as i64) & b),
+                (Value::Int(a), Value::Char(b)) => self.int(a & b as i64),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot computer and between these two. Not supported ({:?} & {:?})",
@@ -565,14 +646,14 @@ impl Evaluator {
                             ))
                 }
             },
-            BitXor => match (lhs, rhs) {
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
-                (Value::Bool(a), Value::Int(b)) => Value::Int(a as i64 ^ b),
-                (Value::Int(a), Value::Bool(b)) => Value::Int(a ^ b as i64),
-                (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-                (Value::Char(a), Value::Char(b)) => Value::Char((a as u8 ^ b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) ^ b),
-                (Value::Int(a), Value::Char(b)) => Value::Int(a ^ b as i64),
+            BitXor => match (lhs.value, rhs.value) {
+                (Value::Bool(a), Value::Bool(b)) => self.bool(a ^ b),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 ^ b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a ^ b as i64),
+                (Value::Int(a), Value::Int(b)) => self.int(a ^ b),
+                (Value::Char(a), Value::Char(b)) => self.char((a as u8 ^ b as u8) as char),
+                (Value::Char(a), Value::Int(b)) => self.int((a as i64) ^ b),
+                (Value::Int(a), Value::Char(b)) => self.int(a ^ b as i64),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot computer xor between these two. Not supported ({:?} ^ {:?})",
@@ -583,9 +664,9 @@ impl Evaluator {
             BoolOr => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
             BoolAnd => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
             BoolXor => todo!("Going to implement with the other two boolean functions"),
-            BitShiftRight => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
-                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) >> b),
+            BitShiftRight => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Int(b)) => self.int(a >> b),
+                (Value::Char(a), Value::Int(b)) => self.int((a as i64) >> b),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compute bitshift between these two. Not supported ({:?} >> {:?})",
@@ -593,9 +674,9 @@ impl Evaluator {
                             ))
                 }
             },
-            BitShiftLeft => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
-                (Value::Char(a), Value::Int(b)) => Value::Int((a as i64) << b),
+            BitShiftLeft => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Int(b)) => self.int(a << b),
+                (Value::Char(a), Value::Int(b)) => self.int((a as i64) << b),
                 (a, b) => {
                     return Err(format!(
                             "{}: cannot compute bitshift between these two. Not supported ({:?} << {:?})",
@@ -612,7 +693,7 @@ impl Evaluator {
         })
     }
 
-    fn eval_expr(&mut self, expr: &mut Expression) -> Result<Value, String> {
+    fn eval_expr(&mut self, expr: &mut Expression) -> Result<Object, String> {
         use crate::parser::Expression::*;
         match expr {
             CallExpr(callexpr) => self.eval_call_expr(callexpr),
@@ -634,16 +715,16 @@ impl Evaluator {
         }
     }
 
-    fn eval_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Value, String> {
+    fn eval_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Object, String> {
         let obj = self.eval_expr(d.lhs.as_mut())?;
         let obj = self.deref(obj);
-        Ok(match obj {
-            Value::Object(o) => o.fields.get(&d.rhs).unwrap().clone(),
-            t => unreachable!("{:?}", t),
-        })
+        Ok(self.reference(*obj.fields.get(&d.rhs).ok_or(format!(
+            "{}: `{}` has no field `.{}`",
+            d.location, obj.value, d.rhs
+        ))?))
     }
 
-    fn eval_index_expr(&mut self, i: &mut IndexExpr) -> Result<Value, String> {
+    fn eval_index_expr(&mut self, i: &mut IndexExpr) -> Result<Object, String> {
         let obj = self.eval_expr(i.obj.as_mut())?;
         let obj = self.deref(obj);
         let mut idxs = Vec::new();
@@ -657,7 +738,7 @@ impl Evaluator {
                 i.location
             ));
         } else {
-            match &idxs[0] {
+            match &idxs[0].value {
                 Value::Int(i) => *i,
                 _ => {
                     return Err(format!(
@@ -667,7 +748,7 @@ impl Evaluator {
                 }
             }
         };
-        match obj {
+        match obj.value {
             Value::List(l) => {
                 let new_idx = if idx < 0 { idx + l.len() as i64 } else { idx };
                 if new_idx < 0 || new_idx >= l.len() as i64 {
@@ -682,87 +763,88 @@ impl Evaluator {
                     Err(format!("{}: Index out of range", i.args[0].location()))
                 } else {
                     let chars: Vec<char> = s.chars().collect();
-                    Ok(Value::Char(chars[new_idx as usize].clone()))
+                    Ok(self.char(chars[new_idx as usize].clone()))
                 }
             }
             _ => Err(format!("{}: Cannot index non list types", i.location)),
         }
     }
 
-    fn eval_list(&mut self, l: &mut List) -> Result<Value, String> {
-        let mut rv: Vec<Value> = Vec::new();
+    fn eval_list(&mut self, l: &mut List) -> Result<Object, String> {
+        let mut rv = Vec::new();
         for expr in l.exprs.iter_mut() {
             let val = self.eval_expr(expr)?;
-            rv.push(Value::Reference(self.alloc(val), false));
+            let idx = self.alloc(val);
+            rv.push(self.reference(idx));
         }
-        Ok(Value::List(rv))
+        Ok(self.list(rv))
     }
 
-    fn eval_unop_pre(&mut self, u: &mut PreUnOp) -> Result<Value, String> {
+    fn eval_unop_pre(&mut self, u: &mut PreUnOp) -> Result<Object, String> {
         use crate::lex::TokenType;
         let rhs = self.eval_expr(u.rhs.as_mut())?;
-        let ref_idx = match rhs {
-            Value::Reference(u, _) => Some(u),
+        let ref_idx = match rhs.value {
+            Value::Reference(u) => Some(u),
             _ => None,
         };
         let rhs = self.deref(rhs);
 
         Ok(match u.op.token_type {
-            TokenType::BoolNot => match rhs {
-                Value::Bool(b) => Value::Bool(if b == 0 { 1 } else { 0 }),
-                Value::Int(i) => Value::Bool(if i == 0 { 1 } else { 0 }),
-                Value::Char(c) => Value::Bool(if c == '\0' { 1 } else { 0 }),
+            TokenType::BoolNot => match rhs.value {
+                Value::Bool(b) => self.bool(if b == 0 { 1 } else { 0 }),
+                Value::Int(i) => self.bool(if i == 0 { 1 } else { 0 }),
+                Value::Char(c) => self.bool(if c == '\0' { 1 } else { 0 }),
                 _ => unreachable!(),
             },
-            TokenType::BitNot => match rhs {
-                Value::Int(i) => Value::Int(!i),
-                Value::Char(c) => Value::Char(!(c as u8) as char),
+            TokenType::BitNot => match rhs.value {
+                Value::Int(i) => self.int(!i),
+                Value::Char(c) => self.char(!(c as u8) as char),
                 _ => unreachable!(),
             },
-            TokenType::Minus => match rhs {
-                Value::Int(i) => Value::Int(-i),
+            TokenType::Minus => match rhs.value {
+                Value::Int(i) => self.int(-i),
                 _ => unreachable!(),
             },
-            TokenType::Plus => match rhs {
-                Value::Int(i) => Value::Int(i),
-                Value::Char(c) => Value::Char(c),
+            TokenType::Plus => match rhs.value {
+                Value::Int(i) => self.int(i),
+                Value::Char(c) => self.char(c),
                 _ => unreachable!(),
             },
-            TokenType::Times => match rhs {
+            TokenType::Times => match rhs.value {
                 Value::Null => return Err(format!("{}: Null value encountered", u.op.location)),
-                t => t.clone(),
+                _ => rhs,
             },
-            TokenType::Inc => match rhs {
+            TokenType::Inc => match rhs.value {
                 Value::Int(i) => {
-                    match &mut self.memory[ref_idx.unwrap()] {
+                    match &mut self.memory[ref_idx.unwrap()].value {
                         Value::Int(ii) => *ii += 1,
                         _ => unreachable!(),
                     }
-                    Value::Int(i + 1)
+                    self.int(i + 1)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[ref_idx.unwrap()] {
+                    match &mut self.memory[ref_idx.unwrap()].value {
                         Value::Char(cc) => *cc = ((*cc as u8) + 1) as char,
                         _ => unreachable!(),
                     }
-                    Value::Char(((c as u8) + 1) as char)
+                    self.char(((c as u8) + 1) as char)
                 }
                 _ => unreachable!(),
             },
-            TokenType::Dec => match rhs {
+            TokenType::Dec => match rhs.value {
                 Value::Int(i) => {
-                    match &mut self.memory[ref_idx.unwrap()] {
+                    match &mut self.memory[ref_idx.unwrap()].value {
                         Value::Int(ii) => *ii -= 1,
                         _ => unreachable!(),
                     }
-                    Value::Int(i - 1)
+                    self.int(i - 1)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[ref_idx.unwrap()] {
+                    match &mut self.memory[ref_idx.unwrap()].value {
                         Value::Char(cc) => *cc = ((*cc as u8) - 1) as char,
                         _ => unreachable!(),
                     }
-                    Value::Char(((c as u8) - 1) as char)
+                    self.char(((c as u8) - 1) as char)
                 }
                 _ => unreachable!(),
             },
@@ -770,44 +852,44 @@ impl Evaluator {
         })
     }
 
-    fn eval_unop_post(&mut self, u: &PostUnOp) -> Result<Value, String> {
+    fn eval_unop_post(&mut self, u: &PostUnOp) -> Result<Object, String> {
         use crate::lex::TokenType;
 
         let lhsidx = self.eval_ref_expr_int(&*u.lhs, false)?;
         let derefedidx = self.deref_idx(lhsidx);
         let lhs = self.memory[derefedidx].clone();
         Ok(match u.op.token_type {
-            TokenType::Inc => match lhs {
+            TokenType::Inc => match lhs.value {
                 Value::Int(i) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[derefedidx].value {
                         Value::Int(ii) => *ii += 1,
                         _ => unreachable!(),
                     }
-                    Value::Int(i)
+                    self.int(i)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[derefedidx].value {
                         Value::Char(cc) => *cc = ((*cc as u8) + 1) as char,
                         _ => unreachable!(),
                     }
-                    Value::Char(c)
+                    self.char(c)
                 }
                 _ => unreachable!(),
             },
-            TokenType::Dec => match lhs {
+            TokenType::Dec => match lhs.value {
                 Value::Int(i) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[derefedidx].value {
                         Value::Int(ii) => *ii -= 1,
                         _ => unreachable!(),
                     }
-                    Value::Int(i)
+                    self.int(i)
                 }
                 Value::Char(c) => {
-                    match &mut self.memory[derefedidx] {
+                    match &mut self.memory[derefedidx].value {
                         Value::Char(cc) => *cc = ((*cc as u8) - 1) as char,
                         _ => unreachable!(),
                     }
-                    Value::Char(c)
+                    self.char(c)
                 }
                 _ => unreachable!(),
             },
@@ -815,21 +897,21 @@ impl Evaluator {
         })
     }
 
-    fn eval_function_def(&mut self, f: &Function) -> Result<Value, String> {
-        let idx = self.alloc(Value::Function(f.clone(), Vec::new(), self.scopes.clone()));
-        let rv = Value::Reference(idx, false);
+    fn eval_function_def(&mut self, f: &Function) -> Result<Object, String> {
+        let idx = self.alloc_function(f);
+        let rv = self.reference(idx);
         if f.name.is_some() {
-            let idx = self.alloc(rv.clone());
             self.insert_scope_local(f.name.as_ref().unwrap(), idx);
         }
         Ok(rv)
     }
 
-    fn eval_lambda_def(&mut self, f: &Lambda) -> Result<Value, String> {
-        Ok(Value::Lambda(f.clone(), self.scopes.clone()))
+    fn eval_lambda_def(&mut self, l: &Lambda) -> Result<Object, String> {
+        let idx = self.alloc_lambda(l);
+        Ok(self.reference(idx))
     }
 
-    fn eval_assign(&mut self, expr: &mut AssignExpr) -> Result<Value, String> {
+    fn eval_assign(&mut self, expr: &mut AssignExpr) -> Result<Object, String> {
         use crate::lex::TokenType;
         let lhsidx = self.eval_assignable(expr.lhs.as_mut(), expr.allow_decl)?;
         let rhs = self.eval_expr(expr.rhs.as_mut())?;
@@ -838,7 +920,7 @@ impl Evaluator {
             TokenType::Equal => {
                 self.memory[lhsidx] = rhs;
             }
-            TokenType::AndEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::AndEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a &= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 & *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a &= *b as i64,
@@ -846,7 +928,7 @@ impl Evaluator {
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 & *b as u8) as char,
                 _ => unreachable!(),
             },
-            TokenType::OrEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::OrEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a |= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 | *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a |= *b as i64,
@@ -854,7 +936,7 @@ impl Evaluator {
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 | *b as u8) as char,
                 _ => unreachable!(),
             },
-            TokenType::XorEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::XorEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a ^= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 ^ *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a ^= *b as i64,
@@ -862,7 +944,7 @@ impl Evaluator {
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 ^ *b as u8) as char,
                 _ => unreachable!(),
             },
-            TokenType::PlusEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::PlusEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a += *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 + *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a += *b as i64,
@@ -873,9 +955,9 @@ impl Evaluator {
                 (Value::Float(a), Value::Char(b)) => *a += (*b as u8) as f64,
                 (Value::Float(a), Value::Int(b)) => *a = *a + *b as f64,
                 (Value::List(a), Value::List(b)) => a.append(&mut b.clone()),
-                _ => unreachable!("{} += {}", self.memory[lhsidx], rhs),
+                _ => unreachable!("{} += {}", self.memory[lhsidx].value, rhs.value),
             },
-            TokenType::MinusEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::MinusEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a -= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 - *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a -= *b as i64,
@@ -887,7 +969,7 @@ impl Evaluator {
                 (Value::Float(a), Value::Int(b)) => *a = *a - *b as f64,
                 _ => unreachable!(),
             },
-            TokenType::TimesEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::TimesEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a *= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 * *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a *= *b as i64,
@@ -899,7 +981,7 @@ impl Evaluator {
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
                 _ => unreachable!(),
             },
-            TokenType::DivEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::DivEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a /= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 / *b as u8) as char,
                 (Value::Int(a), Value::Char(b)) => *a /= *b as i64,
@@ -909,7 +991,7 @@ impl Evaluator {
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
                 _ => unreachable!(),
             },
-            TokenType::ModEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::ModEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a %= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 % *b as u8) as char,
                 (Value::Int(a), Value::Char(b)) => *a %= *b as i64,
@@ -918,12 +1000,12 @@ impl Evaluator {
                 (Value::Float(a), Value::Int(b)) => *a = *a * *b as f64,
                 _ => unreachable!(),
             },
-            TokenType::BitShiftRightEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::BitShiftRightEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a >>= *b,
                 (Value::Char(a), Value::Int(b)) => *a = (*a as u8 >> *b as u8) as char,
                 _ => unreachable!(),
             },
-            TokenType::BitShiftLeftEq => match (&mut self.memory[lhsidx], &rhs) {
+            TokenType::BitShiftLeftEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
                 (Value::Int(a), Value::Int(b)) => *a <<= *b,
                 (Value::Char(a), Value::Int(b)) => *a = ((*a as u8) << *b as u8) as char,
                 _ => unreachable!(),
@@ -933,7 +1015,7 @@ impl Evaluator {
         Ok(self.memory[lhsidx].clone())
     }
 
-    fn eval_call_expr(&mut self, expr: &mut CallExpr) -> Result<Value, String> {
+    fn eval_call_expr(&mut self, expr: &mut CallExpr) -> Result<Object, String> {
         let func = self.eval_expr(expr.function.as_mut())?;
         let mut func = self.deref(func);
         let mut args = Vec::new();
@@ -943,10 +1025,14 @@ impl Evaluator {
         self.eval_callable(&mut func, args)
     }
 
-    fn eval_callable(&mut self, func: &mut Value, mut args: Vec<Value>) -> Result<Value, String> {
+    fn eval_callable(
+        &mut self,
+        func: &mut Object,
+        mut args: Vec<Object>,
+    ) -> Result<Object, String> {
         self.openscope();
         let func = self.deref(func.clone());
-        let rv = Ok(match func {
+        let rv = Ok(match func.value {
             Value::BuiltinFunc(_, f) => f(self, args),
             Value::Function(mut f, preset_args, scopes) => {
                 assert_eq!(args.len() + preset_args.len(), f.argnames.len());
@@ -959,7 +1045,7 @@ impl Evaluator {
                     let idx = self.alloc(arg.clone());
                     self.insert_scope_local(name, idx);
                 }
-                let rv = self.eval_expr(f.body.as_mut())?;
+                let rv = self.eval_expr(&mut f.body)?;
                 swap(&mut self.scopes, &mut tmp);
                 rv
             }
@@ -973,39 +1059,30 @@ impl Evaluator {
                     let idx = self.alloc(arg.clone());
                     self.insert_scope_local(&label, idx);
                 }
-                let rv = self.eval_expr(l.body.as_mut())?;
+                let rv = self.eval_expr(&mut l.body)?;
                 self.closescope();
                 swap(&mut self.scopes, &mut tmp);
                 rv
             }
             Value::Class(cd, scopes) => {
-                let mut obj = Object {
-                    fields: HashMap::new(),
-                    class: cd.clone(),
-                };
-                let val = self.alloc(Value::Null);
+                let mut obj = self.class_instance(&cd);
+                let val = self.alloc(self.undefined());
                 let mut init = 0;
                 for (name, func) in cd.methods.iter() {
-                    let memref = self.alloc(Value::Function(
-                        func.clone(),
-                        vec![Value::Reference(val, false)],
-                        scopes.clone(),
-                    ));
+                    let memref =
+                        self.alloc_function_args(func, vec![self.reference(val)], scopes.clone());
                     if name == "__init__" {
                         init = memref;
                     }
-                    obj.fields
-                        .insert(name.clone(), Value::Reference(memref, false));
+                    obj.fields.insert(name.clone(), memref);
                 }
                 for name in cd.fields.iter() {
-                    obj.fields.insert(
-                        name.clone(),
-                        Value::Reference(self.alloc(Value::Null), false),
-                    );
+                    obj.fields
+                        .insert(name.clone(), self.alloc(self.undefined()));
                 }
-                self.memory[val] = Value::Object(obj);
-                self.eval_callable(&mut Value::Reference(init, false), args)?;
-                Value::Reference(val, false)
+                self.memory[val] = obj;
+                self.eval_callable(&mut self.memory[init].clone(), args)?;
+                self.reference(val)
             }
             t => unreachable!("{}", t),
         });
@@ -1020,21 +1097,21 @@ impl Evaluator {
     ) -> Result<usize, String> {
         match expr {
             Expression::RefExpr(re) => self.eval_ref_expr_int(re, allow_insert),
-            Expression::IndexExpr(i) => match self.eval_index_expr(i)? {
-                Value::Reference(u, _) => Ok(u),
+            Expression::IndexExpr(i) => match self.eval_index_expr(i)?.value {
+                Value::Reference(u) => Ok(u),
                 _ => unreachable!(),
             },
-            Expression::DottedLookup(i) => match self.eval_dotted_lookup(i)? {
-                Value::Reference(u, _) => Ok(u),
+            Expression::DottedLookup(i) => match self.eval_dotted_lookup(i)?.value {
+                Value::Reference(u) => Ok(u),
                 _ => unreachable!(),
             },
             _ => unreachable!(),
         }
     }
 
-    fn eval_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Value, String> {
+    fn eval_ref_expr(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<Object, String> {
         let idx = self.eval_ref_expr_int(expr, allow_insert)?;
-        Ok(Value::Reference(idx, false))
+        Ok(self.reference(idx))
     }
 
     fn eval_ref_expr_int(&mut self, expr: &RefExpr, allow_insert: bool) -> Result<usize, String> {
@@ -1042,7 +1119,7 @@ impl Evaluator {
         match &expr.value.token_type {
             Identifier(s) => {
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, Value::Uninitialized))
+                    Ok(self.setdefault_scope_local(&s, self.undefined()))
                 } else if let Some(idx) = self.lookup_scope(s) {
                     Ok(idx)
                 } else {
@@ -1052,7 +1129,7 @@ impl Evaluator {
             LambdaArg(u) => {
                 let s = format!("\\{}", u);
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, Value::Uninitialized))
+                    Ok(self.setdefault_scope_local(&s, self.undefined()))
                 } else if let Some(idx) = self.lookup_scope(&s) {
                     Ok(idx)
                 } else {
@@ -1063,15 +1140,15 @@ impl Evaluator {
         }
     }
 
-    fn eval_immediate(&mut self, immediate: &Immediate) -> Result<Value, String> {
+    fn eval_immediate(&mut self, immediate: &Immediate) -> Result<Object, String> {
         use crate::lex::TokenType::*;
         Ok(match &immediate.value.token_type {
-            Str(s) => Value::Str(Rc::new(s.clone())),
-            Int(i) => Value::Int(i.clone()),
-            Float(f) => Value::Float(f.clone()),
-            Char(c) => Value::Char(c.clone()),
-            Bool(b) => Value::Bool(*b),
-            Null => Value::Null,
+            Str(s) => self.string(Rc::new(s.clone())),
+            Int(i) => self.int(i.clone()),
+            Float(f) => self.float(f.clone()),
+            Char(c) => self.char(c.clone()),
+            Bool(b) => self.bool(*b),
+            Null => self.null(),
             _ => return Err(format!("Unexpected immediate value {:?}", immediate.value)),
         })
     }

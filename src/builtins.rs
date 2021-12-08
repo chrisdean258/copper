@@ -1,25 +1,25 @@
-use crate::eval::{Evaluator, Value};
+use crate::eval::{Evaluator, Object, Value};
 use std::io;
 use std::rc::Rc;
 
-pub fn copper_print(ctx: &mut Evaluator, args: Vec<Value>) -> Value {
+pub fn copper_print(ctx: &mut Evaluator, args: Vec<Object>) -> Object {
     copper_print_no_newline(ctx, args);
     print!("\n");
-    Value::Null
+    ctx.null()
 }
 
-pub fn copper_print_no_newline(ctx: &mut Evaluator, args: Vec<Value>) -> Value {
+pub fn copper_print_no_newline(ctx: &mut Evaluator, args: Vec<Object>) -> Object {
     for arg in args {
         let val = ctx.deref(arg);
-        match &val {
+        match &val.value {
             Value::List(v) => copper_print_list(ctx, v),
-            _ => print!("{}", val),
+            _ => print!("{}", val.value),
         }
     }
-    Value::Null
+    ctx.null()
 }
 
-fn copper_print_list(ctx: &mut Evaluator, vals: &Vec<Value>) {
+fn copper_print_list(ctx: &mut Evaluator, vals: &Vec<Object>) {
     let mut first = true;
     print!("[");
     for val in vals.iter() {
@@ -32,10 +32,10 @@ fn copper_print_list(ctx: &mut Evaluator, vals: &Vec<Value>) {
     print!("]");
 }
 
-pub fn copper_getline(_: &mut Evaluator, _: Vec<Value>) -> Value {
+pub fn copper_getline(ctx: &mut Evaluator, _: Vec<Object>) -> Object {
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
-        Ok(0) => Value::Null,
+        Ok(0) => ctx.undefined(),
         Ok(_) => {
             if buffer.ends_with('\n') {
                 buffer.pop();
@@ -43,16 +43,16 @@ pub fn copper_getline(_: &mut Evaluator, _: Vec<Value>) -> Value {
                     buffer.pop();
                 }
             }
-            Value::Str(Rc::new(buffer))
+            ctx.string(Rc::new(buffer))
         }
-        Err(_) => Value::Null,
+        Err(_) => ctx.undefined(),
     }
 }
 
-pub fn copper_len(ctx: &mut Evaluator, args: Vec<Value>) -> Value {
+pub fn copper_len(ctx: &mut Evaluator, args: Vec<Object>) -> Object {
     assert_eq!(args.len(), 1);
     let val = ctx.deref(args[0].clone());
-    Value::Int(match &val {
+    ctx.int(match &val.value {
         Value::List(v) => v.len() as i64,
         Value::Str(v) => v.len() as i64,
         _ => 0,

@@ -108,8 +108,14 @@ fn repl(format: bool, typecheck_only: bool) {
                 if !typecheck_only {
                     let val = evaluator.eval(&mut tree);
                     match val {
-                        Ok(eval::Value::Null) => (),
-                        Ok(t) => println!("{}", t),
+                        Ok(t) => println!(
+                            "{}",
+                            match t.value {
+                                eval::Value::Null => "".to_string(),
+                                eval::Value::Undefined => "".to_string(),
+                                t => format!("{}", t),
+                            }
+                        ),
                         Err(s) => eprintln!("{}", s),
                     }
                 }
