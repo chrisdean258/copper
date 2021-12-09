@@ -422,6 +422,7 @@ impl TypeChecker {
         }
         let rv = self.typecheck_expr(&mut f.body)?;
         self.scopes = save;
+        f.being_evaluated.replace(None);
         Ok(rv)
     }
 
