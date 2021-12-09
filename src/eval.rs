@@ -19,7 +19,7 @@ type ScopeTable = Vec<Rc<RefCell<HashMap<String, usize>>>>;
 pub enum Value {
     BuiltinFunc(&'static str, fn(&mut Evaluator, Vec<Object>) -> Object),
     Reference(usize),
-    Str(Rc<String>),
+    Str(String),
     List(Vec<Object>),
     Int(i64),
     Float(f64),
@@ -158,7 +158,7 @@ impl Evaluator {
         self.object(Value::Class(Rc::new(cd.clone()), scope))
     }
 
-    pub fn string(&self, s: Rc<String>) -> Object {
+    pub fn string(&self, s: String) -> Object {
         self.object(Value::Str(s))
     }
 
@@ -435,7 +435,7 @@ impl Evaluator {
 
         Ok(match binop.op.token_type {
             Plus => match (lhs.value, rhs.value) {
-                (Value::Str(a), Value::Str(b)) => self.string(Rc::new(format!("{}{}", a, b))),
+                (Value::Str(a), Value::Str(b)) => self.string(format!("{}{}", a, b)),
                 (Value::Int(a), Value::Int(b)) =>self.int(a + b),
                 (Value::Float(a), Value::Float(b)) => self.float(a + b),
                 (Value::Float(a), Value::Int(b)) => self.float(a + b as f64),
@@ -740,6 +740,8 @@ impl Evaluator {
         } else {
             match &idxs[0].value {
                 Value::Int(i) => *i,
+                Value::Char(c) => *c as i64,
+                Value::Bool(b) => *b as i64,
                 _ => {
                     return Err(format!(
                         "{}: List types must be indexed integers",
@@ -774,6 +776,7 @@ impl Evaluator {
         let mut rv = Vec::new();
         for expr in l.exprs.iter_mut() {
             let val = self.eval_expr(expr)?;
+            let val = self.deref(val);
             let idx = self.alloc(val);
             rv.push(self.reference(idx));
         }
@@ -929,6 +932,7 @@ impl Evaluator {
                 _ => unreachable!(),
             },
             TokenType::OrEq => match (&mut self.memory[lhsidx].value, &rhs.value) {
+                (Value::Bool(a), Value::Bool(b)) => *a |= *b,
                 (Value::Int(a), Value::Int(b)) => *a |= *b,
                 (Value::Char(a), Value::Char(b)) => *a = (*a as u8 | *b as u8) as char,
                 (Value::Int(a), Value::Bool(b)) => *a |= *b as i64,
@@ -1143,7 +1147,7 @@ impl Evaluator {
     fn eval_immediate(&mut self, immediate: &Immediate) -> Result<Object, String> {
         use crate::lex::TokenType::*;
         Ok(match &immediate.value.token_type {
-            Str(s) => self.string(Rc::new(s.clone())),
+            Str(s) => self.string(s.clone()),
             Int(i) => self.int(i.clone()),
             Float(f) => self.float(f.clone()),
             Char(c) => self.char(c.clone()),

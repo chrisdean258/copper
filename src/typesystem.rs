@@ -78,13 +78,13 @@ pub enum TypeEntryType<T: Clone + Debug, U: Clone + Debug> {
     BasicType,
     BuiltinFunction(String, TypeRef), // Cannot typecheck yet
     Callable(usize, T),               // Lambda or function, usize is num of args
-    UnionType(Vec<TypeRef>),          // One of the underlying types
+    UnionType(HashSet<TypeRef>),      // One of the underlying types. Use for type inference
     Class(U),                         // A "type" object if you will
     Object(TypeRef),                  // TypeRef refers to class
     Iterable(TypeRef),                // Lists so far
     Container(TypeRef),               // Options
     UninitializedLocation(usize),     // Use solely for typechecking __init__ functions
-    PlaceHolderType,                  // Used for typechecking functions
+    PlaceHolder,                      // Used for typechecking functions
 }
 
 #[derive(Debug, Clone)]
@@ -181,7 +181,16 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             (int, int => bol),
             (float, float => bol),
         }
-        make_ops! {self, ["%", "|", "&", "^", "<<", ">>"],
+        make_ops! {self, ["%"],
+            (chr, int => chr),
+            (int, int => int),
+        }
+        make_ops! {self, ["|", "&", "^"],
+            (bol, bol => bol),
+            (chr, int => chr),
+            (int, int => int),
+        }
+        make_ops! {self, ["<<", ">>"],
             (chr, int => chr),
             (int, int => int),
         }
@@ -205,12 +214,54 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             (int, int => int),
             (float, float => float),
         };
-        make_ops! {self, ["|=", "^=", "&=", ">>=", "<<="],
+        make_ops! {self, ["|=", "^=", "&="],
+            (bol, bol => bol),
+            (chr, int => chr),
+            (int, int => int),
+        };
+        make_ops! {self, [">>=", "<<="],
             (chr, int => chr),
             (int, int => int),
         };
         self.basic("EmptyList");
         self.list_name("string", chr);
+        self.catch_errors();
+    }
+
+    pub fn catch_errors(&self) {
+        assert_eq!(self.operations[Plus.idx].name, "+");
+        assert_eq!(self.operations[Minus.idx].name, "-");
+        assert_eq!(self.operations[Times.idx].name, "*");
+        assert_eq!(self.operations[Div.idx].name, "/");
+        assert_eq!(self.operations[CmpEq.idx].name, "==");
+        assert_eq!(self.operations[CmpNotEq.idx].name, "!=");
+        assert_eq!(self.operations[CmpGE.idx].name, ">=");
+        assert_eq!(self.operations[CmpLE.idx].name, "<=");
+        assert_eq!(self.operations[CmpGT.idx].name, ">");
+        assert_eq!(self.operations[CmpLT.idx].name, "<");
+        assert_eq!(self.operations[Mod.idx].name, "%");
+        assert_eq!(self.operations[BitOr.idx].name, "|");
+        assert_eq!(self.operations[BitAnd.idx].name, "&");
+        assert_eq!(self.operations[BitXor.idx].name, "^");
+        assert_eq!(self.operations[BitShiftLeft.idx].name, "<<");
+        assert_eq!(self.operations[BitShiftRight.idx].name, ">>");
+        assert_eq!(self.operations[Inc.idx].name, "++");
+        assert_eq!(self.operations[Dec.idx].name, "--");
+        assert_eq!(self.operations[BoolNot.idx].name, "!");
+        assert_eq!(self.operations[BitNot.idx].name, "~");
+        assert_eq!(self.operations[BoolOr.idx].name, "||");
+        assert_eq!(self.operations[BoolAnd.idx].name, "&&");
+        assert_eq!(self.operations[BoolXor.idx].name, "^^");
+        assert_eq!(self.operations[PlusEq.idx].name, "+=");
+        assert_eq!(self.operations[MinusEq.idx].name, "-=");
+        assert_eq!(self.operations[TimesEq.idx].name, "*=");
+        assert_eq!(self.operations[DivEq.idx].name, "/=");
+        assert_eq!(self.operations[ModEq.idx].name, "%=");
+        assert_eq!(self.operations[OrEq.idx].name, "|=");
+        assert_eq!(self.operations[XorEq.idx].name, "^=");
+        assert_eq!(self.operations[AndEq.idx].name, "&=");
+        assert_eq!(self.operations[BitShiftRightEq.idx].name, ">>=");
+        assert_eq!(self.operations[BitShiftLeftEq.idx].name, "<<=");
     }
 
     #[allow(dead_code)]
@@ -311,7 +362,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
 
     #[allow(dead_code)]
     pub fn placeholder(&mut self, name: &str) -> TypeRef {
-        self.new_entry(name, TypeEntryType::PlaceHolderType)
+        self.new_entry(name, TypeEntryType::PlaceHolder)
     }
 
     pub fn builtinfunction(&mut self, name: &str, rt: TypeRef) -> TypeRef {
@@ -338,6 +389,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         }
         let bifname = format!("{}.__index__", name);
         let bif = self.builtinfunction(&bifname, typ);
+        self.add_conversion(EmptyList, rv);
         self.types[rv.idx].fields.insert("__index__".into(), bif);
         rv
     }
@@ -377,6 +429,15 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         entry
     }
 
+    pub fn union(&mut self, types: HashSet<TypeRef>) -> TypeRef {
+        let mut names = Vec::new();
+        for typ in types.iter() {
+            names.push(self.types[typ.idx].name.clone());
+        }
+        let name = format!("union<{}>", names.join("|"));
+        self.entry(&name, TypeEntryType::UnionType(types))
+    }
+
     pub fn class_instance(&mut self, class: TypeRef) -> TypeRef {
         let name = format!("<class `{}`>", self.types[class.idx].name);
         let rv = self.new_entry(&name, TypeEntryType::Object(class));
@@ -404,6 +465,18 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
     }
 
     pub fn convertable_to(&self, from: &TypeRef, to: &TypeRef) -> bool {
+        match &self.types[from.idx].typ {
+            TypeEntryType::PlaceHolder => return true,
+            TypeEntryType::UnionType(types) => {
+                for typ in types.iter() {
+                    if self.convertable_to(typ, to) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            _ => (),
+        }
         self.get_conversions(from).contains(&to)
     }
 
@@ -442,7 +515,50 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         rv
     }
 
-    pub fn apply_operation(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+    pub fn apply_operation(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+        for input in inputs.iter() {
+            match self.types[input.idx].typ {
+                TypeEntryType::PlaceHolder => return self.apply_operation_place(op, inputs),
+                TypeEntryType::UnionType(_) => return self.apply_operation_place(op, inputs),
+                _ => (),
+            }
+        }
+        self.apply_operation_noplace(op, inputs)
+    }
+
+    pub fn apply_operation_place(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+        let operation = &self.operations[op.idx];
+        let mut types: HashSet<TypeRef> = HashSet::new();
+        for sig in operation.signatures.iter() {
+            if inputs.len() != sig.inputs.len() {
+                continue;
+            }
+            let mut matches = true;
+            for (input, siginput) in inputs.iter().zip(sig.inputs.iter()) {
+                matches = true;
+                if !self.convertable_to(input, siginput) {
+                    matches = false;
+                }
+                match &self.types[input.idx].typ {
+                    TypeEntryType::PlaceHolder => matches = true,
+                    TypeEntryType::UnionType(types) => {
+                        for typ in types.iter() {
+                            if self.convertable_to(typ, input) {
+                                matches = true;
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            if matches {
+                types.insert(sig.output);
+            }
+        }
+        Some(self.union(types))
+    }
+
+    pub fn apply_operation_noplace(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = &self.operations[op.idx];
         for sig in operation.signatures.iter() {
             if inputs.len() != sig.inputs.len() {

@@ -1,6 +1,5 @@
 use crate::eval::{Evaluator, Object, Value};
 use std::io;
-use std::rc::Rc;
 
 pub fn copper_print(ctx: &mut Evaluator, args: Vec<Object>) -> Object {
     copper_print_no_newline(ctx, args);
@@ -43,7 +42,7 @@ pub fn copper_getline(ctx: &mut Evaluator, _: Vec<Object>) -> Object {
                     buffer.pop();
                 }
             }
-            ctx.string(Rc::new(buffer))
+            ctx.string(buffer)
         }
         Err(_) => ctx.undefined(),
     }

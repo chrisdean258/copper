@@ -202,25 +202,23 @@ macro_rules! binop {
             lexer: &mut Peekable<Lexer<T>>,
             ) -> Result<Expression, String> {
             use crate::lex::TokenType::*;
-            let lhs = self.$next(lexer)?;
-            let token = match lexer.peek() {
-                Some(t) => t.clone(),
-                None => return Ok(lhs),
-            };
-            match token.token_type {
-                $(
-                    $token => {
-                        lexer.next();
-                    },
-                    )+
+            let mut lhs = self.$next(lexer)?;
+            loop {
+                let token = match lexer.peek() {
+                    Some(t) => t.clone(),
+                    None => return Ok(lhs),
+                };
+                match token.token_type {
+                    $( $token => { lexer.next(); }, )+
                     _ => return Ok(lhs),
+                }
+                let rhs = self.$next(lexer)?;
+                lhs = Expression::BinOp(BinOp {
+                    lhs: Box::new(lhs),
+                    op: token.clone(),
+                    rhs: Box::new(rhs),
+                })
             }
-            let rhs = self.$name(lexer)?;
-            Ok(Expression::BinOp(BinOp {
-                lhs: Box::new(lhs),
-                op: token.clone(),
-                rhs: Box::new(rhs),
-            }))
         }
     }
 }

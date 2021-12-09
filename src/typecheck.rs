@@ -26,6 +26,7 @@ struct FunctionCall {
     preset_args: Vec<TypeRef>,
     body: Expression,
     location: Location,
+    being_evaluated: Rc<RefCell<Option<MemRef>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -158,35 +159,46 @@ impl TypeChecker {
 
     // ned to augment this to prevent type switching
     fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, String> {
-        let mut ran_first = self.typecheck_if_internal(i)?;
+        let ran_first = self.typecheck_if_internal(i)?;
 
         for ai in &mut i.and_bodies {
-            if let Some(rv) = self.typecheck_if_internal(ai)? {
-                ran_first = Some(rv);
-            }
-        }
+            let and_type = self.typecheck_if_internal(ai)?;
 
-        if ran_first.is_none() && i.else_body.is_some() {
-            ran_first = Some(self.typecheck_expr(i.else_body.as_mut().unwrap())?);
-        }
-
-        match ran_first {
-            Some(a) => Ok(a),
-            None => Ok(typesystem::Null),
-        }
-    }
-
-    fn typecheck_if_internal(&mut self, i: &mut If) -> Result<Option<TypeRef>, String> {
-        let cond = self.typecheck_expr(i.condition.as_mut())?;
-        Ok(match cond {
-            typesystem::Bool => Some(self.typecheck_expr(i.body.as_mut())?),
-            _ => {
+            if !self.system.convertable_to(&ran_first, &and_type)
+                && !self.system.convertable_to(&and_type, &ran_first)
+            {
                 return Err(format!(
-                    "{}: If expressions must have boolean conditions not {:?}",
-                    i.location, self.system.types[cond.idx].name
+                    "{}: `if` statements must match types in arms\n{}: `if` statements must match types in arms",
+                    i.location, ai.location
                 ));
             }
-        })
+        }
+
+        if i.else_body.is_some() {
+            let else_type = self.typecheck_expr(i.else_body.as_mut().unwrap())?;
+
+            if !self.system.convertable_to(&ran_first, &else_type)
+                && !self.system.convertable_to(&else_type, &ran_first)
+            {
+                return Err(format!(
+                    "{}: `if` statements must match types in arms\n{}: `if` statements must match types in arms",
+                    i.location, i.else_body.as_ref().unwrap().location()
+                ));
+            }
+        }
+
+        Ok(ran_first)
+    }
+
+    fn typecheck_if_internal(&mut self, i: &mut If) -> Result<TypeRef, String> {
+        let cond = self.typecheck_expr(i.condition.as_mut())?;
+        match cond {
+            typesystem::Bool => self.typecheck_expr(i.body.as_mut()),
+            _ => Err(format!(
+                "{}: If expressions must have boolean conditions not {:?}",
+                i.location, self.system.types[cond.idx].name
+            )),
+        }
     }
 
     fn typecheck_while(&mut self, w: &mut While) -> Result<TypeRef, String> {
@@ -232,8 +244,8 @@ impl TypeChecker {
 
             _ => {
                 return Err(format!(
-                    "{}: Must be a container type or function of 0 arguments to iterate over",
-                    f.items.location()
+                    "{}: Must be a container type or function of 0 arguments to iterate over. Found `{}`",
+                    f.items.location(), self.system.types[iterable.idx].name
                 ))
             }
         };
@@ -384,6 +396,14 @@ impl TypeChecker {
         f: &mut FunctionCall,
         mut args: Vec<TypeRef>,
     ) -> Result<TypeRef, String> {
+        if let Some(typ) = *f.being_evaluated.borrow() {
+            return Ok(self.memory[typ.idx]);
+        }
+
+        let name = format!("<current function return type>");
+        let typref = self.system.placeholder(&name);
+        f.being_evaluated.replace(Some(self.alloc(typref)));
+
         let save = self.scopes.clone();
         self.scopes = f.scopes.clone();
         self.openscope();
@@ -420,6 +440,7 @@ impl TypeChecker {
                 arg_names: f.argnames.clone(),
                 preset_args: Vec::new(),
                 body: f.body.as_ref().clone(),
+                being_evaluated: Rc::new(RefCell::new(None)),
             },
         );
 
@@ -442,6 +463,7 @@ impl TypeChecker {
                 arg_names,
                 preset_args: Vec::new(),
                 body: f.body.as_ref().clone(),
+                being_evaluated: Rc::new(RefCell::new(None)),
             },
         ))
     }
@@ -457,6 +479,7 @@ impl TypeChecker {
         if self.system.is_assignable(&lhs, &rhs) {
             return Ok(lhs);
         }
+
         if lhs == rhs {
             return Ok(rhs);
         }
@@ -464,6 +487,16 @@ impl TypeChecker {
         if lhs == typesystem::Uninitialized {
             self.memory[lhsidx.idx] = rhs;
             return Ok(rhs);
+        }
+
+        if lhs == typesystem::EmptyList {
+            match self.system.types[rhs.idx].typ {
+                TypeEntryType::Iterable(_) => {
+                    self.memory[lhsidx.idx] = rhs;
+                    return Ok(rhs);
+                }
+                _ => (),
+            }
         }
 
         Err(format!(
@@ -494,12 +527,11 @@ impl TypeChecker {
             _ => unreachable!(),
         };
 
-        let rv = match self.system.apply_operation(op, vec![rhs, lhs]) {
-            Some(t) => t,
-            None => return Err(self.binop_err(&expr.op, &lhs, &rhs)),
-        };
-        self.memory[lhsidx.idx] = rv;
-        Ok(rv)
+        let rv = self
+            .system
+            .apply_operation(op, vec![rhs, lhs])
+            .ok_or(self.binop_err(&expr.op, &lhs, &rhs))?;
+        self.typecheck_assignment(expr, lhsidx, rv)
     }
 
     fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<TypeRef, String> {
@@ -594,8 +626,8 @@ impl TypeChecker {
         let callable = match self.system.types[obj.idx].fields.get("__index__") {
             None => {
                 return Err(format!(
-                    "{}: cannot index type `{:#?}`",
-                    expr.location, ltyp
+                    "{}: cannot index type `{}`",
+                    expr.location, ltyp.name
                 ))
             }
             Some(t) => *t,
