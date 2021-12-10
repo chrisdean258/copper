@@ -5,7 +5,7 @@ use crate::parser::*;
 use crate::typesystem;
 use crate::typesystem::{TypeEntryType, TypeRef, TypeSystem};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
@@ -24,9 +24,10 @@ struct FunctionCall {
     scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
     arg_names: Vec<String>,
     preset_args: Vec<TypeRef>,
+    default_args: Vec<Expression>,
     body: Expression,
     location: Location,
-    being_evaluated: Rc<RefCell<Option<MemRef>>>,
+    being_evaluated: Rc<RefCell<HashMap<Vec<TypeRef>, MemRef>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,35 +160,25 @@ impl TypeChecker {
 
     // ned to augment this to prevent type switching
     fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, String> {
-        let ran_first = self.typecheck_if_internal(i)?;
+        let mut types = HashSet::new();
+        types.insert(self.typecheck_if_internal(i)?);
 
         for ai in &mut i.and_bodies {
-            let and_type = self.typecheck_if_internal(ai)?;
-
-            if !self.system.convertable_to(&ran_first, &and_type)
-                && !self.system.convertable_to(&and_type, &ran_first)
-            {
-                return Err(format!(
-                    "{}: `if` statements must match types in arms\n{}: `if` statements must match types in arms",
-                    i.location, ai.location
-                ));
-            }
+            types.insert(self.typecheck_if_internal(ai)?);
         }
 
         if i.else_body.is_some() {
-            let else_type = self.typecheck_expr(i.else_body.as_mut().unwrap())?;
-
-            if !self.system.convertable_to(&ran_first, &else_type)
-                && !self.system.convertable_to(&else_type, &ran_first)
-            {
-                return Err(format!(
-                    "{}: `if` statements must match types in arms\n{}: `if` statements must match types in arms",
-                    i.location, i.else_body.as_ref().unwrap().location()
-                ));
-            }
+            types.insert(self.typecheck_expr(i.else_body.as_mut().unwrap())?);
         }
 
-        Ok(ran_first)
+        if types.len() == 1 {
+            for typ in types {
+                return Ok(typ);
+            }
+            unreachable!()
+        } else {
+            Ok(self.system.union(types))
+        }
     }
 
     fn typecheck_if_internal(&mut self, i: &mut If) -> Result<TypeRef, String> {
@@ -265,7 +256,7 @@ impl TypeChecker {
         }
 
         self.typecheck_expr(f.body.as_mut())?;
-        Ok(typesystem::Null)
+        Ok(typesystem::Uninitialized)
     }
 
     fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, String> {
@@ -396,19 +387,31 @@ impl TypeChecker {
         f: &mut FunctionCall,
         mut args: Vec<TypeRef>,
     ) -> Result<TypeRef, String> {
-        if let Some(typ) = *f.being_evaluated.borrow() {
+        if let Some(typ) = f.being_evaluated.borrow().get(&args) {
             return Ok(self.memory[typ.idx]);
         }
 
         let name = format!("<current function return type>");
         let typref = self.system.placeholder(&name);
-        f.being_evaluated.replace(Some(self.alloc(typref)));
+        f.being_evaluated
+            .borrow_mut()
+            .insert(args.clone(), self.alloc(typref));
 
         let save = self.scopes.clone();
         self.scopes = f.scopes.clone();
         self.openscope();
         let mut allargs = f.preset_args.clone();
         allargs.append(&mut args);
+        // trying to apply default args
+
+        if f.arg_names.len() > allargs.len() {
+            let num_needed = f.arg_names.len() - allargs.len();
+            let start = f.default_args.len() - num_needed;
+            for i in start..f.default_args.len() {
+                allargs.push(self.typecheck_expr(&mut f.default_args[i])?)
+            }
+        }
+
         if allargs.len() != f.arg_names.len() {
             return Err(format!(
                 "{}: Trying to call function with wrong number of arguments. Needed {}  found {}",
@@ -420,9 +423,13 @@ impl TypeChecker {
         for (arg, name) in allargs.iter().zip(f.arg_names.iter()) {
             self.insert_scope_local(name, *arg);
         }
+
+        f.being_evaluated
+            .borrow_mut()
+            .insert(allargs.clone(), self.alloc(typref));
         let rv = self.typecheck_expr(&mut f.body)?;
         self.scopes = save;
-        f.being_evaluated.replace(None);
+        f.being_evaluated.borrow_mut().remove(&allargs);
         Ok(rv)
     }
 
@@ -440,8 +447,9 @@ impl TypeChecker {
                 scopes: self.scopes.clone(),
                 arg_names: f.argnames.clone(),
                 preset_args: Vec::new(),
+                default_args: f.default_args.clone(),
                 body: f.body.as_ref().clone(),
-                being_evaluated: Rc::new(RefCell::new(None)),
+                being_evaluated: Rc::new(RefCell::new(HashMap::new())),
             },
         );
 
@@ -463,8 +471,9 @@ impl TypeChecker {
                 scopes: self.scopes.clone(),
                 arg_names,
                 preset_args: Vec::new(),
+                default_args: Vec::new(),
                 body: f.body.as_ref().clone(),
-                being_evaluated: Rc::new(RefCell::new(None)),
+                being_evaluated: Rc::new(RefCell::new(HashMap::new())),
             },
         ))
     }

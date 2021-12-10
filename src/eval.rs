@@ -1039,12 +1039,18 @@ impl Evaluator {
         let rv = Ok(match func.value {
             Value::BuiltinFunc(_, f) => f(self, args),
             Value::Function(mut f, preset_args, scopes) => {
-                assert_eq!(args.len() + preset_args.len(), f.argnames.len());
                 let mut tmp = scopes.clone();
                 swap(&mut self.scopes, &mut tmp);
                 self.openscope();
                 let mut fullargs = preset_args.clone();
                 fullargs.append(&mut args);
+                if fullargs.len() < f.argnames.len() {
+                    let num_needed = f.argnames.len() - fullargs.len();
+                    let start = f.default_args.len() - num_needed;
+                    for i in start..f.default_args.len() {
+                        fullargs.push(self.eval_expr(&mut f.default_args[i])?)
+                    }
+                }
                 for (name, arg) in f.argnames.iter().zip(fullargs.iter()) {
                     let idx = self.alloc(arg.clone());
                     self.insert_scope_local(name, idx);

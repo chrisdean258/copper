@@ -164,6 +164,7 @@ pub struct Function {
     pub argnames: Vec<String>,
     pub body: Box<Expression>,
     pub name: Option<String>,
+    pub default_args: Vec<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -641,6 +642,8 @@ impl ParseTree {
         };
         expect!(lexer, TokenType::OpenParen);
         let mut args = Vec::new();
+        let mut default_args = Vec::new();
+        let mut needs_default = false;
         loop {
             let token = lexer.next().ok_or("Unexpected EOF")?;
             match &token.token_type {
@@ -648,10 +651,24 @@ impl ParseTree {
                 TokenType::CloseParen => break,
                 _ => return Err(unexpected(&token)),
             }
+            if needs_default {
+                expect!(lexer, TokenType::Equal);
+                default_args.push(self.parse_expr(lexer)?);
+            }
             let token = lexer.next().ok_or("Unexpected EOF")?;
             match &token.token_type {
                 TokenType::Comma => (),
                 TokenType::CloseParen => break,
+                TokenType::Equal if !needs_default => {
+                    needs_default = true;
+                    default_args.push(self.parse_expr(lexer)?);
+                    let token = lexer.next().ok_or("Unexpected EOF")?;
+                    match &token.token_type {
+                        TokenType::Comma => (),
+                        TokenType::CloseParen => break,
+                        _ => return Err(unexpected(&token)),
+                    }
+                }
                 _ => return Err(unexpected(&token)),
             }
         }
@@ -662,6 +679,7 @@ impl ParseTree {
             argnames: args,
             body: Box::new(body),
             name: name,
+            default_args,
         }))
     }
 
