@@ -27,7 +27,7 @@ struct FunctionCall {
     default_args: Vec<Expression>,
     body: Expression,
     location: Location,
-    being_evaluated: Rc<RefCell<HashMap<Vec<TypeRef>, MemRef>>>,
+    being_evaluated: Rc<RefCell<HashMap<Vec<TypeRef>, TypeRef>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -111,7 +111,7 @@ impl TypeChecker {
     }
 
     pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, String> {
-        let mut rv = typesystem::Uninitialized;
+        let mut rv = typesystem::Undefined;
         for statement in tree.statements.iter_mut() {
             rv = self.typecheck_statement(statement)?;
         }
@@ -119,11 +119,21 @@ impl TypeChecker {
     }
 
     fn typecheck_statement(&mut self, statement: &mut Statement) -> Result<TypeRef, String> {
-        Ok(match statement {
-            Statement::Expr(expr) => self.typecheck_expr(expr)?,
-            Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd)?,
-            Statement::ClassDecl(cd) => self.typecheck_class_decl(cd)?,
-        })
+        match statement {
+            Statement::Expr(expr) => self.typecheck_expr(expr),
+            Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd),
+            Statement::ClassDecl(cd) => self.typecheck_class_decl(cd),
+            Statement::Import(i) => self.typecheck_import(i),
+            Statement::FromImport(f) => self.typecheck_from_import(f),
+        }
+    }
+
+    fn typecheck_import(&mut self, _i: &mut Import) -> Result<TypeRef, String> {
+        todo!()
+    }
+
+    fn typecheck_from_import(&mut self, _f: &mut FromImport) -> Result<TypeRef, String> {
+        todo!()
     }
 
     fn typecheck_class_decl(&mut self, cd: &mut ClassDecl) -> Result<TypeRef, String> {
@@ -158,7 +168,6 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    // ned to augment this to prevent type switching
     fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, String> {
         let mut types = HashSet::new();
         types.insert(self.typecheck_if_internal(i)?);
@@ -169,16 +178,11 @@ impl TypeChecker {
 
         if i.else_body.is_some() {
             types.insert(self.typecheck_expr(i.else_body.as_mut().unwrap())?);
+        } else {
+            types.insert(typesystem::Undefined);
         }
 
-        if types.len() == 1 {
-            for typ in types {
-                return Ok(typ);
-            }
-            unreachable!()
-        } else {
-            Ok(self.system.union(types))
-        }
+        Ok(self.system.union(types))
     }
 
     fn typecheck_if_internal(&mut self, i: &mut If) -> Result<TypeRef, String> {
@@ -241,7 +245,7 @@ impl TypeChecker {
             }
         };
 
-        if reftyp == typesystem::Uninitialized {
+        if reftyp == typesystem::Undefined {
             self.memory[reftypidx.idx] = itertype;
             reftyp = self.memory[reftypidx.idx];
         }
@@ -256,7 +260,7 @@ impl TypeChecker {
         }
 
         self.typecheck_expr(f.body.as_mut())?;
-        Ok(typesystem::Uninitialized)
+        Ok(typesystem::Undefined)
     }
 
     fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, String> {
@@ -328,10 +332,10 @@ impl TypeChecker {
     }
 
     fn typecheck_list(&mut self, l: &mut List) -> Result<TypeRef, String> {
-        let mut typ = typesystem::Uninitialized;
+        let mut typ = typesystem::Undefined;
         for expr in l.exprs.iter_mut() {
             let rt = self.typecheck_expr(expr)?;
-            if typ == typesystem::Uninitialized || rt == typ {
+            if typ == typesystem::Undefined || rt == typ {
                 typ = rt;
             } else {
                 return Err(format!(
@@ -342,7 +346,7 @@ impl TypeChecker {
                 ));
             }
         }
-        if typ == typesystem::Uninitialized {
+        if typ == typesystem::Undefined {
             Ok(typesystem::EmptyList)
         } else {
             Ok(self.system.list(typ))
@@ -388,14 +392,14 @@ impl TypeChecker {
         mut args: Vec<TypeRef>,
     ) -> Result<TypeRef, String> {
         if let Some(typ) = f.being_evaluated.borrow().get(&args) {
-            return Ok(self.memory[typ.idx]);
+            return Ok(*typ);
         }
+
+        let orig_args = args.clone();
 
         let name = format!("<current function return type>");
         let typref = self.system.placeholder(&name);
-        f.being_evaluated
-            .borrow_mut()
-            .insert(args.clone(), self.alloc(typref));
+        f.being_evaluated.borrow_mut().insert(args.clone(), typref);
 
         let save = self.scopes.clone();
         self.scopes = f.scopes.clone();
@@ -426,10 +430,10 @@ impl TypeChecker {
 
         f.being_evaluated
             .borrow_mut()
-            .insert(allargs.clone(), self.alloc(typref));
+            .insert(allargs.clone(), typref);
         let rv = self.typecheck_expr(&mut f.body)?;
         self.scopes = save;
-        f.being_evaluated.borrow_mut().remove(&allargs);
+        f.being_evaluated.borrow_mut().insert(orig_args, rv);
         Ok(rv)
     }
 
@@ -494,7 +498,7 @@ impl TypeChecker {
             return Ok(rhs);
         }
 
-        if lhs == typesystem::Uninitialized {
+        if lhs == typesystem::Undefined {
             self.memory[lhsidx.idx] = rhs;
             return Ok(rhs);
         }
@@ -589,7 +593,7 @@ impl TypeChecker {
                     ))?,
                 };
                 for (field, typ) in self.system.types[inst.idx].fields.clone() {
-                    if typ == typesystem::Uninitialized {
+                    if typ == typesystem::Undefined {
                         return Err(format!(
                             "{}: `__init__` method must initialize all fields. `.{}` was left uninitialized\n{}: Originating here",
                             init.location, field, expr.location
@@ -704,9 +708,9 @@ impl TypeChecker {
         ))?;
 
         let rv = self.alloc(typ);
-        if typ == typesystem::Uninitialized {
+        if typ == typesystem::Undefined {
             // we must be in a __init__ otherwise all fields should be initialized
-            let name = format!("<Uninitialized `.{}`>", d.rhs);
+            let name = format!("<Undefined `.{}`>", d.rhs);
             *self.system.types[objidx.idx]
                 .fields
                 .get_mut(&d.rhs)
@@ -727,7 +731,7 @@ impl TypeChecker {
         match &expr.value.token_type {
             TokenType::Identifier(s) => {
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, typesystem::Uninitialized))
+                    Ok(self.setdefault_scope_local(&s, typesystem::Undefined))
                 } else if let Some(typ) = self.lookup_scope(s) {
                     Ok(typ)
                 } else {
@@ -737,7 +741,7 @@ impl TypeChecker {
             TokenType::LambdaArg(u) => {
                 let s = format!("\\{}", u);
                 if allow_insert {
-                    Ok(self.setdefault_scope_local(&s, typesystem::Uninitialized))
+                    Ok(self.setdefault_scope_local(&s, typesystem::Undefined))
                 } else if let Some(typ) = self.lookup_scope(&s) {
                     Ok(typ)
                 } else {

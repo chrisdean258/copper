@@ -12,6 +12,8 @@ pub enum Statement {
     Expr(Expression),
     GlobalDecl(GlobalDecl),
     ClassDecl(ClassDecl),
+    Import(Import),
+    FromImport(FromImport),
 }
 
 #[allow(dead_code)]
@@ -62,6 +64,19 @@ impl Expression {
 pub struct ParseTree {
     pub statements: Vec<Statement>,
     max_arg: Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub location: Location,
+    pub file: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FromImport {
+    pub location: Location,
+    pub file: String,
+    pub what: String,
 }
 
 #[derive(Debug, Clone)]
@@ -277,11 +292,49 @@ impl ParseTree {
         let rv = Ok(match &token.token_type {
             TokenType::Global => self.parse_global_decl(lexer)?,
             TokenType::Class => self.parse_class_decl(lexer)?,
+            TokenType::Import => self.parse_import(lexer)?,
+            TokenType::From => self.parse_from_import(lexer)?,
             _ => Statement::Expr(self.parse_expr(lexer)?),
         });
         // eat all the semicolons
         while if_expect!(lexer, TokenType::Semicolon) {}
         rv
+    }
+
+    fn parse_import<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Statement, String> {
+        let location = expect!(lexer, TokenType::Import).location;
+        let token = lexer.next().ok_or("Unexpected EOF")?;
+        let file = match token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => return Err(unexpected(&token)),
+        };
+        Ok(Statement::Import(Import { location, file }))
+    }
+
+    fn parse_from_import<T: Iterator<Item = String>>(
+        &mut self,
+        lexer: &mut Peekable<Lexer<T>>,
+    ) -> Result<Statement, String> {
+        let location = expect!(lexer, TokenType::From).location;
+        let token = lexer.next().ok_or("Unexpected EOF")?;
+        let file = match token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => return Err(unexpected(&token)),
+        };
+        expect!(lexer, TokenType::Import);
+        let token = lexer.next().ok_or("Unexpected EOF")?;
+        let what = match token.token_type {
+            TokenType::Identifier(s) => s,
+            _ => return Err(unexpected(&token)),
+        };
+        Ok(Statement::FromImport(FromImport {
+            location,
+            file,
+            what,
+        }))
     }
 
     fn parse_global_decl<T: Iterator<Item = String>>(

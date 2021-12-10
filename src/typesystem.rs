@@ -12,7 +12,7 @@ pub struct OpRef {
     pub idx: usize,
 }
 
-pub const Uninitialized: TypeRef = TypeRef { idx: 0 };
+pub const Undefined: TypeRef = TypeRef { idx: 0 };
 pub const Null: TypeRef = TypeRef { idx: 1 };
 pub const Float: TypeRef = TypeRef { idx: 2 };
 pub const Int: TypeRef = TypeRef { idx: 3 };
@@ -21,12 +21,12 @@ pub const Bool: TypeRef = TypeRef { idx: 5 };
 pub const EmptyList: TypeRef = TypeRef { idx: 6 };
 pub const Str: TypeRef = TypeRef { idx: 7 };
 
-pub const Plus: OpRef = OpRef { idx: 0 };
-pub const Minus: OpRef = OpRef { idx: 1 };
-pub const Times: OpRef = OpRef { idx: 2 };
-pub const Div: OpRef = OpRef { idx: 3 };
-pub const CmpEq: OpRef = OpRef { idx: 4 };
-pub const CmpNotEq: OpRef = OpRef { idx: 5 };
+pub const CmpEq: OpRef = OpRef { idx: 0 };
+pub const CmpNotEq: OpRef = OpRef { idx: 1 };
+pub const Plus: OpRef = OpRef { idx: 2 };
+pub const Minus: OpRef = OpRef { idx: 3 };
+pub const Times: OpRef = OpRef { idx: 4 };
+pub const Div: OpRef = OpRef { idx: 5 };
 pub const CmpGE: OpRef = OpRef { idx: 6 };
 pub const CmpLE: OpRef = OpRef { idx: 7 };
 pub const CmpGT: OpRef = OpRef { idx: 8 };
@@ -160,7 +160,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
 
     fn init(&mut self) {
         self.basic("uninitialized");
-        self.basic("null");
+        let null = self.basic("null");
         let float = self.basic("float");
         let int = self.basic("int");
         let chr = self.basic("char");
@@ -175,7 +175,14 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             (int, int => int),
             (float, float => float),
         };
-        make_ops! {self, ["==", "!=", ">=", "<=", ">", "<"],
+        make_ops! {self, ["==", "!="],
+            (null, null => bol),
+            (bol, bol => bol),
+            (chr, chr => bol),
+            (int, int => bol),
+            (float, float => bol),
+        }
+        make_ops! {self, [">=", "<=", ">", "<"],
             (bol, bol => bol),
             (chr, chr => bol),
             (int, int => bol),
@@ -303,7 +310,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
     pub fn print_types(&self) {
         let mut i = 0;
         for op in self.types.iter() {
-            println!("{}: {:#?}", i, op);
+            println!("{}: {}", i, op.name);
             i += 1;
         }
     }
@@ -348,6 +355,9 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         self.types_by_name.insert(val.name.clone(), rv);
         self.types.push(val);
         self.conversions.push(Vec::new());
+        make_ops! {self, ["==","!="],
+            (rv, Null => Bool),
+        }
         rv
     }
 
@@ -424,13 +434,25 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             self.types[entry.idx].fields.insert(name, val);
         }
         for name in fields {
-            self.types[entry.idx].fields.insert(name, Uninitialized);
+            self.types[entry.idx].fields.insert(name, Undefined);
         }
         entry
     }
 
     pub fn union(&mut self, types: HashSet<TypeRef>) -> TypeRef {
         let mut names = Vec::new();
+        if types.len() == 1 {
+            for typ in types.iter() {
+                return *typ;
+            }
+        }
+        if types.len() == 1 && types.contains(&Null) {
+            for typ in types.iter() {
+                if *typ != Null {
+                    return self.optional(*typ);
+                }
+            }
+        }
         for typ in types.iter() {
             names.push(self.types[typ.idx].name.clone());
         }
@@ -540,11 +562,14 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
                     matches = false;
                 }
                 match &self.types[input.idx].typ {
-                    TypeEntryType::PlaceHolder => matches = true,
+                    TypeEntryType::PlaceHolder => {
+                        matches = true;
+                    }
                     TypeEntryType::UnionType(types) => {
                         for typ in types.iter() {
                             if self.convertable_to(typ, input) {
                                 matches = true;
+                                break;
                             }
                         }
                     }
@@ -553,6 +578,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             }
             if matches {
                 types.insert(sig.output);
+                break;
             }
         }
         Some(self.union(types))

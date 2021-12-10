@@ -45,6 +45,8 @@ impl Display for Statement {
             Statement::Expr(e) => f.write_fmt(format_args!("{};", e)),
             Statement::GlobalDecl(g) => f.write_fmt(format_args!("{}", g)),
             Statement::ClassDecl(_) => todo!(),
+            Statement::Import(_) => todo!(),
+            Statement::FromImport(_) => todo!(),
         }
     }
 }

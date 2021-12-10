@@ -12,6 +12,8 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 
+static STDLIB: &'static str = "/home/chris/git/copper/stdlib/stdlib.cu";
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut typecheck_only = false;
@@ -79,6 +81,39 @@ fn repl(format: bool, typecheck_only: bool) {
     let mut lineno: usize = 1;
     let mut typechecker = typecheck::TypeChecker::new();
     let mut evaluator = eval::Evaluator::new();
+
+    let file = match File::open(STDLIB) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("{}: no such file. Stdlib issue", STDLIB);
+            return;
+        }
+    };
+    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
+    let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
+    let stdlib_parser = parser::Parser::new(stdlib_lexer);
+    let mut stdlib_tree = match stdlib_parser.parse() {
+        Ok(a) => a,
+        Err(s) => {
+            eprintln!("{}", s);
+            return;
+        }
+    };
+    match typechecker.typecheck(&mut stdlib_tree) {
+        Ok(a) => a,
+        Err(s) => {
+            eprintln!("{}", s);
+            return;
+        }
+    };
+    match evaluator.eval(&mut stdlib_tree) {
+        Ok(a) => a,
+        Err(s) => {
+            eprintln!("{}", s);
+            return;
+        }
+    };
+
     loop {
         let readline = rl.readline(">>> ");
         match readline {
@@ -138,6 +173,16 @@ fn eval_lexer<T: Iterator<Item = String>>(
     format: bool,
     typecheck_only: bool,
 ) -> Result<(), String> {
+    let stdlib = "/home/chris/git/copper/stdlib/stdlib.cu";
+    let file = match File::open(stdlib) {
+        Ok(f) => f,
+        Err(_) => return Err(format!("{}: no such file. Stdin issue", stdlib)),
+    };
+    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
+    let stdlib_lexer = lex::Lexer::new(stdlib, &mut lines);
+    let stdlib_parser = parser::Parser::new(stdlib_lexer);
+    let mut stdlib_tree = stdlib_parser.parse()?;
+
     let parser = parser::Parser::new(lexer);
     let mut tree = parser.parse()?;
     if format {
@@ -146,10 +191,12 @@ fn eval_lexer<T: Iterator<Item = String>>(
     }
 
     let mut typechecker = typecheck::TypeChecker::new();
+    typechecker.typecheck(&mut stdlib_tree)?;
     typechecker.typecheck(&mut tree)?;
 
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
+        evaluator.eval(&mut stdlib_tree)?;
         evaluator.eval(&mut tree)?;
     }
     Ok(())

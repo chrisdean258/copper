@@ -301,6 +301,8 @@ impl Evaluator {
             Expr(expr) => self.eval_expr(expr)?,
             GlobalDecl(gd) => self.eval_global_decl(gd)?,
             ClassDecl(cd) => self.eval_class_decl(cd)?,
+            Import(_) => todo!(),
+            FromImport(_) => todo!(),
         })
     }
 
