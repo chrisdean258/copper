@@ -1,18 +1,18 @@
 use crate::builtins::*;
 use crate::parser::*;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::mem::swap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+
+type ScopeTable = Vec<Rc<RefCell<HashMap<String, usize>>>>;
 
 #[derive(Clone, Debug)]
 pub struct Object {
     pub value: Value,
     pub fields: HashMap<String, usize>,
 }
-
-type ScopeTable = Vec<Rc<RefCell<HashMap<String, usize>>>>;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -37,6 +37,10 @@ pub enum Value {
 pub struct Evaluator {
     scopes: ScopeTable,
     pub memory: Vec<Object>,
+    all_scopes: Vec<Weak<RefCell<HashMap<String, usize>>>>,
+    free: BTreeSet<usize>,
+    alloc_count: usize,
+    safe: usize,
 }
 
 impl Debug for Value {
@@ -105,6 +109,10 @@ impl Evaluator {
         let mut eval = Evaluator {
             scopes: Vec::new(),
             memory: Vec::new(),
+            all_scopes: Vec::new(),
+            free: BTreeSet::new(),
+            alloc_count: 0,
+            safe: 0,
         };
 
         let mut builtins = HashMap::new();
@@ -118,7 +126,10 @@ impl Evaluator {
         let idx = eval.alloc_builtin_function("len", copper_len);
         builtins.insert(String::from("len"), idx);
 
-        eval.scopes.push(Rc::new(RefCell::new(builtins)));
+        let scopes = Rc::new(RefCell::new(builtins));
+        eval.all_scopes.push(Rc::downgrade(&scopes));
+
+        eval.scopes.push(scopes);
 
         eval
     }
@@ -210,11 +221,50 @@ impl Evaluator {
     }
 
     pub fn alloc(&mut self, val: Object) -> usize {
-        self.memory.push(val);
-        self.memory.len() - 1
+        if self.alloc_count == 100_000 {
+            self.clean_memory();
+            self.alloc_count = 0;
+        }
+        self.alloc_count += 1;
+        if self.free.len() > 1 {
+            //this is a hack because pop_first is not available
+            for idx in self.free.iter() {
+                let idx = *idx;
+                self.memory[idx] = val;
+                self.free.remove(&idx);
+                return idx;
+            }
+            unreachable!()
+        } else {
+            self.memory.push(val);
+            self.memory.len() - 1
+        }
+    }
+
+    fn clean_memory(&mut self) {
+        let mut free = BTreeSet::new();
+        for i in 0..self.memory.len() {
+            free.insert(i);
+        }
+        free.remove(&self.safe);
+        for posscope in self.all_scopes.iter() {
+            if let Some(scope) = posscope.upgrade() {
+                for (key, val) in scope.borrow().iter() {
+                    let mut val = *val;
+                    free.remove(&val);
+                    while let Value::Reference(u) = &self.memory[val].value {
+                        val = *u;
+                        free.remove(&val);
+                    }
+                }
+            }
+        }
+        self.free = free;
     }
 
     fn openscope(&mut self) {
+        let new_scopes = Rc::new(RefCell::new(HashMap::new()));
+        self.all_scopes.push(Rc::downgrade(&new_scopes));
         self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
     }
 
@@ -1060,12 +1110,11 @@ impl Evaluator {
         for arg in expr.args.iter_mut() {
             args.push(self.eval_expr(arg)?);
         }
-        // let mem = self.memory.len();
-        let rv = self.eval_callable(&mut func, args);
-        // if mem > 10000000 {
-        // self.memory.truncate(mem);
-        // }
-        rv
+        let rv = self.eval_callable(&mut func, args)?;
+        if let Value::Reference(u) = rv.value {
+            self.safe = u;
+        }
+        Ok(rv)
     }
 
     fn eval_callable(
