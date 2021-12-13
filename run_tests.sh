@@ -20,7 +20,7 @@ if [ $# -eq 0 ]; then
 	num_passed=0
 
 	for file in ./test/*.cu; do
-		num_tests="$(echo "$num_tests" | awk '{print $1 + 1}')"
+		num_tests=$(($num_tests + 1))
 		if run-test "$file"; then
 			echo "Failed $file"
 		else

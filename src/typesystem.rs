@@ -81,8 +81,8 @@ pub enum TypeEntryType<T: Clone + Debug, U: Clone + Debug> {
     UnionType(HashSet<TypeRef>),      // One of the underlying types. Use for type inference
     Class(U),                         // A "type" object if you will
     Object(TypeRef),                  // TypeRef refers to class
-    Iterable(TypeRef),                // Lists so far
-    Container(TypeRef),               // Options
+    List(TypeRef),                    // Lists so far
+    Container(TypeRef),               // Options;
     UninitializedLocation(usize),     // Use solely for typechecking __init__ functions
     PlaceHolder,                      // Used for typechecking functions
 }
@@ -230,7 +230,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             (chr, int => chr),
             (int, int => int),
         };
-        self.basic("EmptyList");
+        self.basic("list");
         self.list_name("string", chr);
         self.catch_errors();
     }
@@ -335,7 +335,6 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
     }
 
     pub fn entry(&mut self, name: &str, typ: TypeEntryType<T, U>) -> TypeRef {
-        //cannot use map_or_else because of multiple self references
         self.types_by_name
             .get(name)
             .map(|x| *x)
@@ -385,7 +384,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
     }
 
     pub fn list_name(&mut self, name: &str, typ: TypeRef) -> TypeRef {
-        let rv = self.entry(name.into(), TypeEntryType::Iterable(typ));
+        let rv = self.entry(name.into(), TypeEntryType::List(typ));
         make_ops! {self, ["+", "+="],
             (rv, rv => rv),
             (EmptyList, rv => rv),
@@ -399,8 +398,11 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         }
         let bifname = format!("{}.__index__", name);
         let bif = self.builtinfunction(&bifname, typ);
-        self.add_conversion(EmptyList, rv);
         self.types[rv.idx].fields.insert("__index__".into(), bif);
+        let bifname = format!("{}.__iter__", name);
+        let bif = self.builtinfunction(&bifname, typ);
+        self.types[rv.idx].fields.insert("__iter__".into(), bif);
+        self.add_conversion(EmptyList, rv);
         rv
     }
 
@@ -584,8 +586,9 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
         Some(self.union(types))
     }
 
-    pub fn apply_operation_noplace(&self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
+    pub fn apply_operation_noplace(&mut self, op: OpRef, inputs: Vec<TypeRef>) -> Option<TypeRef> {
         let operation = &self.operations[op.idx];
+
         for sig in operation.signatures.iter() {
             if inputs.len() != sig.inputs.len() {
                 continue;
@@ -593,7 +596,7 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
             let mut matches = true;
             for ipts in inputs.iter().zip(sig.inputs.iter()) {
                 let (ip, sg) = ipts;
-                if !self.convertable_to(ip, sg) {
+                if *ip != *sg && !self.convertable_to(ip, sg) {
                     matches = false;
                     break;
                 }
@@ -602,6 +605,18 @@ impl<T: Clone + Debug, U: Clone + Debug> TypeSystem<T, U> {
                 return Some(sig.output);
             }
         }
-        None
+
+        let all_list: Option<Vec<TypeRef>> = inputs
+            .iter()
+            .map(|s| match self.types[s.idx].typ {
+                TypeEntryType::List(t) => Some(t),
+                TypeEntryType::Container(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        match all_list {
+            Some(_) => None, //self.apply_operation(op, v),
+            None => None,
+        }
     }
 }

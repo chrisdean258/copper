@@ -47,6 +47,7 @@ impl Display for Statement {
             Statement::ClassDecl(_) => todo!(),
             Statement::Import(_) => todo!(),
             Statement::FromImport(_) => todo!(),
+            _ => todo!(),
         }
     }
 }

@@ -303,6 +303,9 @@ impl Evaluator {
             ClassDecl(cd) => self.eval_class_decl(cd)?,
             Import(_) => todo!(),
             FromImport(_) => todo!(),
+            Continue(_) => todo!(),
+            Break(_) => todo!(),
+            Return(_) => todo!(),
         })
     }
 
@@ -431,6 +434,17 @@ impl Evaluator {
         use crate::lex::TokenType::*;
 
         let mut lhs = self.eval_expr(binop.lhs.as_mut())?;
+        match binop.op.token_type {
+            BoolOr => match lhs.value {
+                Value::Bool(1) => return Ok(lhs),
+                _ => (),
+            },
+            BoolAnd => match lhs.value {
+                Value::Bool(0) => return Ok(lhs),
+                _ => (),
+            },
+            _ => (),
+        }
         let mut rhs = self.eval_expr(binop.rhs.as_mut())?;
         lhs = self.deref(lhs);
         rhs = self.deref(rhs);
@@ -438,15 +452,15 @@ impl Evaluator {
         Ok(match binop.op.token_type {
             Plus => match (lhs.value, rhs.value) {
                 (Value::Str(a), Value::Str(b)) => self.string(format!("{}{}", a, b)),
-                (Value::Int(a), Value::Int(b)) =>self.int(a + b),
+                (Value::Int(a), Value::Int(b)) => self.int(a + b),
                 (Value::Float(a), Value::Float(b)) => self.float(a + b),
                 (Value::Float(a), Value::Int(b)) => self.float(a + b as f64),
                 (Value::Int(a), Value::Float(b)) => self.float(a as f64 + b),
-                (Value::Int(a), Value::Bool(b)) =>self.int(a + b as i64),
-                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 + b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a + b as i64),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 + b),
                 (Value::Char(a), Value::Char(b)) => self.char((a as u8 + b as u8) as char),
-                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 + b),
-                (Value::Int(a), Value::Char(b)) =>self.int(a + b as i64),
+                (Value::Char(a), Value::Int(b)) => self.int(a as i64 + b),
+                (Value::Int(a), Value::Char(b)) => self.int(a + b as i64),
                 (Value::List(a), Value::List(b)) => {
                     let mut rv = a.clone();
                     rv.append(&mut b.clone());
@@ -454,65 +468,65 @@ impl Evaluator {
                 }
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot add two together. Not supported ({:?} + {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot add two together. Not supported ({:?} + {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
             Minus => match (lhs.value, rhs.value) {
-                (Value::Int(a), Value::Int(b)) =>self.int(a - b),
+                (Value::Int(a), Value::Int(b)) => self.int(a - b),
                 (Value::Float(a), Value::Float(b)) => self.float(a - b),
                 (Value::Float(a), Value::Int(b)) => self.float(a - b as f64),
                 (Value::Int(a), Value::Float(b)) => self.float(a as f64 - b),
-                (Value::Int(a), Value::Bool(b)) =>self.int(a - b as i64),
-                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 - b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a - b as i64),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 - b),
                 (Value::Char(a), Value::Char(b)) => self.char((a as u8 - b as u8) as char),
-                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 - b),
-                (Value::Int(a), Value::Char(b)) =>self.int(a - b as i64),
+                (Value::Char(a), Value::Int(b)) => self.int(a as i64 - b),
+                (Value::Int(a), Value::Char(b)) => self.int(a - b as i64),
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot subtract these two. Not supported ({:?} - {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot subtract these two. Not supported ({:?} - {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
             Times => match (lhs.value, rhs.value) {
-                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 * b),
-                (Value::Int(a), Value::Char(b)) =>self.int(a * b as i64),
-                (Value::Int(a), Value::Int(b)) =>self.int(a * b),
+                (Value::Char(a), Value::Int(b)) => self.int(a as i64 * b),
+                (Value::Int(a), Value::Char(b)) => self.int(a * b as i64),
+                (Value::Int(a), Value::Int(b)) => self.int(a * b),
                 (Value::Float(a), Value::Float(b)) => self.float(a * b),
                 (Value::Float(a), Value::Int(b)) => self.float(a * b as f64),
                 (Value::Int(a), Value::Float(b)) => self.float(a as f64 * b),
-                (Value::Int(a), Value::Bool(b)) =>self.int(a * b as i64),
-                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 * b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a * b as i64),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 * b),
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot multiply these two. Not supported ({:?} * {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot multiply these two. Not supported ({:?} * {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
             Div => match (lhs.value, rhs.value) {
-                (Value::Int(a), Value::Int(b)) =>self.int(a / b),
+                (Value::Int(a), Value::Int(b)) => self.int(a / b),
                 (Value::Float(a), Value::Float(b)) => self.float(a / b),
                 (Value::Float(a), Value::Int(b)) => self.float(a / b as f64),
                 (Value::Int(a), Value::Float(b)) => self.float(a as f64 / b),
-                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 / b),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 / b),
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot divide these two. Not supported ({:?} / {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot divide these two. Not supported ({:?} / {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
             Mod => match (lhs.value, rhs.value) {
-                (Value::Int(a), Value::Int(b)) =>self.int(a % b),
-                (Value::Char(a), Value::Int(b)) =>self.int(a as i64 % b),
+                (Value::Int(a), Value::Int(b)) => self.int(a % b),
+                (Value::Char(a), Value::Int(b)) => self.int(a as i64 % b),
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot divide these two. Not supported ({:?} % {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot divide these two. Not supported ({:?} % {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
             CmpEq => match (lhs.value, rhs.value) {
@@ -527,12 +541,10 @@ impl Evaluator {
                 (Value::Null, Value::Null) => self.bool(1),
                 (Value::Null, _) => self.bool(0),
                 (_, Value::Null) => self.bool(0),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
-                            binop.op.location, a, b
-                            ))
-                }
+                (a, b) => return Err(format!(
+                    "{}: cannot compare equality between these two. Not supported ({:?} == {:?})",
+                    binop.op.location, a, b
+                )),
             },
             CmpNotEq => match (lhs.value, rhs.value) {
                 (Value::Str(a), Value::Str(b)) => self.bool((a != b) as u8),
@@ -547,150 +559,170 @@ impl Evaluator {
                 (Value::Null, Value::Null) => self.bool(0),
                 (Value::Null, _) => self.bool(1),
                 (_, Value::Null) => self.bool(1),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
-                            binop.op.location, a, b
-                            ))
-                }
+                (a, b) => return Err(format!(
+                    "{}: cannot compare equality between these two. Not supported ({:?} != {:?})",
+                    binop.op.location, a, b
+                )),
             },
-            CmpGE => match (lhs.value, rhs.value) {
-                (Value::Float(a), Value::Float(b)) => self.bool((a >= b) as u8),
-                (Value::Float(a), Value::Int(b)) => self.bool((a >= b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 >= b) as u8),
-                (Value::Str(a), Value::Str(b)) => self.bool((a >= b) as u8),
-                (Value::Int(a), Value::Int(b)) => self.bool((a >= b) as u8),
-                (Value::Char(a), Value::Char(b)) => self.bool((a >= b) as u8),
-                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 >= b) as u8),
-                (Value::Int(a), Value::Char(b)) => self.bool((a >= b as i64) as u8),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare order between these two. Not supported ({:?} >= {:?})",
-                            binop.op.location, a, b
-                            ))
+            CmpGE => {
+                match (lhs.value, rhs.value) {
+                    (Value::Float(a), Value::Float(b)) => self.bool((a >= b) as u8),
+                    (Value::Float(a), Value::Int(b)) => self.bool((a >= b as f64) as u8),
+                    (Value::Int(a), Value::Float(b)) => self.bool((a as f64 >= b) as u8),
+                    (Value::Str(a), Value::Str(b)) => self.bool((a >= b) as u8),
+                    (Value::Int(a), Value::Int(b)) => self.bool((a >= b) as u8),
+                    (Value::Char(a), Value::Char(b)) => self.bool((a >= b) as u8),
+                    (Value::Char(a), Value::Int(b)) => self.bool((a as i64 >= b) as u8),
+                    (Value::Int(a), Value::Char(b)) => self.bool((a >= b as i64) as u8),
+                    (a, b) => return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} >= {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
-            CmpGT => match (lhs.value, rhs.value) {
-                (Value::Float(a), Value::Float(b)) => self.bool((a > b) as u8),
-                (Value::Float(a), Value::Int(b)) => self.bool((a > b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 > b) as u8),
-                (Value::Str(a), Value::Str(b)) => self.bool((a > b) as u8),
-                (Value::Int(a), Value::Int(b)) => self.bool((a > b) as u8),
-                (Value::Char(a), Value::Char(b)) => self.bool((a > b) as u8),
-                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 > b) as u8),
-                (Value::Int(a), Value::Char(b)) => self.bool((a > b as i64) as u8),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare order between these two. Not supported ({:?} > {:?})",
-                            binop.op.location, a, b
-                            ))
+            }
+            CmpGT => {
+                match (lhs.value, rhs.value) {
+                    (Value::Float(a), Value::Float(b)) => self.bool((a > b) as u8),
+                    (Value::Float(a), Value::Int(b)) => self.bool((a > b as f64) as u8),
+                    (Value::Int(a), Value::Float(b)) => self.bool((a as f64 > b) as u8),
+                    (Value::Str(a), Value::Str(b)) => self.bool((a > b) as u8),
+                    (Value::Int(a), Value::Int(b)) => self.bool((a > b) as u8),
+                    (Value::Char(a), Value::Char(b)) => self.bool((a > b) as u8),
+                    (Value::Char(a), Value::Int(b)) => self.bool((a as i64 > b) as u8),
+                    (Value::Int(a), Value::Char(b)) => self.bool((a > b as i64) as u8),
+                    (a, b) => return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} > {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
-            CmpLE => match (lhs.value, rhs.value) {
-                (Value::Float(a), Value::Float(b)) => self.bool((a <= b) as u8),
-                (Value::Float(a), Value::Int(b)) => self.bool((a <= b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => self.bool((a as f64 <= b) as u8),
-                (Value::Str(a), Value::Str(b)) => self.bool((a <= b) as u8),
-                (Value::Int(a), Value::Int(b)) => self.bool((a <= b) as u8),
-                (Value::Char(a), Value::Char(b)) => self.bool((a <= b) as u8),
-                (Value::Char(a), Value::Int(b)) => self.bool((a as i64 <= b) as u8),
-                (Value::Int(a), Value::Char(b)) => self.bool((a <= b as i64) as u8),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare order between these two. Not supported ({:?} <= {:?})",
-                            binop.op.location, a, b
-                            ))
+            }
+            CmpLE => {
+                match (lhs.value, rhs.value) {
+                    (Value::Float(a), Value::Float(b)) => self.bool((a <= b) as u8),
+                    (Value::Float(a), Value::Int(b)) => self.bool((a <= b as f64) as u8),
+                    (Value::Int(a), Value::Float(b)) => self.bool((a as f64 <= b) as u8),
+                    (Value::Str(a), Value::Str(b)) => self.bool((a <= b) as u8),
+                    (Value::Int(a), Value::Int(b)) => self.bool((a <= b) as u8),
+                    (Value::Char(a), Value::Char(b)) => self.bool((a <= b) as u8),
+                    (Value::Char(a), Value::Int(b)) => self.bool((a as i64 <= b) as u8),
+                    (Value::Int(a), Value::Char(b)) => self.bool((a <= b as i64) as u8),
+                    (a, b) => return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} <= {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
-            CmpLT => match (lhs.value, rhs.value) {
-                (Value::Float(a), Value::Float(b)) => self.bool((a < b) as u8),
-                (Value::Float(a), Value::Int(b)) => self.bool((a < b as f64) as u8),
-                (Value::Int(a), Value::Float(b)) => self.bool(((a as f64) < b) as u8),
-                (Value::Str(a), Value::Str(b)) => self.bool((a < b) as u8),
-                (Value::Int(a), Value::Int(b)) => self.bool((a < b) as u8),
-                (Value::Char(a), Value::Char(b)) => self.bool((a < b) as u8),
-                (Value::Char(a), Value::Int(b)) => self.bool(((a as i64) < b) as u8),
-                (Value::Int(a), Value::Char(b)) => self.bool((a < b as i64) as u8),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compare order between these two. Not supported ({:?} < {:?})",
-                            binop.op.location, a, b
-                            ))
+            }
+            CmpLT => {
+                match (lhs.value, rhs.value) {
+                    (Value::Float(a), Value::Float(b)) => self.bool((a < b) as u8),
+                    (Value::Float(a), Value::Int(b)) => self.bool((a < b as f64) as u8),
+                    (Value::Int(a), Value::Float(b)) => self.bool(((a as f64) < b) as u8),
+                    (Value::Str(a), Value::Str(b)) => self.bool((a < b) as u8),
+                    (Value::Int(a), Value::Int(b)) => self.bool((a < b) as u8),
+                    (Value::Char(a), Value::Char(b)) => self.bool((a < b) as u8),
+                    (Value::Char(a), Value::Int(b)) => self.bool(((a as i64) < b) as u8),
+                    (Value::Int(a), Value::Char(b)) => self.bool((a < b as i64) as u8),
+                    (a, b) => return Err(format!(
+                        "{}: cannot compare order between these two. Not supported ({:?} < {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
+            }
             BitOr => match (lhs.value, rhs.value) {
                 (Value::Bool(a), Value::Bool(b)) => self.bool(a | b),
-                (Value::Bool(a), Value::Int(b)) =>self.int(a as i64 | b),
-                (Value::Int(a), Value::Bool(b)) =>self.int(a | b as i64),
-                (Value::Int(a), Value::Int(b)) =>self.int(a | b),
+                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 | b),
+                (Value::Int(a), Value::Bool(b)) => self.int(a | b as i64),
+                (Value::Int(a), Value::Int(b)) => self.int(a | b),
                 (Value::Char(a), Value::Char(b)) => self.char((a as u8 | b as u8) as char),
-                (Value::Char(a), Value::Int(b)) =>self.int((a as i64) | b),
-                (Value::Int(a), Value::Char(b)) =>self.int(a | b as i64),
+                (Value::Char(a), Value::Int(b)) => self.int((a as i64) | b),
+                (Value::Int(a), Value::Char(b)) => self.int(a | b as i64),
                 (a, b) => {
                     return Err(format!(
-                            "{}: cannot compute or between these two. Not supported ({:?} | {:?})",
-                            binop.op.location, a, b
-                            ))
+                        "{}: cannot compute or between these two. Not supported ({:?} | {:?})",
+                        binop.op.location, a, b
+                    ))
                 }
             },
-            BitAnd => match (lhs.value, rhs.value) {
-                (Value::Bool(a), Value::Bool(b)) => self.bool(a & b),
-                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 & b),
-                (Value::Int(a), Value::Bool(b)) => self.int(a & b as i64),
-                (Value::Int(a), Value::Int(b)) => self.int(a & b),
-                (Value::Char(a), Value::Char(b)) => self.char((a as u8 & b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => self.int((a as i64) & b),
-                (Value::Int(a), Value::Char(b)) => self.int(a & b as i64),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot computer and between these two. Not supported ({:?} & {:?})",
-                            binop.op.location, a, b
-                            ))
+            BitAnd => {
+                match (lhs.value, rhs.value) {
+                    (Value::Bool(a), Value::Bool(b)) => self.bool(a & b),
+                    (Value::Bool(a), Value::Int(b)) => self.int(a as i64 & b),
+                    (Value::Int(a), Value::Bool(b)) => self.int(a & b as i64),
+                    (Value::Int(a), Value::Int(b)) => self.int(a & b),
+                    (Value::Char(a), Value::Char(b)) => self.char((a as u8 & b as u8) as char),
+                    (Value::Char(a), Value::Int(b)) => self.int((a as i64) & b),
+                    (Value::Int(a), Value::Char(b)) => self.int(a & b as i64),
+                    (a, b) => return Err(format!(
+                        "{}: cannot computer and between these two. Not supported ({:?} & {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
-            BitXor => match (lhs.value, rhs.value) {
-                (Value::Bool(a), Value::Bool(b)) => self.bool(a ^ b),
-                (Value::Bool(a), Value::Int(b)) => self.int(a as i64 ^ b),
-                (Value::Int(a), Value::Bool(b)) => self.int(a ^ b as i64),
-                (Value::Int(a), Value::Int(b)) => self.int(a ^ b),
-                (Value::Char(a), Value::Char(b)) => self.char((a as u8 ^ b as u8) as char),
-                (Value::Char(a), Value::Int(b)) => self.int((a as i64) ^ b),
-                (Value::Int(a), Value::Char(b)) => self.int(a ^ b as i64),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot computer xor between these two. Not supported ({:?} ^ {:?})",
-                            binop.op.location, a, b
-                            ))
+            }
+            BitXor => {
+                match (lhs.value, rhs.value) {
+                    (Value::Bool(a), Value::Bool(b)) => self.bool(a ^ b),
+                    (Value::Bool(a), Value::Int(b)) => self.int(a as i64 ^ b),
+                    (Value::Int(a), Value::Bool(b)) => self.int(a ^ b as i64),
+                    (Value::Int(a), Value::Int(b)) => self.int(a ^ b),
+                    (Value::Char(a), Value::Char(b)) => self.char((a as u8 ^ b as u8) as char),
+                    (Value::Char(a), Value::Int(b)) => self.int((a as i64) ^ b),
+                    (Value::Int(a), Value::Char(b)) => self.int(a ^ b as i64),
+                    (a, b) => return Err(format!(
+                        "{}: cannot computer xor between these two. Not supported ({:?} ^ {:?})",
+                        binop.op.location, a, b
+                    )),
                 }
-            },
-            BoolOr => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
-            BoolAnd => todo!("Need operator short circuiting. For now use nested ifs for short circuit stye behavior"),
-            BoolXor => todo!("Going to implement with the other two boolean functions"),
+            }
+            BoolXor => {
+                match (lhs.value, rhs.value) {
+                    (Value::Bool(a), Value::Bool(b)) => self.bool(a ^ b),
+                    (a, b) => return Err(format!(
+                        "{}: cannot computer boolean xor between these two. Not supported ({:?} ^^ {:?})",
+                        binop.op.location, a, b
+                    )),
+                }
+            }
+            BoolAnd => {
+                match (lhs.value, rhs.value) {
+                    (Value::Bool(a), Value::Bool(b)) => self.bool(a & b),
+                    (a, b) => return Err(format!(
+                        "{}: cannot computer boolean and between these two. Not supported ({:?} && {:?})",
+                        binop.op.location, a, b
+                    )),
+                }
+            }
+            BoolOr => {
+                match (lhs.value, rhs.value) {
+                    (Value::Bool(a), Value::Bool(b)) => self.bool(a | b),
+                    (a, b) => return Err(format!(
+                        "{}: cannot computer boolean or between these two. Not supported ({:?} || {:?})",
+                        binop.op.location, a, b
+                    )),
+                }
+            }
             BitShiftRight => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Char(b)) => self.int(a >> (b as u8)),
                 (Value::Int(a), Value::Int(b)) => self.int(a >> b),
                 (Value::Char(a), Value::Int(b)) => self.int((a as i64) >> b),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compute bitshift between these two. Not supported ({:?} >> {:?})",
-                            binop.op.location, a, b
-                            ))
-                }
+                (a, b) => return Err(format!(
+                    "{}: cannot compute bitshift between these two. Not supported ({:?} >> {:?})",
+                    binop.op.location, a, b
+                )),
             },
             BitShiftLeft => match (lhs.value, rhs.value) {
+                (Value::Int(a), Value::Char(b)) => self.int(a << (b as u8)),
                 (Value::Int(a), Value::Int(b)) => self.int(a << b),
                 (Value::Char(a), Value::Int(b)) => self.int((a as i64) << b),
-                (a, b) => {
-                    return Err(format!(
-                            "{}: cannot compute bitshift between these two. Not supported ({:?} << {:?})",
-                            binop.op.location, a, b
-                            ))
-                }
+                (a, b) => return Err(format!(
+                    "{}: cannot compute bitshift between these two. Not supported ({:?} << {:?})",
+                    binop.op.location, a, b
+                )),
             },
             _ => {
                 return Err(format!(
-                        "{}: {:?}, unimplemented",
-                        binop.op.location, binop.op.token_type
-                        ))
+                    "{}: {:?}, unimplemented",
+                    binop.op.location, binop.op.token_type
+                ))
             }
         })
     }
@@ -1028,7 +1060,12 @@ impl Evaluator {
         for arg in expr.args.iter_mut() {
             args.push(self.eval_expr(arg)?);
         }
-        self.eval_callable(&mut func, args)
+        // let mem = self.memory.len();
+        let rv = self.eval_callable(&mut func, args);
+        // if mem > 10000000 {
+        // self.memory.truncate(mem);
+        // }
+        rv
     }
 
     fn eval_callable(

@@ -125,7 +125,49 @@ impl TypeChecker {
             Statement::ClassDecl(cd) => self.typecheck_class_decl(cd),
             Statement::Import(i) => self.typecheck_import(i),
             Statement::FromImport(f) => self.typecheck_from_import(f),
+
+            Statement::Break(b) => self.typecheck_break(b),
+            Statement::Continue(c) => self.typecheck_continue(c),
+            Statement::Return(r) => self.typecheck_return(r),
         }
+    }
+
+    fn check_consistency(&mut self, type1: TypeRef, type2: TypeRef) -> Option<TypeRef> {
+        if self.system.convertable_to(&type1, &type2) {
+            Some(type2)
+        } else if self.system.convertable_to(&type2, &type1) {
+            Some(type2)
+        } else {
+            None
+        }
+    }
+
+    fn typecheck_return(&mut self, r: &mut Return) -> Result<TypeRef, String> {
+        eprintln!(
+            "{}: Warning: typechecking for return statements is not fully implemented",
+            r.location
+        );
+        if let Some(expr) = &mut r.body {
+            self.typecheck_expr(expr.as_mut())
+        } else {
+            Ok(typesystem::Undefined)
+        }
+    }
+
+    fn typecheck_break(&mut self, b: &mut Break) -> Result<TypeRef, String> {
+        eprintln!(
+            "{}: Warning: typechecking for break statements is not fully implemented",
+            b.location
+        );
+        if let Some(expr) = &mut b.body {
+            self.typecheck_expr(expr.as_mut())
+        } else {
+            Ok(typesystem::Undefined)
+        }
+    }
+
+    fn typecheck_continue(&mut self, _: &mut Continue) -> Result<TypeRef, String> {
+        Ok(typesystem::Undefined)
     }
 
     fn typecheck_import(&mut self, _i: &mut Import) -> Result<TypeRef, String> {
@@ -217,7 +259,7 @@ impl TypeChecker {
         let mut reftyp = self.memory[reftypidx.idx];
 
         let itertype = match &mut self.system.types[iterable.idx].typ.clone() {
-            TypeEntryType::Iterable(t) => *t,
+            TypeEntryType::List(t) => *t,
             TypeEntryType::Callable(0, fc) => {
                 let typ = match self.typecheck_function_call(fc, Vec::new()) {
                     Ok(r) => r,
@@ -264,9 +306,9 @@ impl TypeChecker {
     }
 
     fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, String> {
-        let mut rv = typesystem::Null;
+        let mut rv = typesystem::Undefined;
         for statement in b.statements.iter_mut() {
-            rv = self.typecheck_statement(statement)?;
+            rv = self.typecheck_statement(statement)?
         }
         Ok(rv)
     }
@@ -410,6 +452,9 @@ impl TypeChecker {
 
         if f.arg_names.len() > allargs.len() {
             let num_needed = f.arg_names.len() - allargs.len();
+            if num_needed > f.default_args.len() {
+                return Err(format!("{}: Not enough args", f.location));
+            }
             let start = f.default_args.len() - num_needed;
             for i in start..f.default_args.len() {
                 allargs.push(self.typecheck_expr(&mut f.default_args[i])?)
@@ -417,11 +462,16 @@ impl TypeChecker {
         }
 
         if allargs.len() != f.arg_names.len() {
+            let names: Vec<String> = allargs
+                .iter()
+                .map(|a| self.system.types[a.idx].name.clone())
+                .collect();
             return Err(format!(
-                "{}: Trying to call function with wrong number of arguments. Needed {}  found {}",
+                "{}: Trying to call function with wrong number of arguments. Needed {}  found {} {}",
                 f.location,
                 f.arg_names.len(),
-                allargs.len()
+                allargs.len(),
+                names.join(", ")
             ));
         }
         for (arg, name) in allargs.iter().zip(f.arg_names.iter()) {
@@ -505,7 +555,7 @@ impl TypeChecker {
 
         if lhs == typesystem::EmptyList {
             match self.system.types[rhs.idx].typ {
-                TypeEntryType::Iterable(_) => {
+                TypeEntryType::List(_) => {
                     self.memory[lhsidx.idx] = rhs;
                     return Ok(rhs);
                 }
@@ -606,7 +656,9 @@ impl TypeChecker {
                     } else if let TypeEntryType::Callable(_, fc) =
                         &mut self.system.types[typ.idx].typ
                     {
-                        fc.preset_args.push(inst);
+                        if field != "__init__" {
+                            fc.preset_args.push(inst);
+                        }
                     }
                 }
                 inst
@@ -716,7 +768,7 @@ impl TypeChecker {
                 .get_mut(&d.rhs)
                 .unwrap() = self
                 .system
-                .new_entry(&name, TypeEntryType::UninitializedLocation(rv.idx));
+                .entry(&name, TypeEntryType::UninitializedLocation(rv.idx));
         }
 
         Ok(rv)

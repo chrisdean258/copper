@@ -7,7 +7,7 @@ if exists("b:current_syntax")
   finish
 endif
 
-syn keyword copperKeyword fn global class field nonlocal
+syn keyword copperKeyword fn global class field nonlocal break continue
 syn keyword copperConditional while if else and for
 syn keyword copperBuiltin print prints
 syn keyword copperBool true false
@@ -56,7 +56,7 @@ syn match copperChar '\'\([^"\\]\|\\.\)\''
 syn match copperLambdaArg '\\\d\+'
 syn match copperComment '#.*$'
 
-syn match copperFunction '[_a-zA-Z][_a-zA-z0-9]*\s*\ze('
+syn match copperFunction "\<\k\+\ze("
 
 let b:current_syntax = "copper"
 hi def link copperConditional Conditional

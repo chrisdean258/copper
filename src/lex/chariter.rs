@@ -15,10 +15,13 @@ impl<T: Iterator<Item = String>> Iterator for CharIter<T> {
             self.peeked = None;
             rv
         } else {
-            self.peek();
-            let rv = self.peeked.unwrap();
-            self.peeked = None;
-            rv
+            if self.peek().is_some() {
+                let rv = self.peeked.unwrap();
+                self.peeked = None;
+                rv
+            } else {
+                None
+            }
         }
     }
 }
