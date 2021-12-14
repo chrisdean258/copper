@@ -221,7 +221,7 @@ impl Evaluator {
     }
 
     pub fn alloc(&mut self, val: Object) -> usize {
-        if self.alloc_count == 100_000 {
+        if self.alloc_count == 100000 {
             self.clean_memory();
             self.alloc_count = 0;
         }
@@ -246,26 +246,76 @@ impl Evaluator {
         for i in 0..self.memory.len() {
             free.insert(i);
         }
-        free.remove(&self.safe);
-        for posscope in self.all_scopes.iter() {
+        self.save_memory(self.safe, &mut free);
+        for posscope in self.all_scopes.clone().iter() {
             if let Some(scope) = posscope.upgrade() {
-                for (key, val) in scope.borrow().iter() {
-                    let mut val = *val;
-                    free.remove(&val);
-                    while let Value::Reference(u) = &self.memory[val].value {
-                        val = *u;
-                        free.remove(&val);
-                    }
+                for val in scope.borrow().values() {
+                    self.save_memory(*val, &mut free);
                 }
             }
         }
         self.free = free;
     }
 
+    fn save_all<TT: Iterator<Item = Object>>(&self, items: TT, to_save: &mut BTreeSet<usize>) {
+        for item in items {
+            if let Value::Reference(u) = item.value {
+                to_save.insert(u);
+            }
+        }
+    }
+
+    fn save_memory(&mut self, idx: usize, free: &mut BTreeSet<usize>) -> bool {
+        let mut to_save: BTreeSet<usize> = BTreeSet::new();
+        to_save.insert(idx);
+        while to_save.len() > 0 {
+            let mut idx = *to_save.iter().next().unwrap();
+            to_save.remove(&mut idx);
+            // this prevents double processing
+            if !free.remove(&idx) {
+                continue;
+            }
+            match self.memory[idx].value.clone() {
+                Value::List(l) => {
+                    self.save_all(l.into_iter(), &mut to_save);
+                }
+                Value::Reference(u) => {
+                    to_save.insert(u);
+                }
+                // left here for posterity
+                // Value::Function(_, objs, scopes) => {
+                // self.save_all(objs.into_iter(), &mut to_save);
+                // for scope in scopes {
+                // for u in scope.borrow().values() {
+                // to_save.insert(*u);
+                // }
+                // }
+                // }
+                // Value::Lambda(_, scopes) => {
+                // for scope in scopes {
+                // for u in scope.borrow().values() {
+                // to_save.insert(*u);
+                // }
+                // }
+                // }
+                // Value::Class(_, scopes) => {
+                // for scope in scopes {
+                // for u in scope.borrow().values() {
+                // to_save.insert(*u);
+                // }
+                // }
+                // }
+                // Object(Rc<ClassDecl>),
+                _ => (),
+            }
+        }
+        true
+    }
+
     fn openscope(&mut self) {
         let new_scopes = Rc::new(RefCell::new(HashMap::new()));
         self.all_scopes.push(Rc::downgrade(&new_scopes));
-        self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
+        self.scopes.push(new_scopes);
     }
 
     fn closescope(&mut self) {
@@ -1144,7 +1194,8 @@ impl Evaluator {
                     self.insert_scope_local(name, idx);
                 }
                 let rv = self.eval_expr(&mut f.body)?;
-                swap(&mut self.scopes, &mut tmp);
+                self.closescope();
+                self.scopes = tmp;
                 rv
             }
             Value::Lambda(mut l, scopes) => {
@@ -1159,7 +1210,7 @@ impl Evaluator {
                 }
                 let rv = self.eval_expr(&mut l.body)?;
                 self.closescope();
-                swap(&mut self.scopes, &mut tmp);
+                self.scopes = tmp;
                 rv
             }
             Value::Class(cd, scopes) => {
