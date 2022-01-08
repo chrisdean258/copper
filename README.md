@@ -28,7 +28,7 @@ figure out what you meant.
 Braced expressions will return the last value calculated in the expression.
 Return statements are not yet implemented
 
-```
+```copper
 fn do_a_thing() {
     print("hi")
     1
@@ -36,7 +36,7 @@ fn do_a_thing() {
 ```
 returns 1
 
-```
+```copper
 fn if_false() if(false) 5 else 8
 ```
 returns 8

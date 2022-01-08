@@ -110,12 +110,20 @@ impl TypeChecker {
             .insert(key.to_string(), idx);
     }
 
-    pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, String> {
+    pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, Vec<String>> {
         let mut rv = typesystem::Undefined;
+        let mut errors = Vec::new();
         for statement in tree.statements.iter_mut() {
-            rv = self.typecheck_statement(statement)?;
+            match self.typecheck_statement(statement) {
+                Ok(t) => rv = t,
+                Err(s) => errors.push(s),
+            }
         }
-        Ok(rv)
+        if errors.len() > 0 {
+            Err(errors)
+        } else {
+            Ok(rv)
+        }
     }
 
     fn typecheck_statement(&mut self, statement: &mut Statement) -> Result<TypeRef, String> {
