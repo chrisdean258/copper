@@ -104,12 +104,13 @@ pub struct Signature {
     pub inputs: Vec<TypeRef>,
     pub output: TypeRef,
 }
-
+/*
 #[derive(Debug, Clone)]
 pub struct OperationConstraint {
     op: OpRef,
     args: Vec<TypeRef>,
 }
+*/
 
 impl Signature {
     #[allow(dead_code)]

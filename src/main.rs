@@ -140,19 +140,19 @@ fn repl(format: bool, typecheck_only: bool) {
                         continue;
                     }
                 }
-                if !typecheck_only {
-                    let val = evaluator.eval(&mut tree);
-                    match val {
-                        Ok(t) => println!(
-                            "{}",
-                            match t.value {
-                                eval::Value::Null => "".to_string(),
-                                eval::Value::Undefined => "".to_string(),
-                                t => format!("{}", t),
-                            }
-                        ),
-                        Err(s) => eprintln!("{}", s),
-                    }
+                if typecheck_only {
+                    continue;
+                }
+                let val = evaluator.eval(&mut tree);
+                match val {
+                    Ok(t) => match t.value {
+                        eval::Value::Null => (),
+                        eval::Value::Undefined => (),
+                        _ => {
+                            builtins::copper_print(&mut evaluator, vec![t]);
+                        }
+                    },
+                    Err(s) => eprintln!("{}", s),
                 }
             }
             Err(ReadlineError::Interrupted) => break,

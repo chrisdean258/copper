@@ -22,6 +22,7 @@ impl MemRef {
 #[derive(Clone, Debug)]
 struct FunctionCall {
     scopes: Vec<Rc<RefCell<HashMap<String, MemRef>>>>,
+    allow_extra: bool,
     arg_names: Vec<String>,
     preset_args: Vec<TypeRef>,
     default_args: Vec<Expression>,
@@ -469,7 +470,9 @@ impl TypeChecker {
             }
         }
 
-        if allargs.len() != f.arg_names.len() {
+        if (allargs.len() < f.arg_names.len())
+            || (allargs.len() > f.arg_names.len() && !f.allow_extra)
+        {
             let names: Vec<String> = allargs
                 .iter()
                 .map(|a| self.system.types[a.idx].name.clone())
@@ -507,6 +510,7 @@ impl TypeChecker {
             FunctionCall {
                 location: f.location.clone(),
                 scopes: self.scopes.clone(),
+                allow_extra: false,
                 arg_names: f.argnames.clone(),
                 preset_args: Vec::new(),
                 default_args: f.default_args.clone(),
@@ -531,6 +535,7 @@ impl TypeChecker {
             FunctionCall {
                 location: f.location.clone(),
                 scopes: self.scopes.clone(),
+                allow_extra: true,
                 arg_names,
                 preset_args: Vec::new(),
                 default_args: Vec::new(),
@@ -671,12 +676,13 @@ impl TypeChecker {
                 }
                 inst
             }
-            _ => {
+            _ => func,
+            /* _ => {
                 return Err(format!(
-                    "{}: Trying to call `{}`",
-                    expr.location, self.system.types[func.idx].name
+                "{}: Trying to call `{}`",
+                expr.location, self.system.types[func.idx].name
                 ))
-            }
+            } */
         });
         self.closescope();
         rv

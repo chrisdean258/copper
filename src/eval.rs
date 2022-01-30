@@ -1199,7 +1199,7 @@ impl Evaluator {
                 rv
             }
             Value::Lambda(mut l, scopes) => {
-                assert_eq!(args.len(), l.num_args);
+                assert!(args.len() >= l.num_args);
                 let mut tmp = scopes.clone();
                 swap(&mut self.scopes, &mut tmp);
                 self.openscope();
@@ -1233,7 +1233,7 @@ impl Evaluator {
                 self.eval_callable(&mut self.memory[init].clone(), args)?;
                 self.reference(val)
             }
-            t => unreachable!("{}", t),
+            _ => func,
         });
         self.closescope();
         rv

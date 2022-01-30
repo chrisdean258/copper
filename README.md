@@ -14,7 +14,7 @@ We can declare a lambda function with the `\` operator and reference arguments w
 You can just use a lambda argument and it will start a lambda if you havent already
 
 for example
-```
+```copper
 fn do_action_if(val, cond, action) if cond(val) action(val)
 
 do_action_if(10, \0 % 2 == 0, print)
