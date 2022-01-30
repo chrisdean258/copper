@@ -8,6 +8,34 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+pub struct TypeCheckError {
+    errors: Vec<String>,
+}
+
+impl TypeCheckError {
+    pub fn new() -> TypeCheckError {
+        TypeCheckError { errors: Vec::new() }
+    }
+    pub fn push(&mut self, s: &str) {
+        self.errors.push(String::from(s))
+    }
+    pub fn append(&mut self, other: &mut TypeCheckError) {
+        self.errors.append(&mut other.errors)
+    }
+    pub fn display(&self) -> String {
+        self.errors.join("\n")
+    }
+    pub fn is_error(&self) -> bool {
+        self.errors.len() > 0
+    }
+}
+
+impl From<String> for TypeCheckError {
+    fn from(s: String) -> Self {
+        TypeCheckError { errors: vec![s] }
+    }
+}
+
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 struct MemRef {
     pub idx: usize,
@@ -38,8 +66,11 @@ pub struct TypeChecker {
     system: TypeSystem<FunctionCall, ClassDecl>,
 }
 
-fn scope_error(id: &str, token: &lex::Token) -> String {
-    format!("{}: No such name in scope `{}`", token.location, id)
+fn scope_error(id: &str, token: &lex::Token) -> TypeCheckError {
+    TypeCheckError::from(format!(
+        "{}: No such name in scope `{}`",
+        token.location, id
+    ))
 }
 
 impl TypeChecker {
@@ -111,23 +142,26 @@ impl TypeChecker {
             .insert(key.to_string(), idx);
     }
 
-    pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, Vec<String>> {
+    pub fn typecheck(&mut self, tree: &mut ParseTree) -> Result<TypeRef, TypeCheckError> {
         let mut rv = typesystem::Undefined;
-        let mut errors = Vec::new();
+        let mut errors = TypeCheckError::new();
         for statement in tree.statements.iter_mut() {
             match self.typecheck_statement(statement) {
                 Ok(t) => rv = t,
-                Err(s) => errors.push(s),
+                Err(mut s) => errors.append(&mut s),
             }
         }
-        if errors.len() > 0 {
+        if errors.is_error() {
             Err(errors)
         } else {
             Ok(rv)
         }
     }
 
-    fn typecheck_statement(&mut self, statement: &mut Statement) -> Result<TypeRef, String> {
+    fn typecheck_statement(
+        &mut self,
+        statement: &mut Statement,
+    ) -> Result<TypeRef, TypeCheckError> {
         match statement {
             Statement::Expr(expr) => self.typecheck_expr(expr),
             Statement::GlobalDecl(gd) => self.typecheck_global_decl(gd),
@@ -151,7 +185,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_return(&mut self, r: &mut Return) -> Result<TypeRef, String> {
+    fn typecheck_return(&mut self, r: &mut Return) -> Result<TypeRef, TypeCheckError> {
         eprintln!(
             "{}: Warning: typechecking for return statements is not fully implemented",
             r.location
@@ -163,7 +197,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_break(&mut self, b: &mut Break) -> Result<TypeRef, String> {
+    fn typecheck_break(&mut self, b: &mut Break) -> Result<TypeRef, TypeCheckError> {
         eprintln!(
             "{}: Warning: typechecking for break statements is not fully implemented",
             b.location
@@ -175,19 +209,19 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_continue(&mut self, _: &mut Continue) -> Result<TypeRef, String> {
+    fn typecheck_continue(&mut self, _: &mut Continue) -> Result<TypeRef, TypeCheckError> {
         Ok(typesystem::Undefined)
     }
 
-    fn typecheck_import(&mut self, _i: &mut Import) -> Result<TypeRef, String> {
+    fn typecheck_import(&mut self, _i: &mut Import) -> Result<TypeRef, TypeCheckError> {
         todo!()
     }
 
-    fn typecheck_from_import(&mut self, _f: &mut FromImport) -> Result<TypeRef, String> {
+    fn typecheck_from_import(&mut self, _f: &mut FromImport) -> Result<TypeRef, TypeCheckError> {
         todo!()
     }
 
-    fn typecheck_class_decl(&mut self, cd: &mut ClassDecl) -> Result<TypeRef, String> {
+    fn typecheck_class_decl(&mut self, cd: &mut ClassDecl) -> Result<TypeRef, TypeCheckError> {
         let mut methods = HashMap::new();
         for (key, func) in cd.methods.iter_mut() {
             methods.insert(key.clone(), self.typecheck_function_def(func)?);
@@ -201,7 +235,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<TypeRef, String> {
+    fn typecheck_global_decl(&mut self, gd: &GlobalDecl) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
         let id = match &gd.token.token_type {
             TokenType::Identifier(s) => s,
@@ -219,7 +253,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, String> {
+    fn typecheck_if(&mut self, i: &mut If) -> Result<TypeRef, TypeCheckError> {
         let mut types = HashSet::new();
         types.insert(self.typecheck_if_internal(i)?);
 
@@ -236,33 +270,33 @@ impl TypeChecker {
         Ok(self.system.union(types))
     }
 
-    fn typecheck_if_internal(&mut self, i: &mut If) -> Result<TypeRef, String> {
+    fn typecheck_if_internal(&mut self, i: &mut If) -> Result<TypeRef, TypeCheckError> {
         let cond = self.typecheck_expr(i.condition.as_mut())?;
         match cond {
             typesystem::Bool => self.typecheck_expr(i.body.as_mut()),
-            _ => Err(format!(
+            _ => Err(TypeCheckError::from(format!(
                 "{}: If expressions must have boolean conditions not {:?}",
                 i.location, self.system.types[cond.idx].name
-            )),
+            ))),
         }
     }
 
-    fn typecheck_while(&mut self, w: &mut While) -> Result<TypeRef, String> {
+    fn typecheck_while(&mut self, w: &mut While) -> Result<TypeRef, TypeCheckError> {
         let cond = self.typecheck_expr(w.condition.as_mut())?;
         match cond {
             typesystem::Bool => (),
             _ => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: While loops must have boolean conditions not {:?}",
                     w.location, self.system.types[cond.idx].name
-                ));
+                )));
             }
         }
         self.typecheck_expr(w.body.as_mut())?;
         Ok(typesystem::Null)
     }
 
-    fn typecheck_for(&mut self, f: &mut For) -> Result<TypeRef, String> {
+    fn typecheck_for(&mut self, f: &mut For) -> Result<TypeRef, TypeCheckError> {
         let reftypidx: MemRef = self.typecheck_assignable(f.reference.as_mut(), true)?;
         let iterable = self.typecheck_expr(f.items.as_mut())?;
         let mut reftyp = self.memory[reftypidx.idx];
@@ -272,10 +306,10 @@ impl TypeChecker {
             TypeEntryType::Callable(0, fc) => {
                 let typ = match self.typecheck_function_call(fc, Vec::new()) {
                     Ok(r) => r,
-                    Err(s) => Err(format!(
-                        "{}\n{}: Originating at this index expression",
-                        s, f.location
-                    ))?,
+                    Err(mut s) => {
+                        s.push(&format!("{}: Originating at this index expression", f.location));
+                        return Err(s);
+                    }
                 };
                 match self.system.types[typ.idx].typ {
                     TypeEntryType::Container(t) => t,
@@ -289,10 +323,10 @@ impl TypeChecker {
             },
 
             _ => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: Must be a container type or function of 0 arguments to iterate over. Found `{}`",
                     f.items.location(), self.system.types[iterable.idx].name
-                ))
+                )))
             }
         };
 
@@ -302,27 +336,35 @@ impl TypeChecker {
         }
 
         if !self.system.is_assignable(&reftyp, &itertype) {
-            return Err(format!(
+            return Err(TypeCheckError::from(format!(
                 "{}: Cannot assign `{}` = `{}`",
                 f.reference.location(),
                 self.system.types[reftyp.idx].name,
                 self.system.types[itertype.idx].name,
-            ));
+            )));
         }
 
         self.typecheck_expr(f.body.as_mut())?;
         Ok(typesystem::Undefined)
     }
 
-    fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, String> {
+    fn typecheck_block(&mut self, b: &mut BlockExpr) -> Result<TypeRef, TypeCheckError> {
         let mut rv = typesystem::Undefined;
+        let mut errors = TypeCheckError::new();
         for statement in b.statements.iter_mut() {
-            rv = self.typecheck_statement(statement)?
+            match self.typecheck_statement(statement) {
+                Ok(t) => rv = t,
+                Err(mut s) => errors.append(&mut s),
+            }
         }
-        Ok(rv)
+        if errors.is_error() {
+            Err(errors)
+        } else {
+            Ok(rv)
+        }
     }
 
-    fn typecheck_binop(&mut self, binop: &mut BinOp) -> Result<TypeRef, String> {
+    fn typecheck_binop(&mut self, binop: &mut BinOp) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
         let lhs = self.typecheck_expr(binop.lhs.as_mut())?;
         let rhs = self.typecheck_expr(binop.rhs.as_mut())?;
@@ -348,10 +390,10 @@ impl TypeChecker {
             TokenType::BitShiftRight => typesystem::BitShiftRight,
             TokenType::BitShiftLeft => typesystem::BitShiftLeft,
             _ => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: {:?}, unimplemented",
                     binop.op.location, binop.op.token_type
-                ))
+                )))
             }
         };
         match self.system.apply_operation(op, vec![lhs, rhs]) {
@@ -360,7 +402,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_expr(&mut self, expr: &mut Expression) -> Result<TypeRef, String> {
+    fn typecheck_expr(&mut self, expr: &mut Expression) -> Result<TypeRef, TypeCheckError> {
         use crate::parser::Expression::*;
         match expr {
             CallExpr(callexpr) => self.typecheck_call_expr(callexpr),
@@ -382,19 +424,19 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_list(&mut self, l: &mut List) -> Result<TypeRef, String> {
+    fn typecheck_list(&mut self, l: &mut List) -> Result<TypeRef, TypeCheckError> {
         let mut typ = typesystem::Undefined;
         for expr in l.exprs.iter_mut() {
             let rt = self.typecheck_expr(expr)?;
             if typ == typesystem::Undefined || rt == typ {
                 typ = rt;
             } else {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: List expression has different type than established. Has `{}` needs `{}`",
                     expr.location(),
                     self.system.types[rt.idx].name,
                     self.system.types[typ.idx].name,
-                ));
+                )));
             }
         }
         if typ == typesystem::Undefined {
@@ -404,7 +446,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_unop_pre(&mut self, u: &mut PreUnOp) -> Result<TypeRef, String> {
+    fn typecheck_unop_pre(&mut self, u: &mut PreUnOp) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
         let rhs = self.typecheck_expr(u.rhs.as_mut())?;
         let op = match u.op.token_type {
@@ -423,7 +465,7 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<TypeRef, String> {
+    fn typecheck_unop_post(&mut self, u: &PostUnOp) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
         let lhs = self.typecheck_ref_expr(&*u.lhs, false)?;
         let op = match u.op.token_type {
@@ -441,7 +483,7 @@ impl TypeChecker {
         &mut self,
         f: &mut FunctionCall,
         mut args: Vec<TypeRef>,
-    ) -> Result<TypeRef, String> {
+    ) -> Result<TypeRef, TypeCheckError> {
         if let Some(typ) = f.being_evaluated.borrow().get(&args) {
             return Ok(*typ);
         }
@@ -462,7 +504,10 @@ impl TypeChecker {
         if f.arg_names.len() > allargs.len() {
             let num_needed = f.arg_names.len() - allargs.len();
             if num_needed > f.default_args.len() {
-                return Err(format!("{}: Not enough args", f.location));
+                return Err(TypeCheckError::from(format!(
+                    "{}: Not enough args",
+                    f.location
+                )));
             }
             let start = f.default_args.len() - num_needed;
             for i in start..f.default_args.len() {
@@ -477,13 +522,13 @@ impl TypeChecker {
                 .iter()
                 .map(|a| self.system.types[a.idx].name.clone())
                 .collect();
-            return Err(format!(
+            return Err(TypeCheckError::from(format!(
                 "{}: Trying to call function with wrong number of arguments. Needed {}  found {} {}",
                 f.location,
                 f.arg_names.len(),
                 allargs.len(),
                 names.join(", ")
-            ));
+            )));
         }
         for (arg, name) in allargs.iter().zip(f.arg_names.iter()) {
             self.insert_scope_local(name, *arg);
@@ -498,7 +543,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    fn typecheck_function_def(&mut self, f: &mut Function) -> Result<TypeRef, String> {
+    fn typecheck_function_def(&mut self, f: &mut Function) -> Result<TypeRef, TypeCheckError> {
         let name = match &f.name {
             Some(s) => format!("fn {}({})", s, f.argnames.join(", ")),
             None => format!("fn <anonymous>({})", f.argnames.join(", ")),
@@ -526,7 +571,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<TypeRef, String> {
+    fn typecheck_lambda_def(&mut self, f: &mut Lambda) -> Result<TypeRef, TypeCheckError> {
         let name = format!("lambda({})", f.num_args);
         let arg_names: Vec<String> = (0..f.num_args).map(|a| format!("\\{}", a)).collect();
         Ok(self.system.function(
@@ -550,7 +595,7 @@ impl TypeChecker {
         expr: &AssignExpr,
         lhsidx: MemRef,
         rhs: TypeRef,
-    ) -> Result<TypeRef, String> {
+    ) -> Result<TypeRef, TypeCheckError> {
         let lhs = self.memory[lhsidx.idx];
 
         if self.system.is_assignable(&lhs, &rhs) {
@@ -576,13 +621,13 @@ impl TypeChecker {
             }
         }
 
-        Err(format!(
+        Err(TypeCheckError::from(format!(
             "{}: Cannot assign type `{}` = type `{}`",
             expr.op.location, self.system.types[lhs.idx].name, self.system.types[rhs.idx].name
-        ))
+        )))
     }
 
-    fn typecheck_assign(&mut self, expr: &mut AssignExpr) -> Result<TypeRef, String> {
+    fn typecheck_assign(&mut self, expr: &mut AssignExpr) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
 
         let lhsidx: MemRef = self.typecheck_assignable(expr.lhs.as_mut(), true)?;
@@ -611,7 +656,7 @@ impl TypeChecker {
         self.typecheck_assignment(expr, lhsidx, rv)
     }
 
-    fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<TypeRef, String> {
+    fn typecheck_call_expr(&mut self, expr: &mut CallExpr) -> Result<TypeRef, TypeCheckError> {
         let func = self.typecheck_expr(expr.function.as_mut())?;
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
@@ -624,10 +669,13 @@ impl TypeChecker {
             TypeEntryType::BuiltinFunction(_, rt) => *rt,
             TypeEntryType::Callable(_, fc) => match self.typecheck_function_call(fc, args) {
                 Ok(r) => r,
-                Err(s) => Err(format!(
-                    "{}\n{}: Originating at this index expression",
-                    s, expr.location
-                ))?,
+                Err(mut s) => {
+                    s.push(&format!(
+                        "{}: Originating at this index expression",
+                        expr.location
+                    ));
+                    return Err(s);
+                }
             },
             TypeEntryType::Class(class) => {
                 let init = self.system.types[func.idx]
@@ -640,27 +688,30 @@ impl TypeChecker {
                 let mut init = match self.system.types[init.idx].typ.clone() {
                     TypeEntryType::Callable(_, fc) => fc,
                     _ => {
-                        return Err(format!(
+                        return Err(TypeCheckError::from(format!(
                             "{}: `<class {}>.__init__` must be a function\n{}: Originating here",
                             class.location, class.name, expr.location
-                        ))
+                        )))
                     }
                 };
                 let inst = self.system.class_instance(func);
                 args.insert(0, inst);
                 match self.typecheck_function_call(&mut init, args) {
                     Ok(r) => r,
-                    Err(s) => Err(format!(
-                        "{}\n{}: Originating at this index expression",
-                        s, expr.location
-                    ))?,
+                    Err(mut s) => {
+                        s.push(&format!(
+                            "{}: Originating at this index expression",
+                            expr.location
+                        ));
+                        return Err(s);
+                    }
                 };
                 for (field, typ) in self.system.types[inst.idx].fields.clone() {
                     if typ == typesystem::Undefined {
-                        return Err(format!(
+                        return Err(TypeCheckError::from(format!(
                             "{}: `__init__` method must initialize all fields. `.{}` was left uninitialized\n{}: Originating here",
                             init.location, field, expr.location
-                        ));
+                        )));
                     } else if let TypeEntryType::UninitializedLocation(u) =
                         self.system.types[typ.idx].typ
                     {
@@ -688,12 +739,12 @@ impl TypeChecker {
         rv
     }
 
-    fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<TypeRef, String> {
+    fn typecheck_index_expr(&mut self, expr: &mut IndexExpr) -> Result<TypeRef, TypeCheckError> {
         let idx: MemRef = self.typecheck_index_expr_int(expr)?;
         Ok(self.memory[idx.idx].clone())
     }
 
-    fn typecheck_index_expr_int(&mut self, expr: &mut IndexExpr) -> Result<MemRef, String> {
+    fn typecheck_index_expr_int(&mut self, expr: &mut IndexExpr) -> Result<MemRef, TypeCheckError> {
         let obj = self.typecheck_expr(expr.obj.as_mut())?;
         let mut args = Vec::new();
         for arg in expr.args.iter_mut() {
@@ -705,10 +756,10 @@ impl TypeChecker {
         let ltyp = self.system.types[obj.idx].clone();
         let callable = match self.system.types[obj.idx].fields.get("__index__") {
             None => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: cannot index type `{}`",
                     expr.location, ltyp.name
-                ))
+                )))
             }
             Some(t) => *t,
         };
@@ -719,18 +770,21 @@ impl TypeChecker {
             TypeEntryType::Callable(_, fc) => {
                 let rv = match self.typecheck_function_call(fc, args) {
                     Ok(r) => r,
-                    Err(s) => Err(format!(
-                        "{}\n{}: Originating at this index expression",
-                        s, expr.location
-                    ))?,
+                    Err(mut s) => {
+                        s.push(&format!(
+                            "{}: Originating at this index expression",
+                            expr.location
+                        ));
+                        return Err(s);
+                    }
                 };
                 self.alloc(rv)
             }
             _ => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: Trying to index `{:#?}`",
                     expr.location, self.system.types[obj.idx]
-                ))
+                )))
             }
         });
 
@@ -742,7 +796,7 @@ impl TypeChecker {
         &mut self,
         expr: &RefExpr,
         allow_insert: bool,
-    ) -> Result<TypeRef, String> {
+    ) -> Result<TypeRef, TypeCheckError> {
         let idx: MemRef = self.typecheck_ref_expr_int(expr, allow_insert)?;
         Ok(self.memory[idx.idx].clone())
     }
@@ -751,7 +805,7 @@ impl TypeChecker {
         &mut self,
         expr: &mut Expression,
         allow_insert: bool,
-    ) -> Result<MemRef, String> {
+    ) -> Result<MemRef, TypeCheckError> {
         match expr {
             Expression::RefExpr(re) => self.typecheck_ref_expr_int(re, allow_insert),
             Expression::IndexExpr(i) => self.typecheck_index_expr_int(i),
@@ -760,12 +814,15 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<TypeRef, String> {
+    fn typecheck_dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<TypeRef, TypeCheckError> {
         let idx: MemRef = self.typecheck_dotted_lookup_int(d)?;
         Ok(self.memory[idx.idx].clone())
     }
 
-    fn typecheck_dotted_lookup_int(&mut self, d: &mut DottedLookup) -> Result<MemRef, String> {
+    fn typecheck_dotted_lookup_int(
+        &mut self,
+        d: &mut DottedLookup,
+    ) -> Result<MemRef, TypeCheckError> {
         let objidx = self.typecheck_expr(d.lhs.as_mut())?;
         let obj = &self.system.types[objidx.idx];
         let typ = *obj.fields.get(&d.rhs).ok_or(format!(
@@ -792,7 +849,7 @@ impl TypeChecker {
         &mut self,
         expr: &RefExpr,
         allow_insert: bool,
-    ) -> Result<MemRef, String> {
+    ) -> Result<MemRef, TypeCheckError> {
         use crate::lex::TokenType;
         match &expr.value.token_type {
             TokenType::Identifier(s) => {
@@ -814,11 +871,11 @@ impl TypeChecker {
                     Err(scope_error(&s, &expr.value))
                 }
             }
-            _ => Err("Unexpected...".into()),
+            _ => Err(TypeCheckError::from("Unexpected...".to_string())),
         }
     }
 
-    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<TypeRef, String> {
+    fn typecheck_immediate(&mut self, immediate: &Immediate) -> Result<TypeRef, TypeCheckError> {
         use crate::lex::TokenType;
         Ok(match immediate.value.token_type {
             TokenType::Str(_) => typesystem::Str,
@@ -828,28 +885,28 @@ impl TypeChecker {
             TokenType::Bool(_) => typesystem::Bool,
             TokenType::Null => typesystem::Null,
             _ => {
-                return Err(format!(
+                return Err(TypeCheckError::from(format!(
                     "{}: Unexpected immediate value {}",
                     immediate.value.location, immediate.value.token_type
-                ))
+                )));
             }
         })
     }
 
-    fn binop_err(&self, operator: &lex::Token, ltyp: &TypeRef, rtyp: &TypeRef) -> String {
-        format!(
+    fn binop_err(&self, operator: &lex::Token, ltyp: &TypeRef, rtyp: &TypeRef) -> TypeCheckError {
+        TypeCheckError::from(format!(
             "{}: Cannot apply operator `{}` to types `{}` and `{}`",
             operator.location,
             operator.token_type,
             self.system.types[ltyp.idx].name,
             self.system.types[rtyp.idx].name,
-        )
+        ))
     }
 
-    fn unop_err(&self, operator: &lex::Token, typ: &TypeRef) -> String {
-        format!(
+    fn unop_err(&self, operator: &lex::Token, typ: &TypeRef) -> TypeCheckError {
+        TypeCheckError::from(format!(
             "{}: Cannot apply operator `{}` to type `{}`",
             operator.location, operator.token_type, self.system.types[typ.idx].name
-        )
+        ))
     }
 }

@@ -68,14 +68,13 @@ fn eval_cmd(cmd: &str, format: bool, typecheck_only: bool) -> Result<(), String>
         return Ok(());
     }
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&mut tree).map_err(|s| s.join("\n"))?;
+    typechecker.typecheck(&mut tree).map_err(|s| s.display())?;
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
         evaluator.eval(&mut tree)?;
     }
     Ok(())
 }
-
 fn repl(format: bool, typecheck_only: bool) {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
@@ -102,7 +101,7 @@ fn repl(format: bool, typecheck_only: bool) {
     match typechecker.typecheck(&mut stdlib_tree) {
         Ok(a) => a,
         Err(s) => {
-            eprintln!("{}", s.join("\n"));
+            eprintln!("{}", s.display());
             return;
         }
     };
@@ -136,7 +135,7 @@ fn repl(format: bool, typecheck_only: bool) {
                 match typechecker.typecheck(&mut tree) {
                     Ok(_) => (),
                     Err(s) => {
-                        eprintln!("{}", s.join("\n"));
+                        eprintln!("{}", s.display());
                         continue;
                     }
                 }
@@ -193,9 +192,9 @@ fn eval_lexer<T: Iterator<Item = String>>(
     let mut typechecker = typecheck::TypeChecker::new();
     typechecker
         .typecheck(&mut stdlib_tree)
-        .map_err(|s| s.join("\n"))?;
+        .map_err(|s| s.display())?;
 
-    typechecker.typecheck(&mut tree).map_err(|s| s.join("\n"))?;
+    typechecker.typecheck(&mut tree).map_err(|s| s.display())?;
 
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
