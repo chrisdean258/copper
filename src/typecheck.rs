@@ -6,6 +6,7 @@ use crate::typesystem;
 use crate::typesystem::{TypeEntryType, TypeRef, TypeSystem};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 pub struct TypeCheckError {
@@ -22,7 +23,7 @@ impl TypeCheckError {
     pub fn append(&mut self, other: &mut TypeCheckError) {
         self.errors.append(&mut other.errors)
     }
-    pub fn display(&self) -> String {
+    pub fn to_string(&self) -> String {
         self.errors.join("\n")
     }
     pub fn is_error(&self) -> bool {
@@ -33,6 +34,12 @@ impl TypeCheckError {
 impl From<String> for TypeCheckError {
     fn from(s: String) -> Self {
         TypeCheckError { errors: vec![s] }
+    }
+}
+
+impl Display for TypeCheckError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(&self.to_string())
     }
 }
 
@@ -197,16 +204,8 @@ impl TypeChecker {
         }
     }
 
-    fn typecheck_break(&mut self, b: &mut Break) -> Result<TypeRef, TypeCheckError> {
-        eprintln!(
-            "{}: Warning: typechecking for break statements is not fully implemented",
-            b.location
-        );
-        if let Some(expr) = &mut b.body {
-            self.typecheck_expr(expr.as_mut())
-        } else {
-            Ok(typesystem::Undefined)
-        }
+    fn typecheck_break(&mut self, _b: &mut Break) -> Result<TypeRef, TypeCheckError> {
+        Ok(typesystem::Undefined)
     }
 
     fn typecheck_continue(&mut self, _: &mut Continue) -> Result<TypeRef, TypeCheckError> {

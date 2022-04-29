@@ -68,50 +68,47 @@ fn eval_cmd(cmd: &str, format: bool, typecheck_only: bool) -> Result<(), String>
         return Ok(());
     }
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&mut tree).map_err(|s| s.display())?;
+    typechecker
+        .typecheck(&mut tree)
+        .map_err(|s| s.to_string())?;
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
         evaluator.eval(&mut tree)?;
     }
     Ok(())
 }
-fn repl(format: bool, typecheck_only: bool) {
-    let mut rl = Editor::<()>::new();
-    let mut lineno: usize = 1;
+
+fn stdlib_env() -> Result<(typecheck::TypeChecker, eval::Evaluator), String> {
     let mut typechecker = typecheck::TypeChecker::new();
     let mut evaluator = eval::Evaluator::new();
-
-    let file = match File::open(STDLIB) {
-        Ok(f) => f,
-        Err(_) => {
-            eprintln!("{}: no such file. Stdlib issue", STDLIB);
-            return;
-        }
-    };
+    let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
     let stdlib_parser = parser::Parser::new(stdlib_lexer);
-    let mut stdlib_tree = match stdlib_parser.parse() {
-        Ok(a) => a,
-        Err(s) => {
-            eprintln!("{}", s);
+    let mut stdlib_tree = stdlib_parser.parse()?;
+    typechecker
+        .typecheck(&mut stdlib_tree)
+        .map_err(|e| e.to_string())?;
+    evaluator.eval(&mut stdlib_tree)?;
+    Ok((typechecker, evaluator))
+}
+
+fn repl(format: bool, typecheck_only: bool) {
+    let mut rl = Editor::<()>::new();
+    let mut lineno: usize = 1;
+    let mut typechecker;
+    let mut evaluator;
+
+    match stdlib_env() {
+        Ok((t, e)) => {
+            typechecker = t;
+            evaluator = e;
+        }
+        Err(e) => {
+            eprintln!("{}", e);
             return;
         }
-    };
-    match typechecker.typecheck(&mut stdlib_tree) {
-        Ok(a) => a,
-        Err(s) => {
-            eprintln!("{}", s.display());
-            return;
-        }
-    };
-    match evaluator.eval(&mut stdlib_tree) {
-        Ok(a) => a,
-        Err(s) => {
-            eprintln!("{}", s);
-            return;
-        }
-    };
+    }
 
     loop {
         let readline = rl.readline(">>> ");
@@ -135,7 +132,7 @@ fn repl(format: bool, typecheck_only: bool) {
                 match typechecker.typecheck(&mut tree) {
                     Ok(_) => (),
                     Err(s) => {
-                        eprintln!("{}", s.display());
+                        eprintln!("{}", s.to_string());
                         continue;
                     }
                 }
@@ -172,15 +169,7 @@ fn eval_lexer<T: Iterator<Item = String>>(
     format: bool,
     typecheck_only: bool,
 ) -> Result<(), String> {
-    let stdlib = "/home/chris/git/copper/stdlib/stdlib.cu";
-    let file = match File::open(stdlib) {
-        Ok(f) => f,
-        Err(_) => return Err(format!("{}: no such file. Stdin issue", stdlib)),
-    };
-    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    let stdlib_lexer = lex::Lexer::new(stdlib, &mut lines);
-    let stdlib_parser = parser::Parser::new(stdlib_lexer);
-    let mut stdlib_tree = stdlib_parser.parse()?;
+    let (mut typechecker, mut evaluator) = stdlib_env()?;
 
     let parser = parser::Parser::new(lexer);
     let mut tree = parser.parse()?;
@@ -188,17 +177,10 @@ fn eval_lexer<T: Iterator<Item = String>>(
         println!("{}", tree);
         return Ok(());
     }
-
-    let mut typechecker = typecheck::TypeChecker::new();
     typechecker
-        .typecheck(&mut stdlib_tree)
-        .map_err(|s| s.display())?;
-
-    typechecker.typecheck(&mut tree).map_err(|s| s.display())?;
-
+        .typecheck(&mut tree)
+        .map_err(|s| s.to_string())?;
     if !typecheck_only {
-        let mut evaluator = eval::Evaluator::new();
-        evaluator.eval(&mut stdlib_tree)?;
         evaluator.eval(&mut tree)?;
     }
     Ok(())
@@ -216,7 +198,7 @@ fn eval_stdin(format: bool, typecheck_only: bool) -> Result<(), String> {
 fn eval_file(filename: &str, format: bool, typecheck_only: bool) -> Result<(), String> {
     let file = match File::open(filename) {
         Ok(f) => f,
-        Err(_) => return Err(format!("{}: no such file", filename)),
+        Err(e) => return Err(format!("{}: {}", filename, e)),
     };
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     eval_lexer(
