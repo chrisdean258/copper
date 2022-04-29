@@ -134,8 +134,7 @@ pub struct IndexExpr {
 
 #[derive(Debug, Clone)]
 pub struct RefExpr {
-    pub name: String,
-    pub location: Location,
+    pub value: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -220,43 +219,14 @@ impl Display for BinOpType {
 #[derive(Debug, Clone)]
 pub struct AssignExpr {
     pub lhs: Box<Expression>,
-    pub op: AssignType,
+    pub op: AssignExprType,
     pub location: Location,
     pub rhs: Box<Expression>,
     pub allow_decl: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum AssignType {
-    Equal,
-    AndEq,
-    XorEq,
-    OrEq,
-    PlusEq,
-    MinusEq,
-    TimesEq,
-    DivEq,
-    ModEq,
-    BitShiftRightEq,
-    BitShiftLeftEq,
-}
-
-impl Display for AssignType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            AssignType::Equal => "=",
-            AssignType::AndEq => "&=",
-            AssignType::XorEq => "^=",
-            AssignType::OrEq => "|=",
-            AssignType::PlusEq => "+=",
-            AssignType::MinusEq => "-=",
-            AssignType::TimesEq => "*=",
-            AssignType::DivEq => "/=",
-            AssignType::ModEq => "%=",
-            AssignType::BitShiftRightEq => ">>=",
-            AssignType::BitShiftLeftEq => "<<=",
-        })
-    }
+pub enum AssignExprType {
 }
 
 #[derive(Debug, Clone)]
@@ -721,24 +691,10 @@ impl ParseTree {
             _ => return Ok(lhs),
         };
         let rhs = self.parse_eq(lexer)?;
-        let op = match token.token_type {
-            TokenType::Equal => AssignType::Equal,
-            TokenType::AndEq => AssignType::AndEq,
-            TokenType::XorEq => AssignType::XorEq,
-            TokenType::OrEq => AssignType::OrEq,
-            TokenType::PlusEq => AssignType::PlusEq,
-            TokenType::MinusEq => AssignType::MinusEq,
-            TokenType::TimesEq => AssignType::TimesEq,
-            TokenType::DivEq => AssignType::DivEq,
-            TokenType::ModEq => AssignType::ModEq,
-            TokenType::BitShiftRightEq => AssignType::BitShiftRightEq,
-            TokenType::BitShiftLeftEq => AssignType::BitShiftLeftEq,
-            _ => unreachable!(),
-        };
+
         Ok(Expression::AssignExpr(AssignExpr {
             lhs: Box::new(reflhs),
-            location: token.location,
-            op,
+            op: token.clone(),
             rhs: Box::new(rhs),
             allow_decl,
         }))
@@ -962,26 +918,22 @@ impl ParseTree {
         Ok(rv)
     }
 
-    #[allow(dead_code)]
     fn parse_ref<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
             let mut rv = match &token.token_type {
-                TokenType::Identifier(i) => Ok(Expression::RefExpr(RefExpr {
-                    name: i.clone(),
-                    location: lexer.next().unwrap().location.clone(),
+                TokenType::Identifier(_) => Ok(Expression::RefExpr(RefExpr {
+                    value: lexer.next().unwrap(),
                 })),
                 TokenType::LambdaArg(a) if self.max_arg.len() > 0 => {
                     if *a + 1 > *self.max_arg.last().unwrap() {
                         *self.max_arg.last_mut().unwrap() = *a + 1;
                     }
-                    Expression::RefExpr(RefExpr {
-                        location: token.location.clone(),
-                        name: format!("{}", a),
-                    });
-                    todo!("Implement Lambda arg not arg refence expr")
+                    Ok(Expression::RefExpr(RefExpr {
+                        value: lexer.next().unwrap(),
+                    }))
                 }
                 TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression::Immediate(Immediate {

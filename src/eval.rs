@@ -12,6 +12,6 @@ impl Evaluator {
     }
 
     pub fn eval(&mut self, _tree: &mut ParseTree) -> Result<Object, String> {
-        panic!()
+        panic!("Made it to eval")
     }
 }
