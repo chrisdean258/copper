@@ -1,16 +1,12 @@
 use crate::lex::*;
 use crate::location::Location;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
-
-pub struct Parser<T: Iterator<Item = String>> {
-    lexer: Lexer<T>,
-}
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
-    GlobalDecl(GlobalDecl),
     ClassDecl(ClassDecl),
     Import(Import),
     FromImport(FromImport),
@@ -40,41 +36,40 @@ pub enum Expression {
     DottedLookup(DottedLookup),
 }
 
-impl Expression {
-    pub fn location(&self) -> Location {
-        match self {
-            Expression::While(w) => w.location.clone(),
-            Expression::For(f) => f.location.clone(),
-            Expression::If(i) => i.location.clone(),
-            Expression::CallExpr(c) => c.location.clone(),
-            Expression::RefExpr(r) => r.value.location.clone(),
-            Expression::Immediate(i) => i.value.location.clone(),
-            Expression::BlockExpr(b) => b.location.clone(),
-            Expression::BinOp(b) => b.op.location.clone(),
-            Expression::PreUnOp(u) => u.op.location.clone(),
-            Expression::PostUnOp(u) => u.op.location.clone(),
-            Expression::AssignExpr(a) => a.op.location.clone(),
-            Expression::Function(f) => f.location.clone(),
-            Expression::Lambda(l) => l.location.clone(),
-            Expression::List(l) => l.location.clone(),
-            Expression::IndexExpr(l) => l.location.clone(),
-            Expression::DottedLookup(d) => d.location.clone(),
-        }
-    }
-}
+// impl Expression {
+// pub fn location(&self) -> Location {
+// match self {
+// Expression::While(w) => w.location.clone(),
+// Expression::For(f) => f.location.clone(),
+// Expression::If(i) => i.location.clone(),
+// Expression::CallExpr(c) => c.location.clone(),
+// Expression::RefExpr(r) => r.value.location.clone(),
+// Expression::Immediate(i) => i.value.location.clone(),
+// Expression::BlockExpr(b) => b.location.clone(),
+// Expression::BinOp(b) => b.op.location.clone(),
+// Expression::PreUnOp(u) => u.op.location.clone(),
+// Expression::PostUnOp(u) => u.op.location.clone(),
+// Expression::AssignExpr(a) => a.op.location.clone(),
+// Expression::Function(f) => f.location.clone(),
+// Expression::Lambda(l) => l.location.clone(),
+// Expression::List(l) => l.location.clone(),
+// Expression::IndexExpr(l) => l.location.clone(),
+// Expression::DottedLookup(d) => d.location.clone(),
+// }
+// }
+// }
 
 #[derive(Debug, Clone)]
 pub struct ParseTree {
     pub statements: Vec<Statement>,
     max_arg: Vec<usize>,
     loop_count: usize,
-    return_count: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct Import {
     pub location: Location,
-    pub file: String,
+    pub filename: String,
 }
 
 #[derive(Debug, Clone)]
@@ -82,11 +77,6 @@ pub struct FromImport {
     pub location: Location,
     pub file: String,
     pub what: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct GlobalDecl {
-    pub token: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -142,7 +132,18 @@ pub struct RefExpr {
 
 #[derive(Debug, Clone)]
 pub struct Immediate {
-    pub value: Token,
+    pub token: Token,
+    pub value: ImmediateValue,
+}
+
+#[derive(Debug, Clone)]
+pub enum ImmediateValue {
+    Null,
+    Bool(u8),
+    Char(u8),
+    Int(i64),
+    Float(f64),
+    Str(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -154,8 +155,58 @@ pub struct BlockExpr {
 #[derive(Debug, Clone)]
 pub struct BinOp {
     pub lhs: Box<Expression>,
-    pub op: Token,
+    pub location: Location,
+    pub op: BinOpType,
     pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinOpType {
+    BoolOr,
+    BoolXor,
+    BoolAnd,
+    BitOr,
+    BitXor,
+    BitAnd,
+    CmpGE,
+    CmpGT,
+    CmpLE,
+    CmpLT,
+    CmpEq,
+    CmpNotEq,
+    BitShiftLeft,
+    BitShiftRight,
+    Minus,
+    Plus,
+    Times,
+    Mod,
+    Div,
+}
+
+impl Display for BinOpType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(match self {
+            BinOpType::BoolOr => "||",
+            BinOpType::BoolXor => "^^",
+            BinOpType::BoolAnd => "&&",
+            BinOpType::BitOr => "|",
+            BinOpType::BitXor => "^",
+            BinOpType::BitAnd => "&",
+            BinOpType::CmpGE => ">=",
+            BinOpType::CmpGT => ">",
+            BinOpType::CmpLE => "<=",
+            BinOpType::CmpLT => "<",
+            BinOpType::CmpEq => "==",
+            BinOpType::CmpNotEq => "!=",
+            BinOpType::BitShiftLeft => "<<",
+            BinOpType::BitShiftRight => ">>",
+            BinOpType::Minus => "-",
+            BinOpType::Plus => "+",
+            BinOpType::Times => "*",
+            BinOpType::Mod => "%",
+            BinOpType::Div => "/",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -210,7 +261,6 @@ pub struct DottedLookup {
 #[derive(Debug, Clone)]
 pub struct Break {
     pub location: Location,
-    pub body: Option<Box<Expression>>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,7 +284,7 @@ fn unexpected(token: &Token) -> String {
 }
 
 macro_rules! binop {
-    ( $name:ident, $next:ident, $( $token:path ),+) => {
+    ( $name:ident, $next:ident, $( $token:ident ),+) => {
         fn $name<T: Iterator<Item = String>>(
             &mut self,
             lexer: &mut Peekable<Lexer<T>>,
@@ -246,14 +296,15 @@ macro_rules! binop {
                     Some(t) => t.clone(),
                     None => return Ok(lhs),
                 };
-                match token.token_type {
-                    $( $token => { lexer.next(); }, )+
+                let optype = match token.token_type {
+                    $( $token => { lexer.next(); BinOpType::$token}, )+
                     _ => return Ok(lhs),
-                }
+                };
                 let rhs = self.$next(lexer)?;
                 lhs = Expression::BinOp(BinOp {
                     lhs: Box::new(lhs),
-                    op: token.clone(),
+                    location: token.location,
+                    op: optype,
                     rhs: Box::new(rhs),
                 })
             }
@@ -292,7 +343,6 @@ impl ParseTree {
             statements: Vec::new(),
             max_arg: Vec::new(),
             loop_count: 0,
-            return_count: 0,
         }
     }
 
@@ -314,7 +364,6 @@ impl ParseTree {
     ) -> Result<Statement, String> {
         let token = lexer.peek().unwrap();
         let rv = Ok(match &token.token_type {
-            TokenType::Global => self.parse_global_decl(lexer)?,
             TokenType::Class => self.parse_class_decl(lexer)?,
             TokenType::Import => self.parse_import(lexer)?,
             TokenType::From => self.parse_from_import(lexer)?,
@@ -347,12 +396,6 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::Return).location;
-        if self.return_count == 0 {
-            return Err(format!(
-                "{}: `return` not allowed in the current context",
-                location
-            ));
-        }
         let body = if if_expect!(lexer, TokenType::Semicolon) {
             None
         } else {
@@ -372,12 +415,7 @@ impl ParseTree {
                 location
             ));
         }
-        let body = if if_expect!(lexer, TokenType::Semicolon) {
-            None
-        } else {
-            Some(Box::new(self.parse_expr(lexer)?))
-        };
-        Ok(Statement::Break(Break { location, body }))
+        Ok(Statement::Break(Break { location }))
     }
 
     fn parse_import<T: Iterator<Item = String>>(
@@ -386,11 +424,11 @@ impl ParseTree {
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::Import).location;
         let token = lexer.next().ok_or("Unexpected EOF")?;
-        let file = match token.token_type {
+        let filename = match token.token_type {
             TokenType::Identifier(s) => s,
             _ => return Err(unexpected(&token)),
         };
-        Ok(Statement::Import(Import { location, file }))
+        Ok(Statement::Import(Import { location, filename }))
     }
 
     fn parse_from_import<T: Iterator<Item = String>>(
@@ -416,34 +454,7 @@ impl ParseTree {
         }))
     }
 
-    fn parse_global_decl<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut Peekable<Lexer<T>>,
-    ) -> Result<Statement, String> {
-        expect!(lexer, TokenType::Global);
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        match &token.token_type {
-            TokenType::Identifier(_) => (),
-            _ => return Err(unexpected(&token)),
-        }
-        Ok(Statement::GlobalDecl(GlobalDecl { token }))
-    }
-
     fn parse_class_decl<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut Peekable<Lexer<T>>,
-    ) -> Result<Statement, String> {
-        let save_rtn = self.return_count;
-        let save_loop = self.loop_count;
-        self.return_count = 0;
-        self.loop_count = 0;
-        let rv = self.parse_class_decl_impl(lexer);
-        self.return_count = save_rtn;
-        self.loop_count = save_loop;
-        rv
-    }
-
-    fn parse_class_decl_impl<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
@@ -536,26 +547,10 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        let save_rtn = self.return_count;
-        let save_loop = self.loop_count;
-        self.return_count = 0;
-        self.loop_count = 0;
-        let rv = self.parse_for_impl(lexer);
-        self.return_count = save_rtn;
-        self.loop_count = save_loop;
-        rv
-    }
-
-    fn parse_for_impl<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut Peekable<Lexer<T>>,
-    ) -> Result<Expression, String> {
         let location = expect!(lexer, TokenType::For).location;
-        expect!(lexer, TokenType::OpenParen);
         let reference = Box::new(self.parse_ref(lexer)?);
         expect!(lexer, TokenType::In);
         let items = Box::new(self.parse_expr(lexer)?);
-        expect!(lexer, TokenType::CloseParen);
         self.loop_count += 1;
         let body = Box::new(self.parse_expr(lexer)?);
         self.loop_count -= 1;
@@ -572,22 +567,8 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        let save_rtn = self.return_count;
-        let save_loop = self.loop_count;
-        self.return_count = 0;
-        self.loop_count = 0;
-        let rv = self.parse_while_impl(lexer);
-        self.return_count = save_rtn;
-        self.loop_count = save_loop;
-        rv
-    }
-
-    fn parse_while_impl<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut Peekable<Lexer<T>>,
-    ) -> Result<Expression, String> {
         let location = expect!(lexer, TokenType::While).location;
-        let condition = Box::new(self.parse_paren(lexer)?);
+        let condition = Box::new(self.parse_expr(lexer)?);
         self.loop_count += 1;
         let body = Box::new(self.parse_expr(lexer)?);
         self.loop_count -= 1;
@@ -636,7 +617,7 @@ impl ParseTree {
     ) -> Result<If, String> {
         use crate::lex::TokenType::If as tokenIf;
         let location = expect!(lexer, tokenIf).location;
-        let condition = Box::new(self.parse_paren(lexer)?);
+        let condition = Box::new(self.parse_expr(lexer)?);
         let body = Box::new(self.parse_expr(lexer)?);
         Ok(If {
             location,
@@ -807,12 +788,9 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
         must_be_named: bool,
     ) -> Result<Expression, String> {
-        let save_rtn = self.return_count;
         let save_loop = self.loop_count;
-        self.return_count = 0;
         self.loop_count = 0;
         let rv = self.parse_function_impl(lexer, must_be_named);
-        self.return_count = save_rtn;
         self.loop_count = save_loop;
         rv
     }
@@ -865,9 +843,7 @@ impl ParseTree {
                 _ => return Err(unexpected(&token)),
             }
         }
-        self.return_count += 1;
         let body = self.parse_expr(lexer)?;
-        self.return_count -= 1;
 
         Ok(Expression::Function(Function {
             location: loctoken.location,
@@ -882,12 +858,9 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        let save_rtn = self.return_count;
         let save_loop = self.loop_count;
-        self.return_count = 0;
         self.loop_count = 0;
         let rv = self.parse_lambda_impl(lexer);
-        self.return_count = save_rtn;
         self.loop_count = save_loop;
         rv
     }
@@ -899,9 +872,7 @@ impl ParseTree {
         let location = lexer.peek().unwrap().location.clone();
         if_expect!(lexer, TokenType::Lambda); //we may or may not have started this lambda with a signifier
         self.max_arg.push(0);
-        self.return_count += 1;
         let body = self.parse_expr(lexer)?;
-        self.return_count -= 1;
         let num_args = self.max_arg.pop().unwrap();
         Ok(Expression::Lambda(Lambda {
             location,
@@ -953,23 +924,29 @@ impl ParseTree {
                     }))
                 }
                 TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
-                TokenType::Char(_) => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                TokenType::Char(c) => Ok(Expression::Immediate(Immediate {
+                    value: ImmediateValue::Char(c.clone() as u8),
+                    token: lexer.next().unwrap(),
                 })),
-                TokenType::Str(_) => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                TokenType::Str(s) => Ok(Expression::Immediate(Immediate {
+                    value: ImmediateValue::Str(s.chars().map(|c| c as u8).collect()),
+                    token: lexer.next().unwrap(),
                 })),
-                TokenType::Int(_) => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                TokenType::Int(i) => Ok(Expression::Immediate(Immediate {
+                    value: ImmediateValue::Int(*i),
+                    token: lexer.next().unwrap(),
                 })),
-                TokenType::Float(_) => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                TokenType::Float(f) => Ok(Expression::Immediate(Immediate {
+                    value: ImmediateValue::Float(*f),
+                    token: lexer.next().unwrap(),
                 })),
-                TokenType::Bool(_) => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                TokenType::Bool(b) => Ok(Expression::Immediate(Immediate {
+                    value: ImmediateValue::Bool(*b),
+                    token: lexer.next().unwrap(),
                 })),
                 TokenType::Null => Ok(Expression::Immediate(Immediate {
-                    value: lexer.next().unwrap(),
+                    value: ImmediateValue::Null,
+                    token: lexer.next().unwrap(),
                 })),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),
@@ -1049,14 +1026,8 @@ impl ParseTree {
     }
 }
 
-impl<T: Iterator<Item = String>> Parser<T> {
-    pub fn new(lexer: Lexer<T>) -> Parser<T> {
-        Parser { lexer }
-    }
-
-    pub fn parse(self) -> Result<ParseTree, String> {
-        let mut tree = ParseTree::new();
-        tree.parse_statements(self.lexer)?;
-        Ok(tree)
-    }
+pub fn parse<T: Iterator<Item = String>>(lexer: Lexer<T>) -> Result<ParseTree, String> {
+    let mut tree = ParseTree::new();
+    tree.parse_statements(lexer)?;
+    Ok(tree)
 }

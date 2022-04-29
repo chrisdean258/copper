@@ -3,7 +3,6 @@ fn range(start, stop=null, stride=null) {
 	real_stop = if (stop == null) start else stop
 	real_start = if (stop == null) 0 else start
 	\if (real_start < real_stop) {
-		global real_start
 		val = real_start
 		real_start += real_stride
 		val
