@@ -60,8 +60,8 @@ impl TypeChecker {
             Statement::ClassDecl(c) => todo!("{:?}", c),
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
-            Statement::Continue(_) => Ok(NULL),
-            Statement::Break(_) => Ok(NULL),
+            Statement::Continue(_) => Ok(UNIT),
+            Statement::Break(_) => Ok(UNIT),
             Statement::Return(r) => todo!("{:?}", r),
         }
     }
@@ -76,8 +76,8 @@ impl TypeChecker {
             Expression::Immediate(i) => self.immediate(i),
             Expression::BlockExpr(b) => self.block(b),
             Expression::BinOp(b) => self.binop(b),
-            Expression::PreUnOp(p) => todo!("{:?}", p),
-            Expression::PostUnOp(p) => todo!("{:?}", p),
+            Expression::PreUnOp(p) => self.preunop(p),
+            Expression::PostUnOp(p) => self.postunop(p),
             Expression::AssignExpr(a) => self.assignment(a),
             Expression::Function(f) => todo!("{:?}", f),
             Expression::Lambda(l) => todo!("{:?}", l),
@@ -93,6 +93,30 @@ impl TypeChecker {
         self.system.lookup_binop(b.op, ltype, rtype).ok_or(
             vec![format!("{}: cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
                     b.location, self.system.typename(ltype), b.op, self.system.typename(rtype))])
+    }
+
+    fn preunop(&mut self, p: &mut PreUnOp) -> Result<Type, TypeError> {
+        let rhstype = self.expr(p.rhs.as_mut())?;
+        self.system
+            .lookup_preunop(p.op, rhstype)
+            .ok_or(vec![format!(
+                "{}: cannot apply unary operation `{}` to `{}`.",
+                p.location,
+                p.op,
+                self.system.typename(rhstype)
+            )])
+    }
+
+    fn postunop(&mut self, p: &mut PostUnOp) -> Result<Type, TypeError> {
+        let lhstype = self.expr(p.lhs.as_mut())?;
+        self.system
+            .lookup_postunop(p.op, lhstype)
+            .ok_or(vec![format!(
+                "{}: cannot apply unary operation `{}` to `{}`.",
+                p.location,
+                p.op,
+                self.system.typename(lhstype)
+            )])
     }
 
     fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {

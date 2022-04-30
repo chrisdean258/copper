@@ -54,8 +54,8 @@ impl Expression {
             Expression::Immediate(i) => i.location.clone(),
             Expression::BlockExpr(b) => b.location.clone(),
             Expression::BinOp(b) => b.location.clone(),
-            Expression::PreUnOp(u) => u.op.location.clone(),
-            Expression::PostUnOp(u) => u.op.location.clone(),
+            Expression::PreUnOp(u) => u.location.clone(),
+            Expression::PostUnOp(u) => u.location.clone(),
             Expression::AssignExpr(a) => a.location.clone(),
             Expression::Function(f) => f.location.clone(),
             Expression::Lambda(l) => l.location.clone(),
@@ -261,14 +261,56 @@ impl Display for AssignType {
 
 #[derive(Debug, Clone)]
 pub struct PreUnOp {
-    pub op: Token,
+    pub location: Location,
+    pub op: PreUnOpType,
     pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PreUnOpType {
+    BoolNot,
+    BitNot,
+    Minus,
+    Plus,
+    Inc,
+    Dec,
+    Times,
+}
+
+impl Display for PreUnOpType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(match self {
+            PreUnOpType::BoolNot => "!",
+            PreUnOpType::BitNot => "~",
+            PreUnOpType::Minus => "-",
+            PreUnOpType::Plus => "+",
+            PreUnOpType::Inc => "++",
+            PreUnOpType::Dec => "--",
+            PreUnOpType::Times => "*",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct PostUnOp {
-    pub lhs: Box<RefExpr>,
-    pub op: Token,
+    pub lhs: Box<Expression>,
+    pub op: PostUnOpType,
+    pub location: Location,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PostUnOpType {
+    Inc,
+    Dec,
+}
+
+impl Display for PostUnOpType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(match self {
+            PostUnOpType::Inc => "++",
+            PostUnOpType::Dec => "--",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -762,20 +804,22 @@ impl ParseTree {
     ) -> Result<Expression, String> {
         if let Some(token) = lexer.peek() {
             let mut needs_ref = false;
-            match token.token_type {
-                TokenType::BoolNot => (),
-                TokenType::BitNot => (),
-                TokenType::Minus => (),
-                TokenType::Plus => (),
+            let optype = match token.token_type {
+                TokenType::BoolNot => PreUnOpType::BoolNot,
+                TokenType::BitNot => PreUnOpType::BitNot,
+                TokenType::Minus => PreUnOpType::Minus,
+                TokenType::Plus => PreUnOpType::Plus,
+                TokenType::Times => PreUnOpType::Times,
                 TokenType::Inc => {
                     needs_ref = true;
+                    PreUnOpType::Inc
                 }
                 TokenType::Dec => {
                     needs_ref = true;
+                    PreUnOpType::Dec
                 }
-                TokenType::Times => (),
                 _ => return self.parse_post_unary(lexer),
-            }
+            };
             let token = lexer.next().unwrap();
             let rhs = self.parse_pre_unary(lexer)?;
             if needs_ref {
@@ -785,7 +829,8 @@ impl ParseTree {
                 };
             }
             Ok(Expression::PreUnOp(PreUnOp {
-                op: token,
+                op: optype,
+                location: token.location,
                 rhs: Box::new(rhs),
             }))
         } else {
@@ -802,18 +847,22 @@ impl ParseTree {
             let token = token.clone();
             lhs = match token.token_type {
                 TokenType::Inc => Expression::PostUnOp(PostUnOp {
-                    lhs: match lhs {
-                        Expression::RefExpr(re) => Box::new(re),
-                        _ => return Err(unexpected(&token)),
+                    lhs: if lhs.is_lval() {
+                        Box::new(lhs)
+                    } else {
+                        return Err(unexpected(&token));
                     },
-                    op: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
+                    op: PostUnOpType::Inc,
                 }),
                 TokenType::Dec => Expression::PostUnOp(PostUnOp {
-                    lhs: match lhs {
-                        Expression::RefExpr(re) => Box::new(re),
-                        _ => return Err(unexpected(&token)),
+                    lhs: if lhs.is_lval() {
+                        Box::new(lhs)
+                    } else {
+                        return Err(unexpected(&token));
                     },
-                    op: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
+                    op: PostUnOpType::Dec,
                 }),
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer)?;

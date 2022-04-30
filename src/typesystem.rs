@@ -1,6 +1,5 @@
 #![allow(dead_code)]
-use crate::parser::AssignType;
-use crate::parser::BinOpType;
+use crate::parser::{AssignType, BinOpType, PostUnOpType, PreUnOpType};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -109,6 +108,11 @@ pub const MODEQ: Op = Op { index: 27 };
 pub const BITSHIFTRIGHTEQ: Op = Op { index: 28 };
 pub const BITSHIFTLEFTEQ: Op = Op { index: 29 };
 
+pub const BOOLNOT: Op = Op { index: 30 };
+pub const BITNOT: Op = Op { index: 31 };
+pub const INC: Op = Op { index: 32 };
+pub const DEC: Op = Op { index: 33 };
+
 impl TypeSystem {
     pub fn new() -> Self {
         let mut rv = Self {
@@ -198,7 +202,16 @@ impl TypeSystem {
         );
 
         make_op!("-=", "+=", "*=", "/="  |
-            FLOAT, FLOAT => FLOAT
+            FLOAT, FLOAT => FLOAT,
+        );
+
+        make_op!("!" |
+            BOOL => BOOL,
+        );
+
+        make_op!("~", "++", "--" |
+            CHAR => CHAR,
+            INT => INT,
         );
     }
 
@@ -211,6 +224,7 @@ impl TypeSystem {
         assert_eq!(self.types[INT.index].name, "int");
         assert_eq!(self.types[FLOAT.index].name, "float");
         assert_eq!(self.types[STR.index].name, "str");
+
         assert_eq!(self.operations[BOOLOR.index].name, "||");
         assert_eq!(self.operations[BOOLXOR.index].name, "^^");
         assert_eq!(self.operations[BOOLAND.index].name, "&&");
@@ -241,6 +255,10 @@ impl TypeSystem {
         assert_eq!(self.operations[MODEQ.index].name, "%=");
         assert_eq!(self.operations[BITSHIFTRIGHTEQ.index].name, ">>=");
         assert_eq!(self.operations[BITSHIFTLEFTEQ.index].name, "<<=");
+        assert_eq!(self.operations[BOOLNOT.index].name, "!");
+        assert_eq!(self.operations[BITNOT.index].name, "~");
+        assert_eq!(self.operations[INC.index].name, "++");
+        assert_eq!(self.operations[DEC.index].name, "--");
     }
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -367,5 +385,38 @@ impl TypeSystem {
             TypeEntryType::ContainerType(t) => Some(t),
             _ => None,
         }
+    }
+
+    pub fn lookup_preunop(&self, puop: PreUnOpType, t: Type) -> Option<Type> {
+        let op = match puop {
+            PreUnOpType::BoolNot => BOOLNOT,
+            PreUnOpType::BitNot => BITNOT,
+            PreUnOpType::Minus => MINUS,
+            PreUnOpType::Plus => PLUS,
+            PreUnOpType::Inc => INC,
+            PreUnOpType::Dec => DEC,
+            PreUnOpType::Times => TIMES,
+        };
+
+        for sig in self.operations[op.index].signatures.iter() {
+            if sig.inputs.len() == 1 && sig.inputs[0] == t {
+                return Some(sig.output);
+            }
+        }
+        None
+    }
+
+    pub fn lookup_postunop(&self, puop: PostUnOpType, t: Type) -> Option<Type> {
+        let op = match puop {
+            PostUnOpType::Inc => INC,
+            PostUnOpType::Dec => DEC,
+        };
+
+        for sig in self.operations[op.index].signatures.iter() {
+            if sig.inputs.len() == 1 && sig.inputs[0] == t {
+                return Some(sig.output);
+            }
+        }
+        None
     }
 }
