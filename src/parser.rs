@@ -44,26 +44,26 @@ impl Expression {
             _ => false,
         }
     }
-    // pub fn location(&self) -> Location {
-    // match self {
-    // Expression::While(w) => w.location.clone(),
-    // Expression::For(f) => f.location.clone(),
-    // Expression::If(i) => i.location.clone(),
-    // Expression::CallExpr(c) => c.location.clone(),
-    // Expression::RefExpr(r) => r.value.location.clone(),
-    // Expression::Immediate(i) => i.value.location.clone(),
-    // Expression::BlockExpr(b) => b.location.clone(),
-    // Expression::BinOp(b) => b.op.location.clone(),
-    // Expression::PreUnOp(u) => u.op.location.clone(),
-    // Expression::PostUnOp(u) => u.op.location.clone(),
-    // Expression::AssignExpr(a) => a.op.location.clone(),
-    // Expression::Function(f) => f.location.clone(),
-    // Expression::Lambda(l) => l.location.clone(),
-    // Expression::List(l) => l.location.clone(),
-    // Expression::IndexExpr(l) => l.location.clone(),
-    // Expression::DottedLookup(d) => d.location.clone(),
-    // }
-    // }
+    pub fn location(&self) -> Location {
+        match self {
+            Expression::While(w) => w.location.clone(),
+            Expression::For(f) => f.location.clone(),
+            Expression::If(i) => i.location.clone(),
+            Expression::CallExpr(c) => c.location.clone(),
+            Expression::RefExpr(r) => r.location.clone(),
+            Expression::Immediate(i) => i.location.clone(),
+            Expression::BlockExpr(b) => b.location.clone(),
+            Expression::BinOp(b) => b.location.clone(),
+            Expression::PreUnOp(u) => u.op.location.clone(),
+            Expression::PostUnOp(u) => u.op.location.clone(),
+            Expression::AssignExpr(a) => a.location.clone(),
+            Expression::Function(f) => f.location.clone(),
+            Expression::Lambda(l) => l.location.clone(),
+            Expression::List(l) => l.location.clone(),
+            Expression::IndexExpr(l) => l.location.clone(),
+            Expression::DottedLookup(d) => d.location.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -140,7 +140,7 @@ pub struct RefExpr {
 
 #[derive(Debug, Clone)]
 pub struct Immediate {
-    pub token: Token,
+    pub location: Location,
     pub value: ImmediateValue,
 }
 
@@ -340,7 +340,7 @@ macro_rules! binop {
                 };
                 let optype = match token.token_type {
                     $( $token => { lexer.next(); BinOpType::$token}, )+
-                    _ => return Ok(lhs),
+                        _ => return Ok(lhs),
                 };
                 let rhs = self.$next(lexer)?;
                 lhs = Expression::BinOp(BinOp {
@@ -986,27 +986,27 @@ impl ParseTree {
                 TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Char(c.clone() as u8),
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::Str(s) => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Str(s.chars().map(|c| c as u8).collect()),
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::Int(i) => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Int(*i),
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::Float(f) => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Float(*f),
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::Bool(b) => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Bool(*b),
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::Null => Ok(Expression::Immediate(Immediate {
                     value: ImmediateValue::Null,
-                    token: lexer.next().unwrap(),
+                    location: lexer.next().unwrap().location,
                 })),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),

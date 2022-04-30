@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::parser::AssignType;
 use crate::parser::BinOpType;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Clone)]
@@ -12,16 +12,27 @@ pub struct TypeSystem {
     ops_by_name: HashMap<String, Op>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeEntryType {
-    RefType(Type),
-    ConcreteType,
+    UnitType,
+    BasicType,
+    ContainerType(Type),
+}
+
+impl TypeEntryType {
+    fn new_basic() -> TypeEntryType {
+        TypeEntryType::BasicType
+    }
+    fn new_unit() -> TypeEntryType {
+        TypeEntryType::UnitType
+    }
 }
 
 #[derive(Debug, Clone)]
 struct TypeEntry {
     name: String,
     te_type: TypeEntryType,
+    list_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +69,7 @@ impl Debug for Op {
     }
 }
 
-pub const UNKNOWN: Type = Type { index: 0 };
+pub const UNIT: Type = Type { index: 0 };
 pub const NULL: Type = Type { index: 1 };
 pub const BOOL: Type = Type { index: 2 };
 pub const CHAR: Type = Type { index: 3 };
@@ -113,13 +124,13 @@ impl TypeSystem {
     }
 
     fn add_default_types(&mut self) {
-        self.new_type(String::from("unknown"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("null"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("bool"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("char"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("int"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("float"), TypeEntryType::ConcreteType);
-        self.new_type(String::from("str"), TypeEntryType::ConcreteType);
+        self.new_type(String::from("unit"), TypeEntryType::new_unit());
+        self.new_type(String::from("null"), TypeEntryType::new_basic());
+        self.new_type(String::from("bool"), TypeEntryType::new_basic());
+        self.new_type(String::from("char"), TypeEntryType::new_basic());
+        self.new_type(String::from("int"), TypeEntryType::new_basic());
+        self.new_type(String::from("float"), TypeEntryType::new_basic());
+        self.new_type(String::from("str"), TypeEntryType::new_basic());
     }
 
     fn add_default_ops(&mut self) {
@@ -193,7 +204,7 @@ impl TypeSystem {
 
     fn sanity_check(&self) {
         // This makes sure that we havent messed with anything
-        assert_eq!(self.types[UNKNOWN.index].name, "unknown");
+        assert_eq!(self.types[UNIT.index].name, "unit");
         assert_eq!(self.types[NULL.index].name, "null");
         assert_eq!(self.types[BOOL.index].name, "bool");
         assert_eq!(self.types[CHAR.index].name, "char");
@@ -234,11 +245,7 @@ impl TypeSystem {
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
         match self.types_by_name.get(&name) {
-            Some(a) => {
-                let typ = self.lookup_type(*a);
-                assert_eq!(self.types[typ.index].te_type, te_type);
-                typ
-            }
+            Some(a) => *a,
             None => self.new_type(name, te_type),
         }
     }
@@ -252,6 +259,7 @@ impl TypeSystem {
 
     fn new_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
         self.types.push(TypeEntry {
+            list_type: None,
             name: name.clone(),
             te_type,
         });
@@ -279,23 +287,7 @@ impl TypeSystem {
     }
 
     pub fn typename(&self, t: Type) -> String {
-        self.types[self.lookup_type(t).index].name.clone()
-    }
-
-    pub fn lookup_type(&self, t: Type) -> Type {
-        // TODO: Differentiate between release builds and dont do cycle checking
-        let mut seen = HashSet::new();
-        let mut cur = t;
-        loop {
-            let idx = cur.index;
-            if !seen.insert(idx) {
-                panic!("Type lookup loop. This is a bug")
-            }
-            match self.types[idx].te_type {
-                TypeEntryType::RefType(rt) => cur = rt,
-                TypeEntryType::ConcreteType => return Type { index: idx },
-            }
-        }
+        self.types[t.index].name.clone()
     }
 
     pub fn lookup_binop(&self, binop: BinOpType, lhs: Type, rhs: Type) -> Option<Type> {
@@ -348,5 +340,32 @@ impl TypeSystem {
             }
         }
         None
+    }
+
+    pub fn list_type(&mut self, t: Type) -> Type {
+        match self.types[t.index].list_type {
+            Some(t) => return t,
+            None => (),
+        }
+        let new_name = format!("list<{}>", self.typename(t));
+        let list_type = self.new_type(new_name, TypeEntryType::ContainerType(t));
+        self.types[t.index].list_type = Some(list_type);
+
+        self.add_signature(
+            EQUAL,
+            Signature {
+                inputs: vec![list_type, list_type],
+                output: list_type,
+            },
+        );
+
+        return list_type;
+    }
+
+    pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
+        match self.types[t.index].te_type {
+            TypeEntryType::ContainerType(t) => Some(t),
+            _ => None,
+        }
     }
 }
