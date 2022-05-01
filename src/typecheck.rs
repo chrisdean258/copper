@@ -9,7 +9,10 @@ use std::rc::Rc;
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    type_to_func: HashMap<Type, Function>,
+    type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
+    lambda_args: Vec<Vec<Type>>,
 }
 
 type TypeError = Vec<String>;
@@ -19,7 +22,10 @@ impl TypeChecker {
         Self {
             system: TypeSystem::new(),
             scopes: vec![Rc::new(RefCell::new(HashMap::new()))],
+            type_to_func: HashMap::new(),
+            type_to_lambda: HashMap::new(),
             allow_insert: None,
+            lambda_args: Vec::new(),
         }
     }
 
@@ -79,11 +85,12 @@ impl TypeChecker {
             Expression::PreUnOp(p) => self.preunop(p),
             Expression::PostUnOp(p) => self.postunop(p),
             Expression::AssignExpr(a) => self.assignment(a),
-            Expression::Function(f) => todo!("{:?}", f),
-            Expression::Lambda(l) => todo!("{:?}", l),
+            Expression::Function(f) => self.function(f),
+            Expression::Lambda(l) => self.lambda(l),
             Expression::List(l) => self.list(l),
             Expression::IndexExpr(i) => self.index(i),
             Expression::DottedLookup(d) => todo!("{:?}", d),
+            Expression::LambdaArg(l) => self.lambdaarg(l),
         }
     }
 
@@ -317,5 +324,33 @@ impl TypeChecker {
             )]);
         }
         Ok(return_type)
+    }
+
+    fn function(&mut self, f: &mut Function) -> Result<Type, TypeError> {
+        let typ = match f.name.clone() {
+            Some(s) => {
+                let rv = self.system.function_type(s.clone());
+                self.insert_scope(&s, rv);
+                rv
+            }
+            None => self
+                .system
+                .function_type("<anonymous function>".to_string()),
+        };
+        self.type_to_func.insert(typ, f.clone());
+        Ok(typ)
+    }
+
+    fn lambda(&mut self, l: &mut Lambda) -> Result<Type, TypeError> {
+        let typ = self.system.function_type("<lambda>".to_string());
+        self.type_to_lambda.insert(typ, l.clone());
+        Ok(typ)
+    }
+
+    fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
+        if self.lambda_args.len() == 0 {
+            panic!("Trying to derive type of lambda arg in non lambda. This is a bug");
+        }
+        Ok(self.lambda_args.last().unwrap()[l.number])
     }
 }

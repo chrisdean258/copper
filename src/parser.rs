@@ -34,6 +34,7 @@ pub enum Expression {
     List(List),
     IndexExpr(IndexExpr),
     DottedLookup(DottedLookup),
+    LambdaArg(LambdaArg),
 }
 
 impl Expression {
@@ -62,6 +63,7 @@ impl Expression {
             Expression::List(l) => l.location.clone(),
             Expression::IndexExpr(l) => l.location.clone(),
             Expression::DottedLookup(d) => d.location.clone(),
+            Expression::LambdaArg(l) => l.location.clone(),
         }
     }
 }
@@ -135,6 +137,12 @@ pub struct IndexExpr {
 #[derive(Debug, Clone)]
 pub struct RefExpr {
     pub name: String,
+    pub location: Location,
+}
+
+#[derive(Debug, Clone)]
+pub struct LambdaArg {
+    pub number: usize,
     pub location: Location,
 }
 
@@ -1026,9 +1034,9 @@ impl ParseTree {
                     if *a + 1 > *self.max_arg.last().unwrap() {
                         *self.max_arg.last_mut().unwrap() = *a + 1;
                     }
-                    Expression::RefExpr(RefExpr {
+                    Expression::LambdaArg(LambdaArg {
+                        number: *a,
                         location: token.location.clone(),
-                        name: format!("{}", a),
                     });
                     todo!("Implement Lambda arg not arg refence expr")
                 }

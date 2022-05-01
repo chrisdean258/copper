@@ -11,11 +11,12 @@ pub struct TypeSystem {
     ops_by_name: HashMap<String, Op>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum TypeEntryType {
     UnitType,
     BasicType,
     ContainerType(Type),
+    FunctionType(FunctionType),
 }
 
 impl TypeEntryType {
@@ -41,12 +42,17 @@ struct Operation {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionType {
+    signatures: Vec<Signature>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Signature {
     inputs: Vec<Type>,
     output: Type,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Hash, Eq)]
 pub struct Type {
     index: usize,
 }
@@ -288,6 +294,40 @@ impl TypeSystem {
         rv
     }
 
+    pub fn list_type(&mut self, t: Type) -> Type {
+        match self.types[t.index].list_type {
+            Some(t) => return t,
+            None => (),
+        }
+        let new_name = format!("list<{}>", self.typename(t));
+        let list_type = self.new_type(new_name, TypeEntryType::ContainerType(t));
+        self.types[t.index].list_type = Some(list_type);
+
+        self.add_signature(
+            EQUAL,
+            Signature {
+                inputs: vec![list_type, list_type],
+                output: list_type,
+            },
+        );
+
+        return list_type;
+    }
+
+    pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
+        match self.types[t.index].te_type {
+            TypeEntryType::ContainerType(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn function_type(&mut self, name: String) -> Type {
+        let te_type = TypeEntryType::FunctionType(FunctionType {
+            signatures: Vec::new(),
+        });
+        self.new_type(name, te_type)
+    }
+
     fn new_op(&mut self, name: String) -> Op {
         self.operations.push(Operation {
             name: name.clone(),
@@ -358,33 +398,6 @@ impl TypeSystem {
             }
         }
         None
-    }
-
-    pub fn list_type(&mut self, t: Type) -> Type {
-        match self.types[t.index].list_type {
-            Some(t) => return t,
-            None => (),
-        }
-        let new_name = format!("list<{}>", self.typename(t));
-        let list_type = self.new_type(new_name, TypeEntryType::ContainerType(t));
-        self.types[t.index].list_type = Some(list_type);
-
-        self.add_signature(
-            EQUAL,
-            Signature {
-                inputs: vec![list_type, list_type],
-                output: list_type,
-            },
-        );
-
-        return list_type;
-    }
-
-    pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
-        match self.types[t.index].te_type {
-            TypeEntryType::ContainerType(t) => Some(t),
-            _ => None,
-        }
     }
 
     pub fn lookup_preunop(&self, puop: PreUnOpType, t: Type) -> Option<Type> {
