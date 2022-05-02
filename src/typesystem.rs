@@ -48,8 +48,8 @@ pub struct FunctionType {
 
 #[derive(Debug, Clone)]
 pub struct Signature {
-    inputs: Vec<Type>,
-    output: Type,
+    pub inputs: Vec<Type>,
+    pub output: Type,
 }
 
 #[derive(Clone, Copy, PartialEq, Hash, Eq)]
@@ -431,5 +431,33 @@ impl TypeSystem {
             }
         }
         None
+    }
+
+    pub fn is_function(&self, func: Type) -> bool {
+        match &self.types[func.index].te_type {
+            TypeEntryType::FunctionType(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn match_signature(&self, func: Type, inputs: &Vec<Type>) -> Option<Type> {
+        let ft = match &self.types[func.index].te_type {
+            TypeEntryType::FunctionType(ft) => ft,
+            _ => panic!("trying to match a signatures with a non function"),
+        };
+        for sig in ft.signatures.iter() {
+            if &sig.inputs == inputs {
+                return Some(sig.output);
+            }
+        }
+        None
+    }
+
+    pub fn add_function_signature(&mut self, func: Type, sig: Signature) {
+        let ft = match &mut self.types[func.index].te_type {
+            TypeEntryType::FunctionType(ft) => ft,
+            _ => panic!("trying to add a signature to a non function"),
+        };
+        ft.signatures.push(sig);
     }
 }
