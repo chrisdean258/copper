@@ -239,6 +239,7 @@ impl TypeChecker {
         let mut return_unit = false;
         match self.expr(i.condition.as_ref()) {
             Ok(t) if t == BOOL => (),
+            Ok(t) if t == UNKNOWN_RETURN => (),
             Ok(t) => errors.push(format!(
                 "{}: if conditionals must be `bool` not `{}`",
                 i.condition.as_ref().location(),
@@ -255,6 +256,8 @@ impl TypeChecker {
         for body in i.and_bodies.iter() {
             match self.ifexpr(body) {
                 Ok(t) if t == rv => (),
+                Ok(t) if t == UNKNOWN_RETURN => (),
+                Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
                 Err(mut s) => errors.append(&mut s),
             }
@@ -263,6 +266,8 @@ impl TypeChecker {
         match &i.else_body {
             Some(b) => match self.expr(b.as_ref()) {
                 Ok(t) if t == rv => (),
+                Ok(t) if t == UNKNOWN_RETURN => (),
+                Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
                 Err(mut s) => errors.append(&mut s),
             },
@@ -391,6 +396,13 @@ impl TypeChecker {
         }
 
         let function: Function = self.type_to_func[&functype].clone();
+        self.system.add_function_signature(
+            functype,
+            Signature {
+                inputs: args.clone(),
+                output: UNKNOWN_RETURN,
+            },
+        );
 
         self.openscope();
         if args.len() != function.argnames.len() {
@@ -407,6 +419,12 @@ impl TypeChecker {
         }
 
         let rv = match self.expr(function.body.as_ref()) {
+            Ok(t) if t == UNKNOWN_RETURN => {
+                return Err(vec![
+                    format!("{}: Could not determine return type", function.location),
+                    format!("{}: Originating with this function call", c.location),
+                ]);
+            }
             Ok(t) => t,
             Err(mut s) => {
                 s.push(format!(

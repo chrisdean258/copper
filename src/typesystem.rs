@@ -14,6 +14,7 @@ pub struct TypeSystem {
 #[derive(Debug, Clone)]
 pub enum TypeEntryType {
     UnitType,
+    UnknownReturnType,
     BasicType,
     ContainerType(Type),
     FunctionType(FunctionType),
@@ -25,6 +26,9 @@ impl TypeEntryType {
     }
     fn new_unit() -> TypeEntryType {
         TypeEntryType::UnitType
+    }
+    fn new_unknown_return() -> TypeEntryType {
+        TypeEntryType::UnknownReturnType
     }
 }
 
@@ -75,12 +79,13 @@ impl Debug for Op {
 }
 
 pub const UNIT: Type = Type { index: 0 };
-pub const NULL: Type = Type { index: 1 };
-pub const BOOL: Type = Type { index: 2 };
-pub const CHAR: Type = Type { index: 3 };
-pub const INT: Type = Type { index: 4 };
-pub const FLOAT: Type = Type { index: 5 };
-pub const STR: Type = Type { index: 6 };
+pub const UNKNOWN_RETURN: Type = Type { index: 1 };
+pub const NULL: Type = Type { index: 2 };
+pub const BOOL: Type = Type { index: 3 };
+pub const CHAR: Type = Type { index: 4 };
+pub const INT: Type = Type { index: 5 };
+pub const FLOAT: Type = Type { index: 6 };
+pub const STR: Type = Type { index: 7 };
 
 pub const BOOLOR: Op = Op { index: 0 };
 pub const BOOLXOR: Op = Op { index: 1 };
@@ -135,6 +140,10 @@ impl TypeSystem {
 
     fn add_default_types(&mut self) {
         self.new_type(String::from("unit"), TypeEntryType::new_unit());
+        self.new_type(
+            String::from("UNKNOWN RETURN"),
+            TypeEntryType::new_unknown_return(),
+        );
         self.new_type(String::from("null"), TypeEntryType::new_basic());
         self.new_type(String::from("bool"), TypeEntryType::new_basic());
         self.new_type(String::from("char"), TypeEntryType::new_basic());
@@ -224,6 +233,7 @@ impl TypeSystem {
     fn sanity_check(&self) {
         // This makes sure that we havent messed with anything
         assert_eq!(self.types[UNIT.index].name, "unit");
+        assert_eq!(self.types[UNKNOWN_RETURN.index].name, "UNKNOWN RETURN");
         assert_eq!(self.types[NULL.index].name, "null");
         assert_eq!(self.types[BOOL.index].name, "bool");
         assert_eq!(self.types[CHAR.index].name, "char");
@@ -349,6 +359,9 @@ impl TypeSystem {
     }
 
     pub fn lookup_binop(&self, binop: BinOpType, lhs: Type, rhs: Type) -> Option<Type> {
+        if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
+            return Some(UNKNOWN_RETURN);
+        }
         let op = match binop {
             BinOpType::BoolOr => BOOLOR,
             BinOpType::BoolXor => BOOLXOR,
@@ -379,6 +392,9 @@ impl TypeSystem {
     }
 
     pub fn lookup_assign(&self, aop: AssignType, lhs: Type, rhs: Type) -> Option<Type> {
+        if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
+            return Some(UNKNOWN_RETURN);
+        }
         let op = match aop {
             AssignType::Equal => EQUAL,
             AssignType::AndEq => ANDEQ,
@@ -401,6 +417,9 @@ impl TypeSystem {
     }
 
     pub fn lookup_preunop(&self, puop: PreUnOpType, t: Type) -> Option<Type> {
+        if t == UNKNOWN_RETURN {
+            return Some(UNKNOWN_RETURN);
+        }
         let op = match puop {
             PreUnOpType::BoolNot => BOOLNOT,
             PreUnOpType::BitNot => BITNOT,
@@ -420,6 +439,9 @@ impl TypeSystem {
     }
 
     pub fn lookup_postunop(&self, puop: PostUnOpType, t: Type) -> Option<Type> {
+        if t == UNKNOWN_RETURN {
+            return Some(UNKNOWN_RETURN);
+        }
         let op = match puop {
             PostUnOpType::Inc => INC,
             PostUnOpType::Dec => DEC,
@@ -435,12 +457,18 @@ impl TypeSystem {
 
     pub fn is_function(&self, func: Type) -> bool {
         match &self.types[func.index].te_type {
+            TypeEntryType::UnknownReturnType => true,
             TypeEntryType::FunctionType(_) => true,
             _ => false,
         }
     }
 
     pub fn match_signature(&self, func: Type, inputs: &Vec<Type>) -> Option<Type> {
+        for arg in inputs {
+            if *arg == UNKNOWN_RETURN {
+                return Some(UNKNOWN_RETURN);
+            }
+        }
         let ft = match &self.types[func.index].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to match a signatures with a non function"),
