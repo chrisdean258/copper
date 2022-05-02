@@ -396,7 +396,7 @@ impl TypeChecker {
         }
 
         let function: Function = self.type_to_func[&functype].clone();
-        self.system.add_function_signature(
+        let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
                 inputs: args.clone(),
@@ -421,7 +421,7 @@ impl TypeChecker {
         let rv = match self.expr(function.body.as_ref()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
-                    format!("{}: Could not determine return type", function.location),
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", function.location),
                     format!("{}: Originating with this function call", c.location),
                 ]);
             }
@@ -434,13 +434,32 @@ impl TypeChecker {
                 return Err(s);
             }
         };
-        self.system.add_function_signature(
-            functype,
-            Signature {
-                inputs: args,
-                output: rv,
-            },
-        );
+        self.system.patch_signature_return(functype, sig_handle, rv);
+        let rv = match self.expr(function.body.as_ref()) {
+            Ok(t) if t == UNKNOWN_RETURN => {
+                return Err(vec![
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", function.location),
+                    format!("{}: Originating with this function call", c.location),
+                ]);
+            }
+            Ok(t) if t == rv => t,
+            Ok(t) => {
+                return Err(vec![
+                    format!(
+                        "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
+                        function.location, self.system.typename(t), self.system.typename(rv)
+                    ),
+                    format!("{}: Originating with this function call", c.location),
+                ]);
+            }
+            Err(mut s) => {
+                s.push(format!(
+                    "{}: Originating with this function call",
+                    c.location
+                ));
+                return Err(s);
+            }
+        };
         self.closescope();
         Ok(rv)
     }

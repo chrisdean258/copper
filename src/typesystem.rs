@@ -481,11 +481,20 @@ impl TypeSystem {
         None
     }
 
-    pub fn add_function_signature(&mut self, func: Type, sig: Signature) {
+    pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> usize {
         let ft = match &mut self.types[func.index].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to add a signature to a non function"),
         };
         ft.signatures.push(sig);
+        ft.signatures.len() - 1
+    }
+
+    pub fn patch_signature_return(&mut self, func: Type, handle: usize, return_type: Type) {
+        let ft = match &mut self.types[func.index].te_type {
+            TypeEntryType::FunctionType(ft) => ft,
+            _ => panic!("trying to patch signature to a non function"),
+        };
+        ft.signatures[handle].output = return_type;
     }
 }
