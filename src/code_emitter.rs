@@ -3,14 +3,16 @@ use crate::operation::Operation;
 use crate::typesystem::*;
 use crate::value::Value;
 
+#[derive(Debug, Clone)]
 pub struct CodeBuilder {
-    active_functions: Vec<Function>,
-    finished_functions: Vec<Function>,
+    pub active_functions: Vec<Function>,
+    pub finished_functions: Vec<Function>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Function {
-    name: Option<String>,
-    code: Vec<Instruction>,
+    pub name: Option<String>,
+    pub code: Vec<Instruction>,
 }
 
 impl Function {
@@ -22,6 +24,7 @@ impl Function {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Instruction {
     op: Operation,
     types: Vec<Type>,

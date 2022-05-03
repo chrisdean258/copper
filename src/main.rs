@@ -155,6 +155,7 @@ fn eval_lexer<T: Iterator<Item = String>>(
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
     if !typecheck_only {
+        println!("{:#?}", typechecker.code);
         evaluator.eval(&mut tree)?;
     }
     Ok(())

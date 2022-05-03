@@ -11,12 +11,12 @@ use std::rc::Rc;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
+    pub code: CodeBuilder,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     type_to_func: HashMap<Type, Function>,
     type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
     lambda_args: Vec<Vec<Type>>,
-    code: CodeBuilder,
 }
 
 #[allow(dead_code)]
