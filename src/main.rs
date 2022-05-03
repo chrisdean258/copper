@@ -1,9 +1,12 @@
+mod code_emitter;
 mod eval;
 mod lex;
 mod location;
+mod operation;
 mod parser;
 mod typecheck;
 mod typesystem;
+mod value;
 mod vm;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;

@@ -1,7 +1,10 @@
+use crate::code_emitter::CodeBuilder;
+use crate::operation::Operation;
 use crate::parser::ParseTree;
 use crate::parser::*;
 use crate::typesystem;
 use crate::typesystem::*;
+use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -13,6 +16,13 @@ pub struct TypeChecker {
     type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
     lambda_args: Vec<Vec<Type>>,
+    code: CodeBuilder,
+}
+
+#[allow(dead_code)]
+pub fn typecheck(p: &ParseTree) -> Result<TypeChecker, String> {
+    let mut tc = TypeChecker::new();
+    tc.typecheck(p).map(|_| tc)
 }
 
 type TypeError = Vec<String>;
@@ -26,6 +36,7 @@ impl TypeChecker {
             type_to_lambda: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
+            code: CodeBuilder::new("temp".to_string()),
         }
     }
 
@@ -106,9 +117,11 @@ impl TypeChecker {
     fn binop(&mut self, b: &BinOp) -> Result<Type, TypeError> {
         let ltype = self.expr(b.lhs.as_ref())?;
         let rtype = self.expr(b.rhs.as_ref())?;
-        self.system.lookup_binop(b.op, ltype, rtype).ok_or(
+        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or(
             vec![format!("{}: cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-                    b.location, self.system.typename(ltype), b.op, self.system.typename(rtype))])
+                    b.location, self.system.typename(ltype), b.op, self.system.typename(rtype))])?;
+        self.code.emit(b.op, vec![ltype, rtype], vec![]);
+        Ok(rv)
     }
 
     fn preunop(&mut self, p: &PreUnOp) -> Result<Type, TypeError> {
@@ -175,14 +188,17 @@ impl TypeChecker {
     }
 
     fn immediate(&mut self, i: &Immediate) -> Result<Type, TypeError> {
-        Ok(match i.value {
-            ImmediateValue::Null => typesystem::NULL,
-            ImmediateValue::Bool(_) => typesystem::BOOL,
-            ImmediateValue::Char(_) => typesystem::CHAR,
-            ImmediateValue::Int(_) => typesystem::INT,
-            ImmediateValue::Float(_) => typesystem::FLOAT,
-            ImmediateValue::Str(_) => typesystem::STR,
-        })
+        let rv = match i.value {
+            Value::Null => typesystem::NULL,
+            Value::Bool(_) => typesystem::BOOL,
+            Value::Char(_) => typesystem::CHAR,
+            Value::Int(_) => typesystem::INT,
+            Value::Float(_) => typesystem::FLOAT,
+            // Value::Str(_) => typesystem::STR,
+        };
+        self.code
+            .emit(Operation::Push, vec![rv], vec![i.value.clone()]);
+        Ok(rv)
     }
 
     fn block(&mut self, b: &BlockExpr) -> Result<Type, TypeError> {

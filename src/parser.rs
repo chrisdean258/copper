@@ -1,7 +1,8 @@
 use crate::lex::*;
 use crate::location::Location;
+use crate::operation::Operation;
+use crate::value::Value;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
 #[derive(Debug, Clone)]
@@ -149,17 +150,7 @@ pub struct LambdaArg {
 #[derive(Debug, Clone)]
 pub struct Immediate {
     pub location: Location,
-    pub value: ImmediateValue,
-}
-
-#[derive(Debug, Clone)]
-pub enum ImmediateValue {
-    Null,
-    Bool(u8),
-    Char(u8),
-    Int(i64),
-    Float(f64),
-    Str(Vec<u8>),
+    pub value: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -172,153 +163,31 @@ pub struct BlockExpr {
 pub struct BinOp {
     pub lhs: Box<Expression>,
     pub location: Location,
-    pub op: BinOpType,
+    pub op: Operation,
     pub rhs: Box<Expression>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum BinOpType {
-    BoolOr,
-    BoolXor,
-    BoolAnd,
-    BitOr,
-    BitXor,
-    BitAnd,
-    CmpGE,
-    CmpGT,
-    CmpLE,
-    CmpLT,
-    CmpEq,
-    CmpNotEq,
-    BitShiftLeft,
-    BitShiftRight,
-    Minus,
-    Plus,
-    Times,
-    Mod,
-    Div,
-}
-
-impl Display for BinOpType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            BinOpType::BoolOr => "||",
-            BinOpType::BoolXor => "^^",
-            BinOpType::BoolAnd => "&&",
-            BinOpType::BitOr => "|",
-            BinOpType::BitXor => "^",
-            BinOpType::BitAnd => "&",
-            BinOpType::CmpGE => ">=",
-            BinOpType::CmpGT => ">",
-            BinOpType::CmpLE => "<=",
-            BinOpType::CmpLT => "<",
-            BinOpType::CmpEq => "==",
-            BinOpType::CmpNotEq => "!=",
-            BinOpType::BitShiftLeft => "<<",
-            BinOpType::BitShiftRight => ">>",
-            BinOpType::Minus => "-",
-            BinOpType::Plus => "+",
-            BinOpType::Times => "*",
-            BinOpType::Mod => "%",
-            BinOpType::Div => "/",
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignExpr {
     pub lhs: Box<Expression>,
-    pub op: AssignType,
+    pub op: Operation,
     pub location: Location,
     pub rhs: Box<Expression>,
     pub allow_decl: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum AssignType {
-    Equal,
-    AndEq,
-    XorEq,
-    OrEq,
-    PlusEq,
-    MinusEq,
-    TimesEq,
-    DivEq,
-    ModEq,
-    BitShiftRightEq,
-    BitShiftLeftEq,
-}
-
-impl Display for AssignType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            AssignType::Equal => "=",
-            AssignType::AndEq => "&=",
-            AssignType::XorEq => "^=",
-            AssignType::OrEq => "|=",
-            AssignType::PlusEq => "+=",
-            AssignType::MinusEq => "-=",
-            AssignType::TimesEq => "*=",
-            AssignType::DivEq => "/=",
-            AssignType::ModEq => "%=",
-            AssignType::BitShiftRightEq => ">>=",
-            AssignType::BitShiftLeftEq => "<<=",
-        })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PreUnOp {
     pub location: Location,
-    pub op: PreUnOpType,
+    pub op: Operation,
     pub rhs: Box<Expression>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PreUnOpType {
-    BoolNot,
-    BitNot,
-    Minus,
-    Plus,
-    Inc,
-    Dec,
-    Times,
-}
-
-impl Display for PreUnOpType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            PreUnOpType::BoolNot => "!",
-            PreUnOpType::BitNot => "~",
-            PreUnOpType::Minus => "-",
-            PreUnOpType::Plus => "+",
-            PreUnOpType::Inc => "++",
-            PreUnOpType::Dec => "--",
-            PreUnOpType::Times => "*",
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct PostUnOp {
     pub lhs: Box<Expression>,
-    pub op: PostUnOpType,
+    pub op: Operation,
     pub location: Location,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PostUnOpType {
-    Inc,
-    Dec,
-}
-
-impl Display for PostUnOpType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            PostUnOpType::Inc => "++",
-            PostUnOpType::Dec => "--",
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -389,7 +258,7 @@ macro_rules! binop {
                     None => return Ok(lhs),
                 };
                 let optype = match token.token_type {
-                    $( $token => { lexer.next(); BinOpType::$token}, )+
+                    $( $token => { lexer.next(); Operation::$token}, )+
                         _ => return Ok(lhs),
                 };
                 let rhs = self.$next(lexer)?;
@@ -772,17 +641,17 @@ impl ParseTree {
         };
         let rhs = self.parse_eq(lexer)?;
         let op = match token.token_type {
-            TokenType::Equal => AssignType::Equal,
-            TokenType::AndEq => AssignType::AndEq,
-            TokenType::XorEq => AssignType::XorEq,
-            TokenType::OrEq => AssignType::OrEq,
-            TokenType::PlusEq => AssignType::PlusEq,
-            TokenType::MinusEq => AssignType::MinusEq,
-            TokenType::TimesEq => AssignType::TimesEq,
-            TokenType::DivEq => AssignType::DivEq,
-            TokenType::ModEq => AssignType::ModEq,
-            TokenType::BitShiftRightEq => AssignType::BitShiftRightEq,
-            TokenType::BitShiftLeftEq => AssignType::BitShiftLeftEq,
+            TokenType::Equal => Operation::Equal,
+            TokenType::AndEq => Operation::AndEq,
+            TokenType::XorEq => Operation::XorEq,
+            TokenType::OrEq => Operation::OrEq,
+            TokenType::PlusEq => Operation::PlusEq,
+            TokenType::MinusEq => Operation::MinusEq,
+            TokenType::TimesEq => Operation::TimesEq,
+            TokenType::DivEq => Operation::DivEq,
+            TokenType::ModEq => Operation::ModEq,
+            TokenType::BitShiftRightEq => Operation::BitShiftRightEq,
+            TokenType::BitShiftLeftEq => Operation::BitShiftLeftEq,
             _ => unreachable!(),
         };
         Ok(Expression::AssignExpr(AssignExpr {
@@ -813,18 +682,18 @@ impl ParseTree {
         if let Some(token) = lexer.peek() {
             let mut needs_ref = false;
             let optype = match token.token_type {
-                TokenType::BoolNot => PreUnOpType::BoolNot,
-                TokenType::BitNot => PreUnOpType::BitNot,
-                TokenType::Minus => PreUnOpType::Minus,
-                TokenType::Plus => PreUnOpType::Plus,
-                TokenType::Times => PreUnOpType::Times,
+                TokenType::BoolNot => Operation::BoolNot,
+                TokenType::BitNot => Operation::BitNot,
+                TokenType::Minus => Operation::Minus,
+                TokenType::Plus => Operation::Plus,
+                TokenType::Times => Operation::Times,
                 TokenType::Inc => {
                     needs_ref = true;
-                    PreUnOpType::Inc
+                    Operation::Inc
                 }
                 TokenType::Dec => {
                     needs_ref = true;
-                    PreUnOpType::Dec
+                    Operation::Dec
                 }
                 _ => return self.parse_post_unary(lexer),
             };
@@ -861,7 +730,7 @@ impl ParseTree {
                         return Err(unexpected(&token));
                     },
                     location: lexer.next().unwrap().location,
-                    op: PostUnOpType::Inc,
+                    op: Operation::Inc,
                 }),
                 TokenType::Dec => Expression::PostUnOp(PostUnOp {
                     lhs: if lhs.is_lval() {
@@ -870,7 +739,7 @@ impl ParseTree {
                         return Err(unexpected(&token));
                     },
                     location: lexer.next().unwrap().location,
-                    op: PostUnOpType::Dec,
+                    op: Operation::Dec,
                 }),
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer)?;
@@ -1042,27 +911,30 @@ impl ParseTree {
                 }
                 TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Char(c.clone() as u8),
+                    value: Value::Char(c.clone() as u8),
                     location: lexer.next().unwrap().location,
                 })),
-                TokenType::Str(s) => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Str(s.chars().map(|c| c as u8).collect()),
-                    location: lexer.next().unwrap().location,
-                })),
+                TokenType::Str(_s) => {
+                    todo!("Strings");
+                    // Ok(Expression::Immediate(Immediate {
+                    // value: Value::Str(s.chars().map(|c| c as u8).collect()),
+                    // location: lexer.next().unwrap().location,
+                    // }));
+                }
                 TokenType::Int(i) => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Int(*i),
+                    value: Value::Int(*i),
                     location: lexer.next().unwrap().location,
                 })),
                 TokenType::Float(f) => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Float(*f),
+                    value: Value::Float(*f),
                     location: lexer.next().unwrap().location,
                 })),
                 TokenType::Bool(b) => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Bool(*b),
+                    value: Value::Bool(*b),
                     location: lexer.next().unwrap().location,
                 })),
                 TokenType::Null => Ok(Expression::Immediate(Immediate {
-                    value: ImmediateValue::Null,
+                    value: Value::Null,
                     location: lexer.next().unwrap().location,
                 })),
                 TokenType::OpenParen => self.parse_paren(lexer),

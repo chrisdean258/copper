@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::parser::{AssignType, BinOpType, PostUnOpType, PreUnOpType};
+use crate::operation::Operation;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 pub struct TypeSystem {
     types: Vec<TypeEntry>,
     types_by_name: HashMap<String, Type>,
-    operations: Vec<Operation>,
+    operations: HashMap<Operation, GenericOperation>,
     ops_by_name: HashMap<String, Op>,
 }
 
@@ -40,8 +40,8 @@ struct TypeEntry {
 }
 
 #[derive(Debug, Clone)]
-struct Operation {
-    name: String,
+struct GenericOperation {
+    operation: Operation,
     signatures: Vec<Signature>,
 }
 
@@ -87,54 +87,16 @@ pub const INT: Type = Type { index: 5 };
 pub const FLOAT: Type = Type { index: 6 };
 pub const STR: Type = Type { index: 7 };
 
-pub const BOOLOR: Op = Op { index: 0 };
-pub const BOOLXOR: Op = Op { index: 1 };
-pub const BOOLAND: Op = Op { index: 2 };
-pub const BITOR: Op = Op { index: 3 };
-pub const BITXOR: Op = Op { index: 4 };
-pub const BITAND: Op = Op { index: 5 };
-pub const CMPGE: Op = Op { index: 6 };
-pub const CMPGT: Op = Op { index: 7 };
-pub const CMPLE: Op = Op { index: 8 };
-pub const CMPLT: Op = Op { index: 9 };
-pub const CMPEQ: Op = Op { index: 10 };
-pub const CMPNOTEQ: Op = Op { index: 11 };
-pub const BITSHIFTLEFT: Op = Op { index: 12 };
-pub const BITSHIFTRIGHT: Op = Op { index: 13 };
-pub const MINUS: Op = Op { index: 14 };
-pub const PLUS: Op = Op { index: 15 };
-pub const TIMES: Op = Op { index: 16 };
-pub const MOD: Op = Op { index: 17 };
-pub const DIV: Op = Op { index: 18 };
-
-pub const EQUAL: Op = Op { index: 19 };
-pub const ANDEQ: Op = Op { index: 20 };
-pub const XOREQ: Op = Op { index: 21 };
-pub const OREQ: Op = Op { index: 22 };
-pub const PLUSEQ: Op = Op { index: 23 };
-pub const MINUSEQ: Op = Op { index: 24 };
-pub const TIMESEQ: Op = Op { index: 25 };
-pub const DIVEQ: Op = Op { index: 26 };
-pub const MODEQ: Op = Op { index: 27 };
-pub const BITSHIFTRIGHTEQ: Op = Op { index: 28 };
-pub const BITSHIFTLEFTEQ: Op = Op { index: 29 };
-
-pub const BOOLNOT: Op = Op { index: 30 };
-pub const BITNOT: Op = Op { index: 31 };
-pub const INC: Op = Op { index: 32 };
-pub const DEC: Op = Op { index: 33 };
-
 impl TypeSystem {
     pub fn new() -> Self {
         let mut rv = Self {
             types: Vec::new(),
             types_by_name: HashMap::new(),
-            operations: Vec::new(),
+            operations: HashMap::new(),
             ops_by_name: HashMap::new(),
         };
         rv.add_default_types();
         rv.add_default_ops();
-        rv.sanity_check();
         rv
     }
 
@@ -154,9 +116,10 @@ impl TypeSystem {
 
     fn add_default_ops(&mut self) {
         macro_rules! make_op {
-            ($($operation:literal),+ | $($( $input: ident),+ => $returntype:ident),* $(,)? ) => {
-                let ops = vec![$(self.find_or_make_op(String::from($operation))),+];
+            ($($operation: ident),+ | $($( $input: ident),+ => $returntype:ident),* $(,)? ) => {
+                let ops = vec![$(Operation::$operation),+];
                 for op in ops {
+                    self.ensure_op(op);
                     $(self.add_signature(op, Signature {
                         inputs: vec![$( $input ),+],
                         output: $returntype,
@@ -164,40 +127,40 @@ impl TypeSystem {
                 }
             };
         }
-        make_op!("||", "^^", "&&" |
+        make_op!(BoolOr, BoolXor, BoolAnd |
             BOOL, BOOL => BOOL,
         );
-        make_op!("|", "^", "&" |
+        make_op!(BitOr, BitXor, BitAnd |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
         );
-        make_op!(">=", ">", "<=", "<", "==", "!=" |
+        make_op!(CmpGE, CmpGT, CmpLE, CmpLT, CmpEq, CmpNotEq |
             INT, INT => BOOL,
             CHAR, CHAR => BOOL,
             FLOAT, FLOAT => BOOL,
             STR, STR => BOOL,
         );
 
-        make_op!("<<", ">>" |
+        make_op!(BitShiftLeft, BitShiftRight |
             CHAR, CHAR => CHAR,
             CHAR, INT => CHAR,
             INT, INT => INT,
         );
 
-        make_op!("-", "+", "*", "%", "/"  |
+        make_op!(Minus, Plus, Times, Mod, Div  |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
         );
 
-        make_op!("-", "+", "*", "/"  |
+        make_op!(Minus, Plus, Times, Div  |
             FLOAT, FLOAT => FLOAT
         );
 
-        make_op!("+" |
+        make_op!(Plus |
              STR, STR => STR
         );
 
-        make_op!("=" |
+        make_op!(Equal |
            NULL, NULL => NULL,
            BOOL, BOOL => BOOL,
            CHAR, CHAR => CHAR,
@@ -206,75 +169,28 @@ impl TypeSystem {
            STR, STR => STR,
         );
 
-        make_op!("&=", "^=", "|=" |
+        make_op!(AndEq, XorEq, OrEq |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
         );
 
-        make_op!("+=", "-=", "*=", "/=", "%=", ">>=", "<<=" |
+        make_op!(PlusEq, MinusEq, TimesEq, DivEq, ModEq, BitShiftRightEq, BitShiftLeftEq |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
         );
 
-        make_op!("-=", "+=", "*=", "/="  |
+        make_op!(MinusEq, PlusEq, TimesEq, DivEq  |
             FLOAT, FLOAT => FLOAT,
         );
 
-        make_op!("!" |
+        make_op!(BoolNot |
             BOOL => BOOL,
         );
 
-        make_op!("~", "++", "--" |
+        make_op!(BitNot, Inc, Dec |
             CHAR => CHAR,
             INT => INT,
         );
-    }
-
-    fn sanity_check(&self) {
-        // This makes sure that we havent messed with anything
-        assert_eq!(self.types[UNIT.index].name, "unit");
-        assert_eq!(self.types[UNKNOWN_RETURN.index].name, "UNKNOWN RETURN");
-        assert_eq!(self.types[NULL.index].name, "null");
-        assert_eq!(self.types[BOOL.index].name, "bool");
-        assert_eq!(self.types[CHAR.index].name, "char");
-        assert_eq!(self.types[INT.index].name, "int");
-        assert_eq!(self.types[FLOAT.index].name, "float");
-        assert_eq!(self.types[STR.index].name, "str");
-
-        assert_eq!(self.operations[BOOLOR.index].name, "||");
-        assert_eq!(self.operations[BOOLXOR.index].name, "^^");
-        assert_eq!(self.operations[BOOLAND.index].name, "&&");
-        assert_eq!(self.operations[BITOR.index].name, "|");
-        assert_eq!(self.operations[BITXOR.index].name, "^");
-        assert_eq!(self.operations[BITAND.index].name, "&");
-        assert_eq!(self.operations[CMPGE.index].name, ">=");
-        assert_eq!(self.operations[CMPGT.index].name, ">");
-        assert_eq!(self.operations[CMPLE.index].name, "<=");
-        assert_eq!(self.operations[CMPLT.index].name, "<");
-        assert_eq!(self.operations[CMPEQ.index].name, "==");
-        assert_eq!(self.operations[CMPNOTEQ.index].name, "!=");
-        assert_eq!(self.operations[BITSHIFTLEFT.index].name, "<<");
-        assert_eq!(self.operations[BITSHIFTRIGHT.index].name, ">>");
-        assert_eq!(self.operations[MINUS.index].name, "-");
-        assert_eq!(self.operations[PLUS.index].name, "+");
-        assert_eq!(self.operations[TIMES.index].name, "*");
-        assert_eq!(self.operations[MOD.index].name, "%");
-        assert_eq!(self.operations[DIV.index].name, "/");
-        assert_eq!(self.operations[EQUAL.index].name, "=");
-        assert_eq!(self.operations[ANDEQ.index].name, "&=");
-        assert_eq!(self.operations[XOREQ.index].name, "^=");
-        assert_eq!(self.operations[OREQ.index].name, "|=");
-        assert_eq!(self.operations[PLUSEQ.index].name, "+=");
-        assert_eq!(self.operations[MINUSEQ.index].name, "-=");
-        assert_eq!(self.operations[TIMESEQ.index].name, "*=");
-        assert_eq!(self.operations[DIVEQ.index].name, "/=");
-        assert_eq!(self.operations[MODEQ.index].name, "%=");
-        assert_eq!(self.operations[BITSHIFTRIGHTEQ.index].name, ">>=");
-        assert_eq!(self.operations[BITSHIFTLEFTEQ.index].name, "<<=");
-        assert_eq!(self.operations[BOOLNOT.index].name, "!");
-        assert_eq!(self.operations[BITNOT.index].name, "~");
-        assert_eq!(self.operations[INC.index].name, "++");
-        assert_eq!(self.operations[DEC.index].name, "--");
     }
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -284,11 +200,13 @@ impl TypeSystem {
         }
     }
 
-    pub fn find_or_make_op(&mut self, name: String) -> Op {
-        match self.ops_by_name.get(&name) {
-            None => self.new_op(name),
-            Some(a) => *a,
-        }
+    pub fn ensure_op(&mut self, operation: Operation) {
+        self.operations
+            .entry(operation)
+            .or_insert_with(|| GenericOperation {
+                operation,
+                signatures: Vec::new(),
+            });
     }
 
     fn new_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -314,7 +232,7 @@ impl TypeSystem {
         self.types[t.index].list_type = Some(list_type);
 
         self.add_signature(
-            EQUAL,
+            Operation::Equal,
             Signature {
                 inputs: vec![list_type, list_type],
                 output: list_type,
@@ -338,52 +256,20 @@ impl TypeSystem {
         self.new_type(name, te_type)
     }
 
-    fn new_op(&mut self, name: String) -> Op {
-        self.operations.push(Operation {
-            name: name.clone(),
-            signatures: Vec::new(),
-        });
-        let rv = Op {
-            index: self.operations.len() - 1,
-        };
-        assert!(self.ops_by_name.insert(name, rv).is_none());
-        rv
-    }
-
-    pub fn add_signature(&mut self, op: Op, sig: Signature) {
-        self.operations[op.index].signatures.push(sig);
+    pub fn add_signature(&mut self, op: Operation, sig: Signature) {
+        self.operations.get_mut(&op).unwrap().signatures.push(sig);
     }
 
     pub fn typename(&self, t: Type) -> String {
         self.types[t.index].name.clone()
     }
 
-    pub fn lookup_binop(&self, binop: BinOpType, lhs: Type, rhs: Type) -> Option<Type> {
+    pub fn lookup_binop(&self, binop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
+        assert!(binop.is_binop());
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
-        let op = match binop {
-            BinOpType::BoolOr => BOOLOR,
-            BinOpType::BoolXor => BOOLXOR,
-            BinOpType::BoolAnd => BOOLAND,
-            BinOpType::BitOr => BITOR,
-            BinOpType::BitXor => BITXOR,
-            BinOpType::BitAnd => BITAND,
-            BinOpType::CmpGE => CMPGE,
-            BinOpType::CmpGT => CMPGT,
-            BinOpType::CmpLE => CMPLE,
-            BinOpType::CmpLT => CMPLT,
-            BinOpType::CmpEq => CMPEQ,
-            BinOpType::CmpNotEq => CMPNOTEQ,
-            BinOpType::BitShiftLeft => BITSHIFTLEFT,
-            BinOpType::BitShiftRight => BITSHIFTRIGHT,
-            BinOpType::Minus => MINUS,
-            BinOpType::Plus => PLUS,
-            BinOpType::Times => TIMES,
-            BinOpType::Mod => MOD,
-            BinOpType::Div => DIV,
-        };
-        for sig in self.operations[op.index].signatures.iter() {
+        for sig in self.operations.get(&binop).unwrap().signatures.iter() {
             if sig.inputs.len() == 2 && sig.inputs[0] == lhs && sig.inputs[1] == rhs {
                 return Some(sig.output);
             }
@@ -391,24 +277,12 @@ impl TypeSystem {
         None
     }
 
-    pub fn lookup_assign(&self, aop: AssignType, lhs: Type, rhs: Type) -> Option<Type> {
+    pub fn lookup_assign(&self, aop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
+        assert!(aop.is_assignop());
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
-        let op = match aop {
-            AssignType::Equal => EQUAL,
-            AssignType::AndEq => ANDEQ,
-            AssignType::XorEq => XOREQ,
-            AssignType::OrEq => OREQ,
-            AssignType::PlusEq => PLUSEQ,
-            AssignType::MinusEq => MINUSEQ,
-            AssignType::TimesEq => TIMESEQ,
-            AssignType::DivEq => DIVEQ,
-            AssignType::ModEq => MODEQ,
-            AssignType::BitShiftRightEq => BITSHIFTRIGHTEQ,
-            AssignType::BitShiftLeftEq => BITSHIFTLEFTEQ,
-        };
-        for sig in self.operations[op.index].signatures.iter() {
+        for sig in self.operations.get(&aop).unwrap().signatures.iter() {
             if sig.inputs.len() == 2 && sig.inputs[0] == lhs && sig.inputs[1] == rhs {
                 return Some(sig.output);
             }
@@ -416,21 +290,13 @@ impl TypeSystem {
         None
     }
 
-    pub fn lookup_preunop(&self, puop: PreUnOpType, t: Type) -> Option<Type> {
+    pub fn lookup_preunop(&self, puop: Operation, t: Type) -> Option<Type> {
+        assert!(puop.is_preunop());
         if t == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
-        let op = match puop {
-            PreUnOpType::BoolNot => BOOLNOT,
-            PreUnOpType::BitNot => BITNOT,
-            PreUnOpType::Minus => MINUS,
-            PreUnOpType::Plus => PLUS,
-            PreUnOpType::Inc => INC,
-            PreUnOpType::Dec => DEC,
-            PreUnOpType::Times => TIMES,
-        };
 
-        for sig in self.operations[op.index].signatures.iter() {
+        for sig in self.operations.get(&puop).unwrap().signatures.iter() {
             if sig.inputs.len() == 1 && sig.inputs[0] == t {
                 return Some(sig.output);
             }
@@ -438,16 +304,12 @@ impl TypeSystem {
         None
     }
 
-    pub fn lookup_postunop(&self, puop: PostUnOpType, t: Type) -> Option<Type> {
+    pub fn lookup_postunop(&self, puop: Operation, t: Type) -> Option<Type> {
+        assert!(puop.is_postunop());
         if t == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
-        let op = match puop {
-            PostUnOpType::Inc => INC,
-            PostUnOpType::Dec => DEC,
-        };
-
-        for sig in self.operations[op.index].signatures.iter() {
+        for sig in self.operations.get(&puop).unwrap().signatures.iter() {
             if sig.inputs.len() == 1 && sig.inputs[0] == t {
                 return Some(sig.output);
             }
