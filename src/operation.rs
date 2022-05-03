@@ -137,8 +137,6 @@ impl Operation {
             Equal => true,
             BoolNot => true,
             BitNot => true,
-            Inc => true,
-            Dec => true,
             _ => false,
         }
     }

@@ -126,26 +126,32 @@ impl TypeChecker {
 
     fn preunop(&mut self, p: &PreUnOp) -> Result<Type, TypeError> {
         let rhstype = self.expr(p.rhs.as_ref())?;
-        self.system
+        let rv = self
+            .system
             .lookup_preunop(p.op, rhstype)
             .ok_or(vec![format!(
                 "{}: cannot apply unary operation `{}` to `{}`.",
                 p.location,
                 p.op,
                 self.system.typename(rhstype)
-            )])
+            )])?;
+        self.code.emit(p.op, vec![rhstype], vec![]);
+        Ok(rv)
     }
 
     fn postunop(&mut self, p: &PostUnOp) -> Result<Type, TypeError> {
         let lhstype = self.expr(p.lhs.as_ref())?;
-        self.system
+        let rv = self
+            .system
             .lookup_postunop(p.op, lhstype)
             .ok_or(vec![format!(
                 "{}: cannot apply unary operation `{}` to `{}`.",
                 p.location,
                 p.op,
                 self.system.typename(lhstype)
-            )])
+            )])?;
+        self.code.emit(p.op, vec![lhstype], vec![]);
+        Ok(rv)
     }
 
     fn refexpr(&mut self, r: &RefExpr) -> Result<Type, TypeError> {
