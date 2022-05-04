@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::operation::Operation;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct TypeSystem {
@@ -86,6 +86,23 @@ pub const CHAR: Type = Type { index: 4 };
 pub const INT: Type = Type { index: 5 };
 pub const FLOAT: Type = Type { index: 6 };
 pub const STR: Type = Type { index: 7 };
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let s = format!("{}", self.index);
+        f.write_str(match self.index {
+            0 => "unit",
+            1 => "UNKNOWN RETURN",
+            2 => "null",
+            3 => "bool",
+            4 => "char",
+            5 => "int",
+            6 => "float",
+            7 => "str",
+            _ => &s,
+        })
+    }
+}
 
 impl TypeSystem {
     pub fn new() -> Self {
@@ -187,7 +204,7 @@ impl TypeSystem {
             BOOL => BOOL,
         );
 
-        make_op!(BitNot, Inc, Dec |
+        make_op!(BitNot, PreInc, PreDec, PostInc, PostDec |
             CHAR => CHAR,
             INT => INT,
         );

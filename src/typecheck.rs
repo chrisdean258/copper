@@ -1,4 +1,5 @@
 use crate::code_emitter::CodeBuilder;
+use crate::code_emitter::Instruction;
 use crate::operation::Operation;
 use crate::parser::ParseTree;
 use crate::parser::*;
@@ -19,12 +20,6 @@ pub struct TypeChecker {
     lambda_args: Vec<Vec<Type>>,
 }
 
-#[allow(dead_code)]
-pub fn typecheck(p: &ParseTree) -> Result<TypeChecker, String> {
-    let mut tc = TypeChecker::new();
-    tc.typecheck(p).map(|_| tc)
-}
-
 type TypeError = Vec<String>;
 
 impl TypeChecker {
@@ -36,11 +31,11 @@ impl TypeChecker {
             type_to_lambda: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
-            code: CodeBuilder::new("temp".to_string()),
+            code: CodeBuilder::new("main".to_string()),
         }
     }
 
-    pub fn typecheck(&mut self, p: &ParseTree) -> Result<(), String> {
+    pub fn typecheck(&mut self, p: &ParseTree) -> Result<Vec<Instruction>, String> {
         let mut results = Vec::new();
         for statement in p.statements.iter() {
             match self.statement(statement) {
@@ -48,10 +43,11 @@ impl TypeChecker {
                 Err(mut s) => results.append(&mut s),
             }
         }
+        self.code.close_function();
         if results.len() > 0 {
             Err(results.join("\n"))
         } else {
-            Ok(())
+            Ok(self.code.code())
         }
     }
 

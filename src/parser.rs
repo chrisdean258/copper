@@ -250,7 +250,6 @@ macro_rules! binop {
             &mut self,
             lexer: &mut Peekable<Lexer<T>>,
             ) -> Result<Expression, String> {
-            use crate::lex::TokenType::*;
             let mut lhs = self.$next(lexer)?;
             loop {
                 let token = match lexer.peek() {
@@ -258,7 +257,7 @@ macro_rules! binop {
                     None => return Ok(lhs),
                 };
                 let optype = match token.token_type {
-                    $( $token => { lexer.next(); Operation::$token}, )+
+                    $( TokenType::$token => { lexer.next(); Operation::$token}, )+
                         _ => return Ok(lhs),
                 };
                 let rhs = self.$next(lexer)?;
@@ -684,16 +683,16 @@ impl ParseTree {
             let optype = match token.token_type {
                 TokenType::BoolNot => Operation::BoolNot,
                 TokenType::BitNot => Operation::BitNot,
-                TokenType::Minus => Operation::Minus,
-                TokenType::Plus => Operation::Plus,
+                TokenType::Minus => Operation::UnaryMinus,
+                TokenType::Plus => Operation::UnaryPlus,
                 TokenType::Times => Operation::Times,
                 TokenType::Inc => {
                     needs_ref = true;
-                    Operation::Inc
+                    Operation::PreInc
                 }
                 TokenType::Dec => {
                     needs_ref = true;
-                    Operation::Dec
+                    Operation::PreDec
                 }
                 _ => return self.parse_post_unary(lexer),
             };
@@ -730,7 +729,7 @@ impl ParseTree {
                         return Err(unexpected(&token));
                     },
                     location: lexer.next().unwrap().location,
-                    op: Operation::Inc,
+                    op: Operation::PostInc,
                 }),
                 TokenType::Dec => Expression::PostUnOp(PostUnOp {
                     lhs: if lhs.is_lval() {
@@ -739,7 +738,7 @@ impl ParseTree {
                         return Err(unexpected(&token));
                     },
                     location: lexer.next().unwrap().location,
-                    op: Operation::Dec,
+                    op: Operation::PostDec,
                 }),
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer)?;

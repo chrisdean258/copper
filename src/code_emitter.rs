@@ -2,6 +2,7 @@
 use crate::operation::Operation;
 use crate::typesystem::*;
 use crate::value::Value;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct CodeBuilder {
@@ -11,12 +12,12 @@ pub struct CodeBuilder {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub name: Option<String>,
+    pub name: String,
     pub code: Vec<Instruction>,
 }
 
 impl Function {
-    fn new(name: Option<String>) -> Self {
+    fn new(name: String) -> Self {
         Self {
             name: name,
             code: Vec::new(),
@@ -24,24 +25,64 @@ impl Function {
     }
 }
 
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{}:\n", self.name))?;
+        for instr in self.code.iter() {
+            f.write_fmt(format_args!("\t{}\n", instr))?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Instruction {
-    op: Operation,
-    types: Vec<Type>,
-    values: Vec<Value>,
+    pub op: Operation,
+    pub types: Vec<Type>,
+    pub values: Vec<Value>,
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{}", self.op))?;
+
+        f.write_fmt(format_args!(
+            " ({})",
+            self.types
+                .iter()
+                .map(|t| format!("{}", t))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ))?;
+
+        f.write_fmt(format_args!(
+            " ({})",
+            self.values
+                .iter()
+                .map(|t| format!("{}", t))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ))
+    }
 }
 
 impl CodeBuilder {
     pub fn new(main_name: String) -> Self {
         Self {
-            active_functions: vec![Function::new(Some(main_name))],
+            active_functions: vec![Function::new(main_name)],
             finished_functions: Vec::new(),
         }
     }
 
-    pub fn open_function(&mut self, name: Option<String>) -> usize {
+    pub fn open_function(&mut self, name: String) -> usize {
         self.active_functions.push(Function::new(name));
         self.active_functions.len() - 1
+    }
+
+    pub fn close_function(&mut self) {
+        assert!(self.active_functions.len() > 0);
+        let f = self.active_functions.pop().unwrap();
+        self.finished_functions.push(f);
     }
 
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, values: Vec<Value>) -> usize {
@@ -50,5 +91,13 @@ impl CodeBuilder {
         let code = &mut self.active_functions.last_mut().unwrap().code;
         code.push(Instruction { op, types, values });
         code.len() - 1
+    }
+
+    pub fn code(&self) -> Vec<Instruction> {
+        let mut rv = Vec::new();
+        for func in self.finished_functions.iter() {
+            rv.append(&mut func.code.clone());
+        }
+        rv
     }
 }

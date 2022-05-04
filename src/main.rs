@@ -64,12 +64,12 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
     let mut tree = parser::parse(lexer)?;
 
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker
+    let code = typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
     if !typecheck_only {
         let mut evaluator = eval::Evaluator::new();
-        evaluator.eval(&mut tree)?;
+        evaluator.eval(code)?;
     }
     Ok(())
 }
@@ -119,17 +119,17 @@ fn repl(typecheck_only: bool) {
                         continue;
                     }
                 };
-                match typechecker.typecheck(&mut tree) {
-                    Ok(_) => (),
+                let code = match typechecker.typecheck(&mut tree) {
+                    Ok(c) => c,
                     Err(s) => {
                         eprintln!("{}", s.to_string());
                         continue;
                     }
-                }
+                };
                 if typecheck_only {
                     continue;
                 }
-                let _val = evaluator.eval(&mut tree);
+                let _val = evaluator.eval(code);
             }
             Err(ReadlineError::Interrupted) => break,
             Err(ReadlineError::Eof) => {
@@ -151,12 +151,12 @@ fn eval_lexer<T: Iterator<Item = String>>(
     let (mut typechecker, mut evaluator) = stdlib_env()?;
 
     let mut tree = parser::parse(lexer)?;
-    typechecker
+    let code = typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
     if !typecheck_only {
-        println!("{:#?}", typechecker.code);
-        evaluator.eval(&mut tree)?;
+        evaluator.eval(code)?;
+        println!("{:?}", evaluator.stack);
     }
     Ok(())
 }
