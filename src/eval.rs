@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::code_emitter::Instruction;
 use crate::operation::Operation;
 use crate::value::Value;
@@ -118,7 +119,7 @@ impl Evaluator {
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
                         (Char(aa), Char(bb)) => Bool(if bb <= aa { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if  bb <= aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb <= aa { 1 } else { 0 }),
                         (Float(aa), Float(bb)) => Bool(if bb <= aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })

@@ -1,6 +1,4 @@
-use crate::code_emitter::CodeBuilder;
-use crate::code_emitter::Instruction;
-use crate::operation::Operation;
+use crate::location::Location;
 use crate::parser::ParseTree;
 use crate::parser::*;
 use crate::typesystem;
@@ -12,12 +10,12 @@ use std::rc::Rc;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
-    pub code: CodeBuilder,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     type_to_func: HashMap<Type, Function>,
     type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
     lambda_args: Vec<Vec<Type>>,
+    location: Option<Location>,
 }
 
 type TypeError = Vec<String>;
@@ -31,23 +29,31 @@ impl TypeChecker {
             type_to_lambda: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
-            code: CodeBuilder::new("main".to_string()),
+            location: None,
         }
     }
 
-    pub fn typecheck(&mut self, p: &ParseTree) -> Result<Vec<Instruction>, String> {
+    fn errmsg(&self, msg: String) -> String {
+        assert!(self.location.is_some());
+        format!("{}: {}", self.location.clone().unwrap(), msg)
+    }
+
+    fn error(&self, msg: String) -> TypeError {
+        vec![self.errmsg(msg)]
+    }
+
+    pub fn typecheck(&mut self, p: &mut ParseTree) -> Result<(), String> {
         let mut results = Vec::new();
-        for statement in p.statements.iter() {
+        for statement in p.statements.iter_mut() {
             match self.statement(statement) {
                 Ok(_) => (),
                 Err(mut s) => results.append(&mut s),
             }
         }
-        self.code.close_function();
         if results.len() > 0 {
             Err(results.join("\n"))
         } else {
-            Ok(self.code.code())
+            Ok(())
         }
     }
 
@@ -76,7 +82,7 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    fn statement(&mut self, s: &Statement) -> Result<Type, TypeError> {
+    fn statement(&mut self, s: &mut Statement) -> Result<Type, TypeError> {
         match s {
             Statement::Expr(e) => self.expr(e),
             Statement::ClassDecl(c) => todo!("{:?}", c),
@@ -88,125 +94,113 @@ impl TypeChecker {
         }
     }
 
-    fn expr(&mut self, e: &Expression) -> Result<Type, TypeError> {
-        match e {
-            Expression::While(w) => self.whileexpr(w),
-            Expression::For(f) => self.forexpr(f),
-            Expression::If(i) => self.ifexpr(i),
-            Expression::CallExpr(c) => self.call(c),
-            Expression::RefExpr(r) => self.refexpr(r),
-            Expression::Immediate(i) => self.immediate(i),
-            Expression::BlockExpr(b) => self.block(b),
-            Expression::BinOp(b) => self.binop(b),
-            Expression::PreUnOp(p) => self.preunop(p),
-            Expression::PostUnOp(p) => self.postunop(p),
-            Expression::AssignExpr(a) => self.assignment(a),
-            Expression::Function(f) => self.function(f),
-            Expression::Lambda(l) => self.lambda(l),
-            Expression::List(l) => self.list(l),
-            Expression::IndexExpr(i) => self.index(i),
-            Expression::DottedLookup(d) => todo!("{:?}", d),
-            Expression::LambdaArg(l) => self.lambdaarg(l),
-        }
-    }
-
-    fn binop(&mut self, b: &BinOp) -> Result<Type, TypeError> {
-        let ltype = self.expr(b.lhs.as_ref())?;
-        let rtype = self.expr(b.rhs.as_ref())?;
-        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or(
-            vec![format!("{}: cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-                    b.location, self.system.typename(ltype), b.op, self.system.typename(rtype))])?;
-        self.code.emit(b.op, vec![ltype, rtype], vec![]);
+    fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
+        self.location = Some(e.location.clone());
+        let rv = match &mut e.etype {
+            ExpressionType::While(w) => self.whileexpr(w),
+            ExpressionType::For(f) => self.forexpr(f),
+            ExpressionType::If(i) => self.ifexpr(i),
+            ExpressionType::CallExpr(c) => self.call(c),
+            ExpressionType::RefExpr(r) => self.refexpr(r),
+            ExpressionType::Immediate(i) => self.immediate(i),
+            ExpressionType::BlockExpr(b) => self.block(b),
+            ExpressionType::BinOp(b) => self.binop(b),
+            ExpressionType::PreUnOp(p) => self.preunop(p),
+            ExpressionType::PostUnOp(p) => self.postunop(p),
+            ExpressionType::AssignExpr(a) => self.assignment(a),
+            ExpressionType::Function(f) => self.function(f),
+            ExpressionType::Lambda(l) => self.lambda(l),
+            ExpressionType::List(l) => self.list(l),
+            ExpressionType::IndexExpr(i) => self.index(i),
+            ExpressionType::DottedLookup(d) => todo!("{:?}", d),
+            ExpressionType::LambdaArg(l) => self.lambdaarg(l),
+        }?;
+        e.derived_type = Some(rv);
         Ok(rv)
     }
 
-    fn preunop(&mut self, p: &PreUnOp) -> Result<Type, TypeError> {
-        let rhstype = self.expr(p.rhs.as_ref())?;
+    fn binop(&mut self, b: &mut BinOp) -> Result<Type, TypeError> {
+        let ltype = self.expr(b.lhs.as_mut())?;
+        let rtype = self.expr(b.rhs.as_mut())?;
+        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or(
+            self.error(format!("Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
+                    self.system.typename(ltype), b.op, self.system.typename(rtype))))?;
+        Ok(rv)
+    }
+
+    fn preunop(&mut self, p: &mut PreUnOp) -> Result<Type, TypeError> {
+        let rhstype = self.expr(p.rhs.as_mut())?;
         let rv = self
             .system
             .lookup_preunop(p.op, rhstype)
-            .ok_or(vec![format!(
-                "{}: cannot apply unary operation `{}` to `{}`.",
-                p.location,
+            .ok_or(self.error(format!(
+                "Cannot apply unary operation `{}` to `{}`.",
                 p.op,
                 self.system.typename(rhstype)
-            )])?;
-        self.code.emit(p.op, vec![rhstype], vec![]);
+            )))?;
         Ok(rv)
     }
 
-    fn postunop(&mut self, p: &PostUnOp) -> Result<Type, TypeError> {
-        let lhstype = self.expr(p.lhs.as_ref())?;
+    fn postunop(&mut self, p: &mut PostUnOp) -> Result<Type, TypeError> {
+        let lhstype = self.expr(p.lhs.as_mut())?;
         let rv = self
             .system
             .lookup_postunop(p.op, lhstype)
-            .ok_or(vec![format!(
-                "{}: cannot apply unary operation `{}` to `{}`.",
-                p.location,
+            .ok_or(self.error(format!(
+                "Cannot apply unary operation `{}` to `{}`.",
                 p.op,
                 self.system.typename(lhstype)
-            )])?;
-        self.code.emit(p.op, vec![lhstype], vec![]);
+            )))?;
         Ok(rv)
     }
 
-    fn refexpr(&mut self, r: &RefExpr) -> Result<Type, TypeError> {
+    fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
         match self.lookup_scope(&r.name) {
             Some(t) => Ok(t),
             None if self.allow_insert.is_some() => {
                 self.insert_scope(&r.name, self.allow_insert.unwrap());
                 Ok(self.allow_insert.unwrap())
             }
-            None => Err(vec![format!(
-                "{}: `{}` no such variable in scope",
-                r.location, r.name
-            )]),
+            None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
         }
     }
 
-    fn assignment(&mut self, a: &AssignExpr) -> Result<Type, TypeError> {
+    fn assignment(&mut self, a: &mut AssignExpr) -> Result<Type, TypeError> {
         if !a.lhs.is_lval() {
-            return Err(vec![format!(
-                "{}: lhs of assignment is not assignable",
-                a.location
-            )]);
+            return Err(self.error("lhs of assignment is not assignable".to_string()));
         }
-        let rhstype = self.expr(a.rhs.as_ref())?;
+        let rhstype = self.expr(a.rhs.as_mut())?;
         if rhstype == UNIT {
-            return Err(vec![format!("{}: cannot assign unit value", a.location)]);
+            return Err(self.error("Cannot assign unit value".to_string()));
         }
         self.allow_insert = Some(rhstype);
-        let lhstype = self.expr(a.lhs.as_ref())?;
+        let lhstype = self.expr(a.lhs.as_mut())?;
         self.allow_insert = None;
         self.system
             .lookup_assign(a.op, lhstype, rhstype)
-            .ok_or(vec![format!(
-                "{}: Cannot assign type `{}` {} `{}`",
-                a.location,
+            .ok_or(self.error(format!(
+                "Cannot assign type `{}` {} `{}`",
                 self.system.typename(lhstype),
                 a.op,
                 self.system.typename(rhstype)
-            )])
+            )))
     }
 
-    fn immediate(&mut self, i: &Immediate) -> Result<Type, TypeError> {
-        let rv = match i.value {
+    fn immediate(&mut self, i: &mut Immediate) -> Result<Type, TypeError> {
+        Ok(match i.value {
             Value::Null => typesystem::NULL,
             Value::Bool(_) => typesystem::BOOL,
             Value::Char(_) => typesystem::CHAR,
             Value::Int(_) => typesystem::INT,
             Value::Float(_) => typesystem::FLOAT,
             // Value::Str(_) => typesystem::STR,
-        };
-        self.code
-            .emit(Operation::Push, vec![rv], vec![i.value.clone()]);
-        Ok(rv)
+        })
     }
 
-    fn block(&mut self, b: &BlockExpr) -> Result<Type, TypeError> {
+    fn block(&mut self, b: &mut BlockExpr) -> Result<Type, TypeError> {
         let mut errors = Vec::new();
         let mut return_type = UNIT;
-        for statement in b.statements.iter() {
+        for statement in b.statements.iter_mut() {
             match self.statement(statement) {
                 Ok(t) => return_type = t,
                 Err(mut e) => errors.append(&mut e),
@@ -220,18 +214,18 @@ impl TypeChecker {
         }
     }
 
-    fn whileexpr(&mut self, w: &While) -> Result<Type, TypeError> {
+    fn whileexpr(&mut self, w: &mut While) -> Result<Type, TypeError> {
         let mut errors = Vec::new();
-        match self.expr(w.condition.as_ref()) {
+        match self.expr(w.condition.as_mut()) {
             Ok(t) if t == BOOL => (),
             Ok(t) => errors.push(format!(
                 "{}: while loop conditionals must be `bool` not `{}`",
-                w.condition.as_ref().location(),
+                w.condition.as_mut().location,
                 self.system.typename(t)
             )),
             Err(mut s) => errors.append(&mut s),
         }
-        match self.expr(w.body.as_ref()) {
+        match self.expr(w.body.as_mut()) {
             Ok(_) => (), // This is currently discarded but would be used with `break`
             Err(mut s) => errors.append(&mut s),
         }
@@ -243,36 +237,36 @@ impl TypeChecker {
         }
     }
 
-    fn forexpr(&mut self, _w: &For) -> Result<Type, TypeError> {
+    fn forexpr(&mut self, _w: &mut For) -> Result<Type, TypeError> {
         todo!("Havent worked out the details of iteration yet")
     }
 
-    fn ifexpr(&mut self, i: &If) -> Result<Type, TypeError> {
+    fn ifexpr(&mut self, i: &mut If) -> Result<Type, TypeError> {
         self.ifexpr_int(i, false)
     }
 
-    fn ifexpr_int(&mut self, i: &If, is_and_if: bool) -> Result<Type, TypeError> {
+    fn ifexpr_int(&mut self, i: &mut If, is_and_if: bool) -> Result<Type, TypeError> {
         let mut errors: TypeError = Vec::new();
         let mut rv = UNIT;
         let mut return_unit = false;
-        match self.expr(i.condition.as_ref()) {
+        match self.expr(i.condition.as_mut()) {
             Ok(t) if t == BOOL => (),
             Ok(t) if t == UNKNOWN_RETURN => (),
             Ok(t) => errors.push(format!(
                 "{}: if conditionals must be `bool` not `{}`",
-                i.condition.as_ref().location(),
+                i.condition.as_mut().location,
                 self.system.typename(t)
             )),
             Err(mut s) => errors.append(&mut s),
         }
 
-        match self.expr(i.body.as_ref()) {
+        match self.expr(i.body.as_mut()) {
             Ok(t) => rv = t,
             Err(mut s) => errors.append(&mut s),
         }
 
-        for body in i.and_bodies.iter() {
-            match self.ifexpr(body) {
+        for body in i.and_bodies.iter_mut() {
+            match self.ifexpr(&mut body.0) {
                 Ok(t) if t == rv => (),
                 Ok(t) if t == UNKNOWN_RETURN => (),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
@@ -281,8 +275,8 @@ impl TypeChecker {
             }
         }
 
-        match &i.else_body {
-            Some(b) => match self.expr(b.as_ref()) {
+        match &mut i.else_body {
+            Some(b) => match self.expr(b.as_mut()) {
                 Ok(t) if t == rv => (),
                 Ok(t) if t == UNKNOWN_RETURN => (),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
@@ -301,10 +295,10 @@ impl TypeChecker {
         }
     }
 
-    fn list(&mut self, l: &List) -> Result<Type, TypeError> {
+    fn list(&mut self, l: &mut List) -> Result<Type, TypeError> {
         let mut errors: TypeError = Vec::new();
         let mut interior_type = UNIT;
-        for expr in l.exprs.iter() {
+        for expr in l.exprs.iter_mut() {
             match self.expr(expr) {
                 Ok(t) if (interior_type == UNIT) ^ (t == interior_type) => {
                     interior_type = t;
@@ -312,7 +306,7 @@ impl TypeChecker {
                 Ok(t) => {
                     errors.push(format!(
                         "{}: Type mismatch in list item. Expected `{}` found `{}`",
-                        expr.location(),
+                        expr.location,
                         self.system.typename(interior_type),
                         self.system.typename(t)
                     ));
@@ -328,37 +322,35 @@ impl TypeChecker {
         }
     }
 
-    fn index(&mut self, i: &IndexExpr) -> Result<Type, TypeError> {
-        let obj_type = self.expr(i.obj.as_ref())?;
+    fn index(&mut self, i: &mut IndexExpr) -> Result<Type, TypeError> {
+        let obj_type = self.expr(i.obj.as_mut())?;
         // in the future there may be objects that are indexable so there will be an addition check
         let return_type = match self.system.underlying_type(obj_type) {
             None => {
-                return Err(vec![format!(
-                    "{}: Cannot index into type `{}`",
-                    i.location,
+                return Err(self.error(format!(
+                    "Cannot index into type `{}`",
                     self.system.typename(obj_type)
-                )])
+                )))
             }
             Some(t) => t,
         };
         if i.args.len() != 1 {
-            return Err(vec![format!(
-                "{}: Index expression requires 1 argument of type `int`",
-                i.location,
-            )]);
+            return Err(self.error(format!(
+                "Index expression requires 1 argument of type `int`",
+            )));
         }
-        let idx_type = self.expr(&i.args[0])?;
+        let idx_type = self.expr(&mut i.args[0])?;
         if idx_type != INT {
             return Err(vec![format!(
                 "{}: Expected `int` found `{}`",
-                i.args[0].location(),
+                i.args[0].location,
                 self.system.typename(idx_type)
             )]);
         }
         Ok(return_type)
     }
 
-    fn function(&mut self, f: &Function) -> Result<Type, TypeError> {
+    fn function(&mut self, f: &mut Function) -> Result<Type, TypeError> {
         let typ = match f.name.clone() {
             Some(s) => {
                 let rv = self.system.function_type(s.clone());
@@ -373,32 +365,30 @@ impl TypeChecker {
         Ok(typ)
     }
 
-    fn lambda(&mut self, l: &Lambda) -> Result<Type, TypeError> {
+    fn lambda(&mut self, l: &mut Lambda) -> Result<Type, TypeError> {
         let typ = self.system.function_type("<lambda>".to_string());
         self.type_to_lambda.insert(typ, l.clone());
         Ok(typ)
     }
 
-    fn lambdaarg(&mut self, l: &LambdaArg) -> Result<Type, TypeError> {
+    fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
         if self.lambda_args.len() == 0 {
             panic!("Trying to derive type of lambda arg in non lambda. This is a bug");
         }
         Ok(self.lambda_args.last().unwrap()[l.number])
     }
 
-    fn call(&mut self, c: &CallExpr) -> Result<Type, TypeError> {
+    fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
         // TODO: maybe used RC Refcell to store functions in map to prevent copying
         // Although this will be tricky to pull off with recursion and ownership
-        let functype = self.expr(c.function.as_ref())?;
+        let functype = self.expr(c.function.as_mut())?;
+        let funcloc = c.function.location.clone();
         if !self.system.is_function(functype) {
-            return Err(vec![format!(
-                "{}: trying to call value that is not callable",
-                c.location
-            )]);
+            return Err(self.error("Trying to call value that is not callable".to_string()));
         }
         let mut errs: TypeError = Vec::new();
         let mut args = Vec::new();
-        for arg in c.args.iter() {
+        for arg in c.args.iter_mut() {
             match self.expr(arg) {
                 Ok(t) => args.push(t),
                 Err(mut s) => errs.append(&mut s),
@@ -413,7 +403,7 @@ impl TypeChecker {
             return Ok(t);
         }
 
-        let function: Function = self.type_to_func[&functype].clone();
+        let mut function: Function = self.type_to_func[&functype].clone();
         let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
@@ -424,40 +414,36 @@ impl TypeChecker {
 
         self.openscope();
         if args.len() != function.argnames.len() {
-            return Err(vec![format!(
-                "{}: trying to call function with {} args. Expected {}",
-                c.location,
+            return Err(self.error(format!(
+                "Trying to call function with {} args. Expected {}",
                 args.len(),
                 function.argnames.len()
-            )]);
+            )));
         }
 
         for (typ, name) in args.iter().zip(function.argnames.iter()) {
             self.insert_scope(name, *typ);
         }
 
-        let rv = match self.expr(function.body.as_ref()) {
+        let rv = match self.expr(function.body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", function.location),
-                    format!("{}: Originating with this function call", c.location),
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
+                    self.errmsg("Originating with this function call".to_string())
                 ]);
             }
             Ok(t) => t,
             Err(mut s) => {
-                s.push(format!(
-                    "{}: Originating with this function call",
-                    c.location
-                ));
+                s.push(self.errmsg("Originating with this function call".to_string()));
                 return Err(s);
             }
         };
         self.system.patch_signature_return(functype, sig_handle, rv);
-        let rv = match self.expr(function.body.as_ref()) {
+        let rv = match self.expr(function.body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", function.location),
-                    format!("{}: Originating with this function call", c.location),
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
+                    self.errmsg("Originating with this function call".to_string())
                 ]);
             }
             Ok(t) if t == rv => t,
@@ -465,16 +451,13 @@ impl TypeChecker {
                 return Err(vec![
                     format!(
                         "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
-                        function.location, self.system.typename(t), self.system.typename(rv)
+                        funcloc, self.system.typename(t), self.system.typename(rv)
                     ),
-                    format!("{}: Originating with this function call", c.location),
+                    self.errmsg("Originating with this function call".to_string())
                 ]);
             }
             Err(mut s) => {
-                s.push(format!(
-                    "{}: Originating with this function call",
-                    c.location
-                ));
+                s.push(self.errmsg("Originating with this function call".to_string()));
                 return Err(s);
             }
         };

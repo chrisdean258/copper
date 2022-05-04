@@ -64,19 +64,19 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
     let mut tree = parser::parse(lexer)?;
 
     let mut typechecker = typecheck::TypeChecker::new();
-    let code = typechecker
+    typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
     if !typecheck_only {
-        let mut evaluator = eval::Evaluator::new();
-        evaluator.eval(code)?;
+        let mut _evaluator = eval::Evaluator::new();
+        // _evaluator.eval(code)?;
     }
     Ok(())
 }
 
 fn stdlib_env() -> Result<(typecheck::TypeChecker, eval::Evaluator), String> {
     let typechecker = typecheck::TypeChecker::new();
-    let evaluator = eval::Evaluator::new();
+    let _evaluator = eval::Evaluator::new();
     /* let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
@@ -84,20 +84,20 @@ fn stdlib_env() -> Result<(typecheck::TypeChecker, eval::Evaluator), String> {
     typechecker
         .typecheck(&mut stdlib_tree)
         .map_err(|e| e.to_string())?;
-    evaluator.eval(&mut stdlib_tree)?; */
-    Ok((typechecker, evaluator))
+    _evaluator.eval(&mut stdlib_tree)?; */
+    Ok((typechecker, _evaluator))
 }
 
 fn repl(typecheck_only: bool) {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
     let mut typechecker;
-    let mut evaluator;
+    let _evaluator;
 
     match stdlib_env() {
         Ok((t, e)) => {
             typechecker = t;
-            evaluator = e;
+            _evaluator = e;
         }
         Err(e) => {
             eprintln!("{}", e);
@@ -119,8 +119,8 @@ fn repl(typecheck_only: bool) {
                         continue;
                     }
                 };
-                let code = match typechecker.typecheck(&mut tree) {
-                    Ok(c) => c,
+                match typechecker.typecheck(&mut tree) {
+                    Ok(()) => (),
                     Err(s) => {
                         eprintln!("{}", s.to_string());
                         continue;
@@ -129,7 +129,7 @@ fn repl(typecheck_only: bool) {
                 if typecheck_only {
                     continue;
                 }
-                let _val = evaluator.eval(code);
+                // let _val = _evaluator.eval(code);
             }
             Err(ReadlineError::Interrupted) => break,
             Err(ReadlineError::Eof) => {
@@ -148,15 +148,15 @@ fn eval_lexer<T: Iterator<Item = String>>(
     lexer: lex::Lexer<T>,
     typecheck_only: bool,
 ) -> Result<(), String> {
-    let (mut typechecker, mut evaluator) = stdlib_env()?;
+    let (mut typechecker, mut _evaluator) = stdlib_env()?;
 
     let mut tree = parser::parse(lexer)?;
-    let code = typechecker
+    typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
     if !typecheck_only {
-        evaluator.eval(code)?;
-        println!("{:?}", evaluator.stack);
+        // _evaluator.eval(code)?;
+        println!("{:?}", _evaluator.stack);
     }
     Ok(())
 }
