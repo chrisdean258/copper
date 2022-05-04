@@ -38,7 +38,7 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Bool(aa), Bool(bb)) => Bool(aa | bb),
+                        (Bool(aa), Bool(bb)) => Bool(bb | aa),
                         _ => unreachable!(),
                     })
                 }
@@ -47,7 +47,7 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Bool(aa), Bool(bb)) => Bool(aa ^ bb),
+                        (Bool(aa), Bool(bb)) => Bool(bb ^ aa),
                         _ => unreachable!(),
                     })
                 }
@@ -56,7 +56,7 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Bool(aa), Bool(bb)) => Bool(aa & bb),
+                        (Bool(aa), Bool(bb)) => Bool(bb & aa),
                         _ => unreachable!(),
                     })
                 }
@@ -65,8 +65,8 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa | bb),
-                        (Int(aa), Int(bb)) => Int(aa | bb),
+                        (Char(aa), Char(bb)) => Char(bb | aa),
+                        (Int(aa), Int(bb)) => Int(bb | aa),
                         _ => unreachable!(),
                     })
                 }
@@ -75,8 +75,8 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa ^ bb),
-                        (Int(aa), Int(bb)) => Int(aa ^ bb),
+                        (Char(aa), Char(bb)) => Char(bb ^ aa),
+                        (Int(aa), Int(bb)) => Int(bb ^ aa),
                         _ => unreachable!(),
                     })
                 }
@@ -85,8 +85,8 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa & bb),
-                        (Int(aa), Int(bb)) => Int(aa & bb),
+                        (Char(aa), Char(bb)) => Char(bb & aa),
+                        (Int(aa), Int(bb)) => Int(bb & aa),
                         _ => unreachable!(),
                     })
                 }
@@ -95,9 +95,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa >= bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa >= bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa >= bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb >= aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb >= aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb >= aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -106,9 +106,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa > bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa > bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa > bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb > aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb > aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb > aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -117,9 +117,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa <= bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa <= bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa <= bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb <= aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if  bb <= aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb <= aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -128,9 +128,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa < bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa < bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa < bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb < aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb < aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb < aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -139,9 +139,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa == bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa == bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa == bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb == aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb == aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb == aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -150,9 +150,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Bool(if aa != bb { 1 } else { 0 }),
-                        (Int(aa), Int(bb)) => Bool(if aa != bb { 1 } else { 0 }),
-                        (Float(aa), Float(bb)) => Bool(if aa != bb { 1 } else { 0 }),
+                        (Char(aa), Char(bb)) => Bool(if bb != aa { 1 } else { 0 }),
+                        (Int(aa), Int(bb)) => Bool(if bb != aa { 1 } else { 0 }),
+                        (Float(aa), Float(bb)) => Bool(if bb != aa { 1 } else { 0 }),
                         _ => unreachable!(),
                     })
                 }
@@ -161,9 +161,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa << bb),
-                        (Char(aa), Int(bb)) => Char(aa << bb),
-                        (Int(aa), Int(bb)) => Int(aa << bb),
+                        (Char(aa), Char(bb)) => Char(bb << aa),
+                        (Int(aa), Char(bb)) => Char(bb << aa),
+                        (Int(aa), Int(bb)) => Int(bb << aa),
                         _ => unreachable!(),
                     })
                 }
@@ -172,9 +172,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa >> bb),
-                        (Char(aa), Int(bb)) => Char(aa >> bb),
-                        (Int(aa), Int(bb)) => Int(aa >> bb),
+                        (Char(aa), Char(bb)) => Char(bb >> aa),
+                        (Int(aa), Char(bb)) => Char(bb >> aa as u8),
+                        (Int(aa), Int(bb)) => Int(bb >> aa),
                         _ => unreachable!(),
                     })
                 }
@@ -183,9 +183,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa - bb),
-                        (Int(aa), Int(bb)) => Int(aa - bb),
-                        (Float(aa), Float(bb)) => Float(aa - bb),
+                        (Char(aa), Char(bb)) => Char(bb - aa),
+                        (Int(aa), Int(bb)) => Int(bb - aa),
+                        (Float(aa), Float(bb)) => Float(bb - aa),
                         _ => unreachable!(),
                     })
                 }
@@ -194,9 +194,9 @@ impl Evaluator {
                     let a = self.stack.pop().unwrap();
                     let b = self.stack.pop().unwrap();
                     self.stack.push(match (a, b) {
-                        (Char(aa), Char(bb)) => Char(aa + bb),
-                        (Int(aa), Int(bb)) => Int(aa + bb),
-                        (Float(aa), Float(bb)) => Float(aa + bb),
+                        (Char(aa), Char(bb)) => Char(bb + aa),
+                        (Int(aa), Int(bb)) => Int(bb + aa),
+                        (Float(aa), Float(bb)) => Float(bb + aa),
                         _ => unreachable!(),
                     })
                 }

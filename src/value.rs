@@ -14,7 +14,7 @@ impl Display for Value {
         match self {
             Value::Null => f.write_str("null"),
             Value::Bool(b) => f.write_str(if *b == 0 { "false" } else { "true" }),
-            Value::Char(c) => f.write_fmt(format_args!("{}", *c as char)),
+            Value::Char(c) => f.write_fmt(format_args!("'{}'", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("{}", i)),
             Value::Float(fl) => f.write_fmt(format_args!("{}", fl)),
         }
