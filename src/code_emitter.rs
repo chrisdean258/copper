@@ -67,9 +67,9 @@ impl Display for Instruction {
 }
 
 impl CodeBuilder {
-    pub fn new(main_name: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            active_functions: vec![Function::new(main_name)],
+            active_functions: Vec::new(),
             finished_functions: Vec::new(),
         }
     }

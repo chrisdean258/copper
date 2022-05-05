@@ -1,4 +1,5 @@
 mod code_emitter;
+mod compiler;
 mod eval;
 mod lex;
 mod location;
@@ -7,7 +8,6 @@ mod parser;
 mod typecheck;
 mod typesystem;
 mod value;
-mod vm;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::env;
@@ -74,9 +74,10 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn stdlib_env() -> Result<(typecheck::TypeChecker, eval::Evaluator), String> {
+fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Evaluator), String> {
     let typechecker = typecheck::TypeChecker::new();
-    let _evaluator = eval::Evaluator::new();
+    let evaluator = eval::Evaluator::new();
+    let compiler = compiler::Compiler::new();
     /* let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
@@ -85,18 +86,20 @@ fn stdlib_env() -> Result<(typecheck::TypeChecker, eval::Evaluator), String> {
         .typecheck(&mut stdlib_tree)
         .map_err(|e| e.to_string())?;
     _evaluator.eval(&mut stdlib_tree)?; */
-    Ok((typechecker, _evaluator))
+    Ok((typechecker, compiler, evaluator))
 }
 
 fn repl(typecheck_only: bool) {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
     let mut typechecker;
+    let _compiler;
     let _evaluator;
 
     match stdlib_env() {
-        Ok((t, e)) => {
+        Ok((t, c, e)) => {
             typechecker = t;
+            _compiler = c;
             _evaluator = e;
         }
         Err(e) => {
@@ -148,16 +151,21 @@ fn eval_lexer<T: Iterator<Item = String>>(
     lexer: lex::Lexer<T>,
     typecheck_only: bool,
 ) -> Result<(), String> {
-    let (mut typechecker, mut _evaluator) = stdlib_env()?;
+    let (mut typechecker, mut compiler, mut evaluator) = stdlib_env()?;
 
     let mut tree = parser::parse(lexer)?;
     typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
-    if !typecheck_only {
-        // _evaluator.eval(code)?;
-        println!("{:?}", _evaluator.stack);
+    if typecheck_only {
+        return Ok(());
     }
+    let code = compiler.compile("main".to_string(), &tree);
+    // for instruction in code.iter() {
+        // println!("{}", instruction);
+    // }
+    evaluator.eval(code)?;
+    // println!("{:?}", evaluator.stack);
     Ok(())
 }
 

@@ -54,6 +54,11 @@ impl Expression {
             _ => false,
         }
     }
+
+    pub fn typ(&self) -> Type {
+        assert!(self.derived_type.is_some());
+        self.derived_type.unwrap()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -913,12 +918,12 @@ impl ParseTree {
                     if *a + 1 > *self.max_arg.last().unwrap() {
                         *self.max_arg.last_mut().unwrap() = *a + 1;
                     }
-                    Expression {
+                    lexer.next();
+                    Ok(Expression {
                         derived_type: None,
                         location: token.location.clone(),
                         etype: ExpressionType::LambdaArg(LambdaArg { number: *a }),
-                    };
-                    todo!("Implement Lambda arg not arg refence expr")
+                    })
                 }
                 TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression {
