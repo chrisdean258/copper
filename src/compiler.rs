@@ -105,8 +105,8 @@ impl Compiler {
 
     fn refexpr(&mut self, r: &RefExpr) {
         let offset = r.place.unwrap();
-        self.code.push(Value::PtrOffset(offset));
-        self.code.emit(Operation::RefFrame, vec![], vec![]);
+        self.code
+            .emit(Operation::RefFrame, vec![], vec![Value::PtrOffset(offset)]);
     }
 
     fn assignment(&mut self, a: &AssignExpr) {

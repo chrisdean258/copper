@@ -162,10 +162,10 @@ fn eval_lexer<T: Iterator<Item = String>>(
     }
     let code = compiler.compile("main".to_string(), &tree);
     // for instruction in code.iter() {
-        // println!("{}", instruction);
+    // println!("{}", instruction);
     // }
     evaluator.eval(code)?;
-    // println!("{:?}", evaluator.stack);
+    println!("{:?}", evaluator.stack);
     Ok(())
 }
 

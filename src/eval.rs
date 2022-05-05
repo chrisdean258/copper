@@ -67,9 +67,8 @@ impl Evaluator {
                     }
                 }
                 Operation::RefFrame => {
-                    assert!(self.stack.len() >= 1);
-                    if let Value::PtrOffset(a) = self.stack.pop().unwrap() {
-                        self.stack.push(Value::Ptr(self.bp + a))
+                    if let Value::PtrOffset(o) = self.code[self.ip].values[0] {
+                        self.stack.push(Value::Ptr(self.bp + o))
                     } else {
                         unreachable!()
                     }
