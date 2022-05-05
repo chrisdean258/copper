@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
-    scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    scopes: Vec<Rc<RefCell<HashMap<String, (Type, usize)>>>>,
     type_to_func: HashMap<Type, Function>,
     type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
@@ -63,10 +63,10 @@ impl TypeChecker {
         }
     }
 
-    fn lookup_scope(&mut self, name: &str) -> Option<Type> {
+    fn lookup_scope(&mut self, name: &str) -> Option<(Type, usize)> {
         for scope in self.scopes.iter().rev() {
             match scope.borrow().get(name) {
-                Some(t) => return Some(*t),
+                Some((t, p)) => return Some((*t, *p)),
                 None => (),
             }
         }
@@ -75,8 +75,9 @@ impl TypeChecker {
 
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
         let mut scope = self.scopes.last().unwrap().borrow_mut();
-        scope.insert(String::from(name), t);
-        scope.len() - 1
+        let place = scope.len();
+        scope.insert(String::from(name), (t, place));
+        place
     }
 
     fn openscope(&mut self) {
@@ -164,7 +165,10 @@ impl TypeChecker {
 
     fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
         match self.lookup_scope(&r.name) {
-            Some(t) => Ok(t),
+            Some((t, p)) => {
+                r.place = Some(p);
+                Ok(t)
+            }
             None if self.allow_insert.is_some() => {
                 let typ = self.allow_insert.unwrap();
                 let spot = self.insert_scope(&r.name, typ);

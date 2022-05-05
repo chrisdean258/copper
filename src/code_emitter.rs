@@ -101,6 +101,10 @@ impl CodeBuilder {
         rv
     }
 
+    pub fn local_ref(&mut self, number: usize) -> usize {
+        self.emit(Operation::RefFrame, vec![], vec![Value::PtrOffset(number)])
+    }
+
     pub fn reserve(&mut self, size: usize) -> usize {
         self.emit(Operation::Reserve, vec![], vec![Value::PtrOffset(size)])
     }

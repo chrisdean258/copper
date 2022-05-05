@@ -47,13 +47,15 @@ impl Evaluator {
                 }
                 Operation::Store => {
                     assert!(self.stack.len() >= 2);
+                    println!("{:?}", self.stack);
                     let value = self.stack.pop().unwrap();
-                    if let Value::Ptr(addr) = self.stack.pop().unwrap() {
+                    let maybe_addr = self.stack.pop().unwrap();
+                    if let Value::Ptr(addr) = maybe_addr {
                         // println!("Storing {} => {}", value, addr);
                         self.stack[addr] = value;
                         self.stack.push(value);
                     } else {
-                        unreachable!()
+                        unreachable!("addr was {}", maybe_addr)
                     }
                 }
                 Operation::Reserve => {

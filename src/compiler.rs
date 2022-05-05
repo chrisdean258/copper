@@ -2,12 +2,13 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::value::Value;
+// use crate::value::Value;
 use std::collections::HashMap;
 
 pub struct Compiler {
     code: CodeBuilder,
     scopes: Vec<HashMap<String, usize>>,
+    need_ref: bool,
 }
 
 impl Compiler {
@@ -15,6 +16,7 @@ impl Compiler {
         Self {
             code: CodeBuilder::new(),
             scopes: vec![HashMap::new()],
+            need_ref: false,
         }
     }
 
@@ -105,12 +107,16 @@ impl Compiler {
 
     fn refexpr(&mut self, r: &RefExpr) {
         let offset = r.place.unwrap();
-        self.code
-            .emit(Operation::RefFrame, vec![], vec![Value::PtrOffset(offset)]);
+        self.code.local_ref(offset);
+        if !self.need_ref {
+            self.code.load();
+        }
     }
 
     fn assignment(&mut self, a: &AssignExpr) {
+        self.need_ref = true;
         self.expr(a.lhs.as_ref());
+        self.need_ref = false;
         if a.op != Operation::Equal {
             self.code.dup();
             self.code.load();
