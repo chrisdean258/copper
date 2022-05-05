@@ -11,6 +11,7 @@ pub struct Evaluator {
     code: Vec<Instruction>,
     pub stack: Vec<Value>,
     ip: usize,
+    bp: usize,
 }
 
 impl Evaluator {
@@ -19,6 +20,7 @@ impl Evaluator {
             code: Vec::new(),
             stack: Vec::new(),
             ip: 0,
+            bp: 0,
         }
     }
 
@@ -27,12 +29,50 @@ impl Evaluator {
         self.ip = self.code.len();
         self.code.append(&mut code);
         while self.ip < self.code.len() {
+            // println!("stack: {:?}", self.stack);
             match self.code[self.ip].op {
                 Operation::Nop => (),
                 Operation::Crash => return Err("Crash Operation".to_string()),
                 Operation::Push => self.stack.push(self.code[self.ip].values[0]),
                 Operation::Pop => {
                     self.stack.pop();
+                }
+                Operation::Load => {
+                    assert!(self.stack.len() >= 1);
+                    if let Value::Ptr(addr) = self.stack.pop().unwrap() {
+                        self.stack.push(self.stack[addr].clone());
+                    } else {
+                        unreachable!()
+                    }
+                }
+                Operation::Store => {
+                    assert!(self.stack.len() >= 2);
+                    let value = self.stack.pop().unwrap();
+                    if let Value::Ptr(addr) = self.stack.pop().unwrap() {
+                        // println!("Storing {} => {}", value, addr);
+                        self.stack[addr] = value;
+                        self.stack.push(value);
+                    } else {
+                        unreachable!()
+                    }
+                }
+                Operation::Reserve => {
+                    if let Value::PtrOffset(l) = self.code[self.ip].values[0] {
+                        // println!("Reserving {}", l);
+                        for _ in 0..l {
+                            self.stack.push(Value::Null);
+                        }
+                    } else {
+                        unreachable!()
+                    }
+                }
+                Operation::RefFrame => {
+                    assert!(self.stack.len() >= 1);
+                    if let Value::PtrOffset(a) = self.stack.pop().unwrap() {
+                        self.stack.push(Value::Ptr(self.bp + a))
+                    } else {
+                        unreachable!()
+                    }
                 }
                 Operation::BoolOr => {
                     assert!(self.stack.len() >= 2);
@@ -204,17 +244,13 @@ impl Evaluator {
                 Operation::Times => todo!(),
                 Operation::Mod => todo!(),
                 Operation::Div => todo!(),
-                Operation::Equal => todo!(),
-                Operation::AndEq => todo!(),
-                Operation::BitShiftRightEq => todo!(),
-                Operation::BitShiftLeftEq => todo!(),
                 Operation::BoolNot => todo!(),
                 Operation::BitNot => todo!(),
                 Operation::PreInc => todo!(),
                 Operation::PreDec => todo!(),
                 Operation::PostInc => todo!(),
                 Operation::PostDec => todo!(),
-                _ => unreachable!(),
+                t => unreachable!("{}", t),
             }
             self.ip += 1;
         }

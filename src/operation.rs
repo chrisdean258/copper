@@ -7,6 +7,11 @@ pub enum Operation {
     Crash,
     Push,
     Pop,
+    Store,
+    Load,
+    Reserve,
+    Dup,
+    RefFrame,
     BoolOr,
     BoolXor,
     BoolAnd,
@@ -90,6 +95,22 @@ impl Operation {
         }
     }
 
+    pub fn underlying_binop(&self) -> Operation {
+        match self {
+            Operation::AndEq => Operation::BitAnd,
+            Operation::XorEq => Operation::BitXor,
+            Operation::OrEq => Operation::BitOr,
+            Operation::PlusEq => Operation::Plus,
+            Operation::MinusEq => Operation::Minus,
+            Operation::TimesEq => Operation::Times,
+            Operation::DivEq => Operation::Div,
+            Operation::ModEq => Operation::Mod,
+            Operation::BitShiftRightEq => Operation::BitShiftRight,
+            Operation::BitShiftLeftEq => Operation::BitShiftLeft,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn is_preunop(&self) -> bool {
         match self {
             Operation::BoolNot => true,
@@ -114,6 +135,11 @@ impl Operation {
             Operation::Crash => true,
             Operation::Push => true,
             Operation::Pop => true,
+            Operation::Dup => true,
+            Operation::Store => true,
+            Operation::Load => true,
+            Operation::Reserve => true,
+            Operation::RefFrame => true,
             Operation::BoolOr => true,
             Operation::BoolXor => true,
             Operation::BoolAnd => true,
@@ -148,6 +174,11 @@ impl Display for Operation {
             Operation::Crash => "CRASH",
             Operation::Push => "push",
             Operation::Pop => "pop",
+            Operation::Dup => "dup",
+            Operation::Load => "load",
+            Operation::Store => "store",
+            Operation::Reserve => "reserve",
+            Operation::RefFrame => "refframe",
             Operation::BoolOr => "||",
             Operation::BoolXor => "^^",
             Operation::BoolAnd => "&&",

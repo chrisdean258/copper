@@ -7,6 +7,8 @@ pub enum Value {
     Char(u8),
     Int(i64),
     Float(f64),
+    Ptr(usize),
+    PtrOffset(usize),
 }
 
 impl Display for Value {
@@ -17,6 +19,8 @@ impl Display for Value {
             Value::Char(c) => f.write_fmt(format_args!("'{}'", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("{}", i)),
             Value::Float(fl) => f.write_fmt(format_args!("{}", fl)),
+            Value::Ptr(p) => f.write_fmt(format_args!("0x{:x}", p)),
+            Value::PtrOffset(o) => f.write_fmt(format_args!("+0x{:x}", o)),
         }
     }
 }

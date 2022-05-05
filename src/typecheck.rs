@@ -55,6 +55,7 @@ impl TypeChecker {
             }
         }
         self.globals += self.scopes[0].borrow().len();
+        p.globals = Some(self.scopes[0].borrow().len());
         if results.len() > 0 {
             Err(results.join("\n"))
         } else {
@@ -202,6 +203,7 @@ impl TypeChecker {
             Value::Char(_) => typesystem::CHAR,
             Value::Int(_) => typesystem::INT,
             Value::Float(_) => typesystem::FLOAT,
+            _ => unreachable!(),
             // Value::Str(_) => typesystem::STR,
         })
     }
