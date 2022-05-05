@@ -66,6 +66,7 @@ pub struct ParseTree {
     pub statements: Vec<Statement>,
     max_arg: Vec<usize>,
     loop_count: usize,
+    pub globals: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +126,7 @@ pub struct IndexExpr {
 #[derive(Debug, Clone)]
 pub struct RefExpr {
     pub name: String,
+    pub place: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +177,7 @@ pub struct Function {
     pub body: Box<Expression>,
     pub name: Option<String>,
     pub default_args: Vec<Expression>,
+    pub locals: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +284,7 @@ impl ParseTree {
             statements: Vec::new(),
             max_arg: Vec::new(),
             loop_count: 0,
+            globals: None,
         }
     }
 
@@ -843,6 +847,7 @@ impl ParseTree {
                 body: Box::new(body),
                 name: name,
                 default_args,
+                locals: None,
             }),
         })
     }
@@ -912,7 +917,10 @@ impl ParseTree {
                 TokenType::Identifier(i) => Ok(Expression {
                     derived_type: None,
                     location: lexer.next().unwrap().location.clone(),
-                    etype: ExpressionType::RefExpr(RefExpr { name: i.clone() }),
+                    etype: ExpressionType::RefExpr(RefExpr {
+                        name: i.clone(),
+                        place: None,
+                    }),
                 }),
                 TokenType::LambdaArg(a) if self.max_arg.len() > 0 => {
                     if *a + 1 > *self.max_arg.last().unwrap() {

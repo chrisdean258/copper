@@ -16,21 +16,25 @@ pub struct TypeChecker {
     allow_insert: Option<Type>,
     lambda_args: Vec<Vec<Type>>,
     location: Option<Location>,
+    globals: usize,
 }
 
 type TypeError = Vec<String>;
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self {
+        let mut rv = Self {
             system: TypeSystem::new(),
-            scopes: vec![Rc::new(RefCell::new(HashMap::new()))],
+            scopes: Vec::new(),
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
             location: None,
-        }
+            globals: 0,
+        };
+        rv.openscope();
+        rv
     }
 
     fn errmsg(&self, msg: String) -> String {
@@ -50,6 +54,7 @@ impl TypeChecker {
                 Err(mut s) => results.append(&mut s),
             }
         }
+        self.globals += self.scopes[0].borrow().len();
         if results.len() > 0 {
             Err(results.join("\n"))
         } else {
@@ -67,19 +72,21 @@ impl TypeChecker {
         None
     }
 
-    fn insert_scope(&mut self, name: &str, t: Type) {
-        (*self.scopes.last().unwrap())
-            .borrow_mut()
-            .insert(String::from(name), t);
+    fn insert_scope(&mut self, name: &str, t: Type) -> usize {
+        let mut scope = self.scopes.last().unwrap().borrow_mut();
+        scope.insert(String::from(name), t);
+        scope.len() - 1
     }
 
     fn openscope(&mut self) {
         self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
     }
 
-    fn closescope(&mut self) {
+    fn closescope(&mut self) -> usize {
         assert!(self.scopes.len() > 0);
+        let rv = self.scopes.last().unwrap().borrow().len();
         self.scopes.pop();
+        rv
     }
 
     fn statement(&mut self, s: &mut Statement) -> Result<Type, TypeError> {
@@ -158,8 +165,10 @@ impl TypeChecker {
         match self.lookup_scope(&r.name) {
             Some(t) => Ok(t),
             None if self.allow_insert.is_some() => {
-                self.insert_scope(&r.name, self.allow_insert.unwrap());
-                Ok(self.allow_insert.unwrap())
+                let typ = self.allow_insert.unwrap();
+                let spot = self.insert_scope(&r.name, typ);
+                r.place = Some(spot);
+                Ok(typ)
             }
             None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
         }
@@ -461,7 +470,7 @@ impl TypeChecker {
                 return Err(s);
             }
         };
-        self.closescope();
+        function.locals = Some(self.closescope());
         Ok(rv)
     }
 }

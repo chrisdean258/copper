@@ -2,15 +2,18 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
+use std::collections::HashMap;
 
 pub struct Compiler {
     code: CodeBuilder,
+    scopes: Vec<HashMap<String, usize>>,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             code: CodeBuilder::new(),
+            scopes: Vec::new(),
         }
     }
 
@@ -21,6 +24,14 @@ impl Compiler {
         }
         self.code.close_function();
         self.code.code()
+    }
+
+    fn open_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn close_scope(&mut self) {
+        self.scopes.pop();
     }
 
     fn statement(&mut self, s: &Statement) {
@@ -55,7 +66,7 @@ impl Compiler {
             ExpressionType::Lambda(l) => self.lambda(l),
             ExpressionType::List(l) => self.list(l),
             ExpressionType::IndexExpr(i) => self.index(i),
-            ExpressionType::DottedLookup(d) => todo!("{:?}", d),
+            ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
         }
     }
@@ -107,4 +118,6 @@ impl Compiler {
     fn lambdaarg(&mut self, _l: &LambdaArg) {}
 
     fn call(&mut self, _c: &CallExpr) {}
+
+    fn dotted_lookup(&mut self, _d: &DottedLookup) {}
 }
