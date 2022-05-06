@@ -161,8 +161,8 @@ fn eval_lexer<T: Iterator<Item = String>>(
         return Ok(());
     }
     let code = compiler.compile("main".to_string(), &tree);
-    // for instruction in code.iter() {
-    // println!("{}", instruction);
+    // for (i, instruction) in code.iter().enumerate() {
+    // println!("{:05} {}", i, instruction);
     // }
     evaluator.eval(code)?;
     println!("{:?}", evaluator.stack);

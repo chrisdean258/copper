@@ -2,7 +2,8 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-// use crate::value::Value;
+use crate::typesystem::UNIT;
+use crate::value::Value;
 use std::collections::HashMap;
 
 pub struct Compiler {
@@ -22,7 +23,7 @@ impl Compiler {
 
     pub fn compile(&mut self, name: String, p: &ParseTree) -> Vec<Instruction> {
         self.code.open_function(name);
-        self.code.reserve(p.globals.unwrap());
+        self.code.reserve(p.globals.unwrap() as isize);
         for statement in p.statements.iter() {
             self.statement(statement);
         }
@@ -58,7 +59,7 @@ impl Compiler {
         match s {
             Statement::Expr(e) => {
                 self.expr(e);
-                self.code.emit(Operation::Pop, vec![e.typ()], vec![]);
+                self.code.emit(Operation::Pop, vec![UNIT], vec![]);
             }
             Statement::ClassDecl(c) => todo!("{:?}", c),
             Statement::Import(i) => todo!("{:?}", i),
@@ -107,7 +108,7 @@ impl Compiler {
 
     fn refexpr(&mut self, r: &RefExpr) {
         let offset = r.place.unwrap();
-        self.code.local_ref(offset);
+        self.code.local_ref(offset as isize);
         if !self.need_ref {
             self.code.load();
         }
@@ -142,7 +143,22 @@ impl Compiler {
         }
     }
 
-    fn whileexpr(&mut self, _w: &While) {}
+    fn whileexpr(&mut self, w: &While) {
+        let start = self.code.jump_unknown();
+        let body = self.code.next_function_relative_addr();
+        self.expr(w.body.as_ref());
+        let stop = self.code.next_function_relative_addr();
+        let offset = stop as isize - start as isize;
+        self.code.backpatch(
+            start,
+            Operation::JumpRel,
+            vec![],
+            vec![Value::PtrOffset(offset)],
+        );
+        self.expr(w.condition.as_ref());
+        self.code.jump_relative_if(body as isize);
+        self.code.push(Value::Null);
+    }
 
     fn forexpr(&mut self, __w: &For) {}
 

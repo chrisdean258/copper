@@ -87,7 +87,7 @@ impl CodeBuilder {
 
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, values: Vec<Value>) -> usize {
         assert!(op.is_machineop(), "{}", op);
-        assert!(self.active_functions.len() > 0, "{}", op); // If not this is a bug
+        assert!(self.active_functions.len() > 0); // If not this is a bug
         let code = &mut self.active_functions.last_mut().unwrap().code;
         code.push(Instruction { op, types, values });
         code.len() - 1
@@ -101,11 +101,23 @@ impl CodeBuilder {
         rv
     }
 
-    pub fn local_ref(&mut self, number: usize) -> usize {
+    pub fn next_function_relative_addr(&self) -> usize {
+        assert!(self.active_functions.len() > 0); // If not this is a bug
+        self.active_functions.last().unwrap().code.len()
+    }
+
+    pub fn backpatch(&mut self, addr: usize, op: Operation, types: Vec<Type>, values: Vec<Value>) {
+        assert!(op.is_machineop(), "{}", op);
+        assert!(self.active_functions.len() > 0); // If not this is a bug
+        let code = &mut self.active_functions.last_mut().unwrap().code;
+        code[addr] = Instruction { op, types, values };
+    }
+
+    pub fn local_ref(&mut self, number: isize) -> usize {
         self.emit(Operation::RefFrame, vec![], vec![Value::PtrOffset(number)])
     }
 
-    pub fn reserve(&mut self, size: usize) -> usize {
+    pub fn reserve(&mut self, size: isize) -> usize {
         self.emit(Operation::Reserve, vec![], vec![Value::PtrOffset(size)])
     }
 
@@ -123,5 +135,19 @@ impl CodeBuilder {
 
     pub fn store(&mut self) -> usize {
         self.emit(Operation::Store, vec![], vec![])
+    }
+
+    pub fn jump_relative_if(&mut self, location: isize) -> usize {
+        let offset = location - self.next_function_relative_addr() as isize;
+        self.emit(Operation::JumpRelIf, vec![], vec![Value::PtrOffset(offset)])
+    }
+
+    pub fn jump_relative(&mut self, location: isize) -> usize {
+        let offset = location - self.next_function_relative_addr() as isize;
+        self.emit(Operation::JumpRel, vec![], vec![Value::PtrOffset(offset)])
+    }
+
+    pub fn jump_unknown(&mut self) -> usize {
+        self.emit(Operation::Crash, vec![], vec![])
     }
 }
