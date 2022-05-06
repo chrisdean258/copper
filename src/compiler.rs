@@ -2,7 +2,7 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::typesystem::UNIT;
+use crate::typesystem::{BOOL, UNIT};
 use crate::value::Value;
 use std::collections::HashMap;
 
@@ -99,11 +99,65 @@ impl Compiler {
     }
 
     fn preunop(&mut self, p: &PreUnOp) {
-        self.code.emit(p.op, vec![p.rhs.typ()], vec![]);
+        match p.op {
+            Operation::PreInc => {
+                self.get_ref(p.rhs.as_ref());
+                self.code.dup();
+                self.code.load();
+                self.code.push(Value::Int(1));
+                self.code.emit(Operation::Plus, vec![], vec![]);
+                self.code.store();
+            }
+            Operation::PreDec => {
+                self.get_ref(p.rhs.as_ref());
+                self.code.dup();
+                self.code.load();
+                self.code.push(Value::Int(1));
+                self.code.emit(Operation::Minus, vec![], vec![]);
+                self.code.store();
+            }
+            t if t.is_preunop() => {
+                self.expr(p.rhs.as_ref());
+                self.code.emit(p.op, vec![p.rhs.typ()], vec![]);
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn postunop(&mut self, p: &PostUnOp) {
-        self.code.emit(p.op, vec![p.lhs.typ()], vec![]);
+        match p.op {
+            Operation::PostInc => {
+                self.get_ref(p.lhs.as_ref());
+                self.code.dup();
+                self.code.load();
+                self.code.dup();
+                self.code.push(Value::Int(1));
+                self.code.emit(Operation::Plus, vec![], vec![]);
+                self.code.swap();
+                self.code.rotate(3);
+                self.code.store();
+                self.code.pop();
+            }
+            Operation::PostDec => {
+                self.get_ref(p.lhs.as_ref());
+                self.code.dup();
+                self.code.load();
+                self.code.dup();
+                self.code.push(Value::Int(1));
+                self.code.emit(Operation::Minus, vec![], vec![]);
+                self.code.swap();
+                self.code.rotate(3);
+                self.code.store();
+                self.code.pop();
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn get_ref(&mut self, e: &Expression) {
+        self.need_ref = true;
+        self.expr(e);
+        self.need_ref = false;
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
@@ -148,23 +202,52 @@ impl Compiler {
         let body = self.code.next_function_relative_addr();
         self.expr(w.body.as_ref());
         let stop = self.code.next_function_relative_addr();
-        let offset = stop as isize - start as isize;
-        self.code.backpatch(
-            start,
-            Operation::JumpRel,
-            vec![],
-            vec![Value::PtrOffset(offset)],
-        );
+        self.code.backpatch(Operation::JumpRel, start, stop);
         self.expr(w.condition.as_ref());
         self.code.jump_relative_if(body as isize);
         self.code.push(Value::Null);
     }
 
-    fn forexpr(&mut self, __w: &For) {}
+    fn forexpr(&mut self, _f: &For) {}
 
-    fn ifexpr(&mut self, _i: &If) {}
+    fn ifexpr(&mut self, i: &If) {
+        self.code.push(Value::Null); // If return value
+        self.code.push(Value::Bool(0));
+        self.expr(i.condition.as_ref());
+        self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
+        self.code.dup();
+        self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
+        let mut next_branch = self.code.jump_unknown();
+        self.expr(i.body.as_ref());
+        self.code.rotate(3);
+        self.code.swap();
+        self.code.pop();
 
-    fn ifexpr_int(&mut self, _i: &If, _is_and_if: bool) {}
+        for (body, _) in i.and_bodies.iter() {
+            let loc = self.code.next_function_relative_addr();
+            self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
+            self.expr(body.condition.as_ref());
+            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
+            self.code.dup();
+            self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
+            next_branch = self.code.jump_unknown();
+            self.expr(body.body.as_ref());
+            self.code.rotate(3);
+            self.code.swap();
+            self.code.pop();
+        }
+
+        let loc = self.code.next_function_relative_addr();
+        self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
+
+        if let Some(else_body) = &i.else_body {
+            next_branch = self.code.jump_unknown();
+            self.expr(else_body);
+            self.code.swap();
+            let loc = self.code.next_function_relative_addr();
+            self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
+        }
+    }
 
     fn list(&mut self, _l: &List) {}
 

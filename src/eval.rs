@@ -29,7 +29,12 @@ impl Evaluator {
         self.ip = self.code.len();
         self.code.append(&mut code);
         while self.ip < self.code.len() {
-            // println!( "{:05}: {:<20} stack: {:?}", self.ip, self.code[self.ip].to_string(), self.stack);
+            print!(
+                "stack: {:?}\n{:05}: {:<20} ",
+                self.stack,
+                self.ip,
+                self.code[self.ip].to_string(),
+            );
             match self.code[self.ip].op {
                 Operation::Nop => (),
                 Operation::Crash => return Err("Crash Operation".to_string()),
@@ -66,6 +71,32 @@ impl Evaluator {
                     } else {
                         unreachable!()
                     }
+                }
+                Operation::Rotate => {
+                    if let Value::PtrOffset(num) = self.code[self.ip].values[0] {
+                        assert!(num > 2 && self.stack.len() >= num as usize);
+
+                        let val = *self.stack.last().unwrap();
+
+                        let idx = self.stack.len() - num as usize;
+                        for i in (idx..(self.stack.len() - 1)).rev() {
+                            self.stack[i + 1] = self.stack[i];
+                        }
+                        self.stack[idx] = val;
+                    } else {
+                        unreachable!()
+                    }
+                }
+                Operation::Dup => {
+                    assert!(self.stack.len() >= 1);
+                    self.stack.push(*self.stack.last().unwrap())
+                }
+                Operation::Swap => {
+                    assert!(self.stack.len() >= 2);
+                    let a = self.stack.pop().unwrap();
+                    let b = self.stack.pop().unwrap();
+                    self.stack.push(a);
+                    self.stack.push(b);
                 }
                 Operation::RefFrame => {
                     if let Value::PtrOffset(o) = self.code[self.ip].values[0] {
@@ -297,19 +328,60 @@ impl Evaluator {
                         _ => unreachable!(),
                     })
                 }
-                Operation::Times => todo!(),
-                Operation::Mod => todo!(),
-                Operation::Div => todo!(),
-                Operation::BoolNot => todo!(),
-                Operation::BitNot => todo!(),
-                Operation::PreInc => todo!(),
-                Operation::PreDec => todo!(),
-                Operation::PostInc => todo!(),
-                Operation::PostDec => todo!(),
+                Operation::Times => {
+                    assert!(self.stack.len() >= 2);
+                    let a = self.stack.pop().unwrap();
+                    let b = self.stack.pop().unwrap();
+                    self.stack.push(match (a, b) {
+                        (Int(aa), Int(bb)) => Int(bb * aa),
+                        (Float(aa), Float(bb)) => Float(bb * aa),
+                        _ => unreachable!(),
+                    })
+                }
+                Operation::Mod => {
+                    assert!(self.stack.len() >= 2);
+                    let a = self.stack.pop().unwrap();
+                    let b = self.stack.pop().unwrap();
+                    self.stack.push(match (a, b) {
+                        (Char(aa), Char(bb)) => Char(bb % aa),
+                        (Int(aa), Int(bb)) => Int(bb % aa),
+                        _ => unreachable!(),
+                    })
+                }
+                Operation::Div => {
+                    assert!(self.stack.len() >= 2);
+                    let a = self.stack.pop().unwrap();
+                    let b = self.stack.pop().unwrap();
+                    //TODO: Check for divide by 0
+                    self.stack.push(match (a, b) {
+                        (Char(aa), Char(bb)) => Char(bb / aa),
+                        (Int(aa), Int(bb)) => Int(bb / aa),
+                        (Float(aa), Float(bb)) => Float(bb / aa),
+                        _ => unreachable!(),
+                    })
+                }
+                Operation::BoolNot => {
+                    assert!(self.stack.len() >= 1);
+                    if let Value::Bool(b) = self.stack.pop().unwrap() {
+                        self.stack.push(Value::Bool(1 - b));
+                    } else {
+                        unreachable!()
+                    }
+                }
+                Operation::BitNot => {
+                    assert!(self.stack.len() >= 1);
+                    let val = self.stack.pop().unwrap();
+                    self.stack.push(match val {
+                        Value::Char(c) => Value::Char(!c),
+                        Value::Int(b) => Value::Int(!b),
+                        _ => unreachable!(),
+                    })
+                }
                 t => unreachable!("{}", t),
             }
             self.ip += 1;
         }
+        println!("stack: {:?}", self.stack);
         Ok(Value::Null)
     }
 }

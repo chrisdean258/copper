@@ -106,11 +106,16 @@ impl CodeBuilder {
         self.active_functions.last().unwrap().code.len()
     }
 
-    pub fn backpatch(&mut self, addr: usize, op: Operation, types: Vec<Type>, values: Vec<Value>) {
+    pub fn backpatch(&mut self, op: Operation, addr: usize, to: usize) {
         assert!(op.is_machineop(), "{}", op);
         assert!(self.active_functions.len() > 0); // If not this is a bug
         let code = &mut self.active_functions.last_mut().unwrap().code;
-        code[addr] = Instruction { op, types, values };
+        let offset = to as isize - addr as isize;
+        code[addr] = Instruction {
+            op,
+            types: vec![],
+            values: vec![Value::PtrOffset(offset)],
+        };
     }
 
     pub fn local_ref(&mut self, number: isize) -> usize {
@@ -123,6 +128,10 @@ impl CodeBuilder {
 
     pub fn push(&mut self, value: Value) -> usize {
         self.emit(Operation::Push, vec![], vec![value])
+    }
+
+    pub fn pop(&mut self) -> usize {
+        self.emit(Operation::Pop, vec![], vec![])
     }
 
     pub fn dup(&mut self) -> usize {
@@ -149,5 +158,17 @@ impl CodeBuilder {
 
     pub fn jump_unknown(&mut self) -> usize {
         self.emit(Operation::Crash, vec![], vec![])
+    }
+
+    pub fn rotate(&mut self, how_many: usize) -> usize {
+        self.emit(
+            Operation::Rotate,
+            vec![],
+            vec![Value::PtrOffset(how_many as isize)],
+        )
+    }
+
+    pub fn swap(&mut self) -> usize {
+        self.emit(Operation::Swap, vec![], vec![])
     }
 }

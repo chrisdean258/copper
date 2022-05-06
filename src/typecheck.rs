@@ -281,7 +281,7 @@ impl TypeChecker {
         }
 
         for body in i.and_bodies.iter_mut() {
-            match self.ifexpr(&mut body.0) {
+            match self.ifexpr_int(&mut body.0, true) {
                 Ok(t) if t == rv => (),
                 Ok(t) if t == UNKNOWN_RETURN => (),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
