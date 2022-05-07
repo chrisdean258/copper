@@ -128,6 +128,7 @@ impl Evaluator {
                     self.bp = pop_stack!(self, Value::Ptr);
                     self.ip = pop_stack!(self, Value::Ptr);
                     self.stack.push(rv);
+                    continue;
                 }
                 Operation::Call => {
                     assert!(self.stack.len() >= 2);
@@ -135,7 +136,7 @@ impl Evaluator {
                     let num_args = pop_stack!(self, Value::Count);
                     let bp = self.stack.len() - num_args;
                     self.stack[bp - 1] = Value::Ptr(self.bp);
-                    self.stack[bp - 2] = Value::Ptr(self.ip);
+                    self.stack[bp - 2] = Value::Ptr(self.ip + 1);
                     self.bp = bp;
                     self.ip = ip;
                     continue;
