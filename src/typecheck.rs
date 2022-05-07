@@ -20,6 +20,13 @@ pub struct TypeChecker {
 }
 
 type TypeError = Vec<String>;
+macro_rules! check_err {
+    ( $name:ident ) => {
+        if $name.len() > 0 {
+            return Err($name);
+        }
+    };
+}
 
 impl TypeChecker {
     pub fn new() -> Self {
@@ -221,12 +228,8 @@ impl TypeChecker {
                 Err(mut e) => errors.append(&mut e),
             }
         }
-
-        if errors.len() == 0 {
-            Ok(return_type)
-        } else {
-            Err(errors)
-        }
+        check_err!(errors);
+        Ok(return_type)
     }
 
     fn whileexpr(&mut self, w: &mut While) -> Result<Type, TypeError> {
@@ -245,11 +248,8 @@ impl TypeChecker {
             Err(mut s) => errors.append(&mut s),
         }
 
-        if errors.len() == 0 {
-            Ok(UNIT)
-        } else {
-            Err(errors)
-        }
+        check_err!(errors);
+        Ok(UNIT)
     }
 
     fn forexpr(&mut self, _w: &mut For) -> Result<Type, TypeError> {
@@ -301,9 +301,8 @@ impl TypeChecker {
             None => return_unit = !is_and_if,
         }
 
-        if errors.len() != 0 {
-            Err(errors)
-        } else if return_unit {
+        check_err!(errors);
+        if return_unit {
             Ok(UNIT)
         } else {
             Ok(rv)
@@ -330,11 +329,8 @@ impl TypeChecker {
             }
         }
 
-        if errors.len() != 0 {
-            Err(errors)
-        } else {
-            Ok(self.system.list_type(interior_type))
-        }
+        check_err!(errors);
+        Ok(self.system.list_type(interior_type))
     }
 
     fn index(&mut self, i: &mut IndexExpr) -> Result<Type, TypeError> {
@@ -409,10 +405,7 @@ impl TypeChecker {
                 Err(mut s) => errs.append(&mut s),
             }
         }
-
-        if errs.len() > 0 {
-            return Err(errs);
-        }
+        check_err!(errs);
 
         if let Some(t) = self.system.match_signature(functype, &args) {
             return Ok(t);
@@ -427,7 +420,6 @@ impl TypeChecker {
             },
         );
 
-        self.openscope();
         if args.len() != function.argnames.len() {
             return Err(self.error(format!(
                 "Trying to call function with {} args. Expected {}",
@@ -436,6 +428,7 @@ impl TypeChecker {
             )));
         }
 
+        self.openscope();
         for (typ, name) in args.iter().zip(function.argnames.iter()) {
             self.insert_scope(name, *typ);
         }
@@ -454,13 +447,12 @@ impl TypeChecker {
             }
         };
         self.system.patch_signature_return(functype, sig_handle, rv);
+        self.closescope();
+        self.openscope();
+        for (typ, name) in args.iter().zip(function.argnames.iter()) {
+            self.insert_scope(name, *typ);
+        }
         let rv = match self.expr(function.body.as_mut()) {
-            Ok(t) if t == UNKNOWN_RETURN => {
-                return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
-                    self.errmsg("Originating with this function call".to_string())
-                ]);
-            }
             Ok(t) if t == rv => t,
             Ok(t) => {
                 return Err(vec![
@@ -477,6 +469,10 @@ impl TypeChecker {
             }
         };
         function.locals = Some(self.closescope());
+        // c.function.derived_type = Some(self.system.func_type(Signature {
+        // inputs: args,
+        // output: rv,
+        // }));
         Ok(rv)
     }
 }

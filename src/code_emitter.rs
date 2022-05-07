@@ -106,24 +106,22 @@ impl CodeBuilder {
         self.active_functions.last().unwrap().code.len()
     }
 
-    pub fn backpatch(&mut self, op: Operation, addr: usize, to: usize) {
-        assert!(op.is_machineop(), "{}", op);
-        assert!(self.active_functions.len() > 0); // If not this is a bug
-        let code = &mut self.active_functions.last_mut().unwrap().code;
-        let offset = to as isize - addr as isize;
-        code[addr] = Instruction {
-            op,
-            types: vec![],
-            values: vec![Value::PtrOffset(offset)],
-        };
+    pub fn prep_function_call(&mut self) -> usize {
+        self.emit(Operation::PrepCall, vec![], vec![])
+    }
+
+    pub fn call(&mut self) -> usize {
+        self.emit(Operation::Call, vec![], vec![])
     }
 
     pub fn local_ref(&mut self, number: isize) -> usize {
-        self.emit(Operation::RefFrame, vec![], vec![Value::PtrOffset(number)])
+        self.push(Value::PtrOffset(number));
+        self.emit(Operation::RefFrame, vec![], vec![])
     }
 
-    pub fn reserve(&mut self, size: isize) -> usize {
-        self.emit(Operation::Reserve, vec![], vec![Value::PtrOffset(size)])
+    pub fn reserve(&mut self, size: usize) -> usize {
+        self.push(Value::Count(size));
+        self.emit(Operation::Reserve, vec![], vec![])
     }
 
     pub fn push(&mut self, value: Value) -> usize {
@@ -146,26 +144,50 @@ impl CodeBuilder {
         self.emit(Operation::Store, vec![], vec![])
     }
 
+    pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
+        assert!(self.active_functions.len() >= 1);
+        self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
+            op: Operation::Push,
+            types: vec![],
+            values: vec![Value::Ptr(to)],
+        };
+    }
+
+    pub fn backpatch_jump_rel(&mut self, jump_addr: usize, to: isize) {
+        assert!(self.active_functions.len() >= 1);
+        let offset = to - jump_addr as isize;
+        self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
+            op: Operation::Push,
+            types: vec![],
+            values: vec![Value::PtrOffset(offset)],
+        };
+    }
+
+    pub fn jump(&mut self, location: usize) -> usize {
+        self.push(Value::Ptr(location));
+        self.emit(Operation::Jump, vec![], vec![])
+    }
+
+    pub fn jumpif(&mut self, location: usize) -> usize {
+        self.push(Value::Ptr(location));
+        self.emit(Operation::JumpIf, vec![], vec![])
+    }
+
     pub fn jump_relative_if(&mut self, location: isize) -> usize {
-        let offset = location - self.next_function_relative_addr() as isize;
-        self.emit(Operation::JumpRelIf, vec![], vec![Value::PtrOffset(offset)])
+        let offset = location - self.next_function_relative_addr() as isize - 1;
+        self.push(Value::PtrOffset(offset));
+        self.emit(Operation::JumpRelIf, vec![], vec![])
     }
 
     pub fn jump_relative(&mut self, location: isize) -> usize {
         let offset = location - self.next_function_relative_addr() as isize;
-        self.emit(Operation::JumpRel, vec![], vec![Value::PtrOffset(offset)])
-    }
-
-    pub fn jump_unknown(&mut self) -> usize {
-        self.emit(Operation::Crash, vec![], vec![])
+        self.push(Value::PtrOffset(offset));
+        self.emit(Operation::JumpRel, vec![], vec![])
     }
 
     pub fn rotate(&mut self, how_many: usize) -> usize {
-        self.emit(
-            Operation::Rotate,
-            vec![],
-            vec![Value::PtrOffset(how_many as isize)],
-        )
+        self.push(Value::Count(how_many));
+        self.emit(Operation::Rotate, vec![], vec![])
     }
 
     pub fn swap(&mut self) -> usize {

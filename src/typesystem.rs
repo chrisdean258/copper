@@ -5,10 +5,11 @@ use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct TypeSystem {
-    types: Vec<TypeEntry>,
+    pub types: Vec<TypeEntry>,
     types_by_name: HashMap<String, Type>,
     operations: HashMap<Operation, GenericOperation>,
     ops_by_name: HashMap<String, Op>,
+    func_type_cache: HashMap<Signature, Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ impl TypeEntryType {
 }
 
 #[derive(Debug, Clone)]
-struct TypeEntry {
+pub struct TypeEntry {
     name: String,
     te_type: TypeEntryType,
     list_type: Option<Type>,
@@ -50,7 +51,7 @@ pub struct FunctionType {
     signatures: Vec<Signature>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Signature {
     pub inputs: Vec<Type>,
     pub output: Type,
@@ -111,6 +112,7 @@ impl TypeSystem {
             types_by_name: HashMap::new(),
             operations: HashMap::new(),
             ops_by_name: HashMap::new(),
+            func_type_cache: HashMap::new(),
         };
         rv.add_default_types();
         rv.add_default_ops();
@@ -238,6 +240,17 @@ impl TypeSystem {
         self.types_by_name.insert(name, rv);
         rv
     }
+
+    /* pub fn func_type(&mut self, sig: Signature) -> Type {
+        match self.func_type_cache.get(&sig) {
+            Some(val) => return *val,
+            None => (),
+        }
+        let name = format!("function{}", self.format_signature(sig));
+        let rv = self.new_type(name, TypeEntryType::ConcreteFunctionType(sig.clone()));
+        self.func_type_cache.insert(sig, rv);
+        rv
+    } */
 
     pub fn list_type(&mut self, t: Type) -> Type {
         match self.types[t.index].list_type {
@@ -375,5 +388,25 @@ impl TypeSystem {
             _ => panic!("trying to patch signature to a non function"),
         };
         ft.signatures[handle].output = return_type;
+    }
+
+    pub fn get_signatures_for_func(&self, typ: Type) -> Vec<Signature> {
+        match &self.types[typ.index].te_type {
+            TypeEntryType::FunctionType(s) => s.signatures.clone(),
+            t => panic!("Trying to look for concrete type but found {:?}", t),
+        }
+    }
+
+    pub fn format_signature(&self, sig: Signature) -> String {
+        let arg_types = sig
+            .inputs
+            .iter()
+            .map(|t| self.typename(*t).clone())
+            .collect::<Vec<String>>();
+        format!(
+            "({}) -> {}",
+            arg_types.join(", "),
+            self.typename(sig.output)
+        )
     }
 }

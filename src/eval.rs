@@ -14,6 +14,17 @@ pub struct Evaluator {
     bp: usize,
 }
 
+macro_rules! pop_stack {
+    ($self:ident, $type:path) => {{
+        assert!($self.stack.len() >= 1);
+        let val = $self.stack.pop().unwrap();
+        match val {
+            $type(t) => t,
+            t => unreachable!("Unexpected {} on stack. Expected {}", t, stringify!($type)),
+        }
+    }};
+}
+
 impl Evaluator {
     pub fn new() -> Self {
         Self {
@@ -43,49 +54,29 @@ impl Evaluator {
                     self.stack.pop();
                 }
                 Operation::Load => {
-                    assert!(self.stack.len() >= 1);
-                    if let Value::Ptr(addr) = self.stack.pop().unwrap() {
-                        self.stack.push(self.stack[addr].clone());
-                    } else {
-                        unreachable!()
-                    }
+                    let addr = pop_stack!(self, Value::Ptr);
+                    self.stack.push(self.stack[addr].clone());
                 }
                 Operation::Store => {
                     assert!(self.stack.len() >= 2);
                     let value = self.stack.pop().unwrap();
-                    let maybe_addr = self.stack.pop().unwrap();
-                    if let Value::Ptr(addr) = maybe_addr {
-                        // println!("Storing {} => {}", value, addr);
-                        self.stack[addr] = value;
-                        self.stack.push(value);
-                    } else {
-                        unreachable!("addr was {}", maybe_addr)
-                    }
+                    let addr = pop_stack!(self, Value::Ptr);
+                    self.stack[addr] = value;
+                    self.stack.push(value);
                 }
                 Operation::Reserve => {
-                    if let Value::PtrOffset(l) = self.code[self.ip].values[0] {
-                        // println!("Reserving {}", l);
-                        for _ in 0..l {
-                            self.stack.push(Value::Null);
-                        }
-                    } else {
-                        unreachable!()
-                    }
+                    let size = pop_stack!(self, Value::Count) + self.stack.len();
+                    self.stack.resize(size, Value::Uninitialized);
                 }
                 Operation::Rotate => {
-                    if let Value::PtrOffset(num) = self.code[self.ip].values[0] {
-                        assert!(num > 2 && self.stack.len() >= num as usize);
-
-                        let val = *self.stack.last().unwrap();
-
-                        let idx = self.stack.len() - num as usize;
-                        for i in (idx..(self.stack.len() - 1)).rev() {
-                            self.stack[i + 1] = self.stack[i];
-                        }
-                        self.stack[idx] = val;
-                    } else {
-                        unreachable!()
+                    let num = pop_stack!(self, Value::Count);
+                    assert!(num > 2 && self.stack.len() >= num);
+                    let val = *self.stack.last().unwrap();
+                    let idx = self.stack.len() - num as usize;
+                    for i in (idx..(self.stack.len() - 1)).rev() {
+                        self.stack[i + 1] = self.stack[i];
                     }
+                    self.stack[idx] = val;
                 }
                 Operation::Dup => {
                     assert!(self.stack.len() >= 1);
@@ -99,67 +90,45 @@ impl Evaluator {
                     self.stack.push(b);
                 }
                 Operation::RefFrame => {
-                    if let Value::PtrOffset(o) = self.code[self.ip].values[0] {
-                        self.stack.push(Value::Ptr((self.bp as isize + o) as usize))
-                    } else {
-                        unreachable!()
-                    }
+                    let o = pop_stack!(self, PtrOffset);
+                    self.stack.push(Value::Ptr((self.bp as isize + o) as usize))
                 }
                 Operation::Jump => {
-                    if let Value::Ptr(p) = self.code[self.ip].values[0] {
-                        self.ip = p;
-                    } else {
-                        unreachable!(
-                            "Non Ptr in value for argument: {}",
-                            self.code[self.ip].values[0]
-                        );
-                    }
+                    self.ip = pop_stack!(self, Ptr);
                     continue;
                 }
                 Operation::JumpRel => {
-                    if let Value::PtrOffset(o) = self.code[self.ip].values[0] {
-                        self.ip = (self.ip as isize + o) as usize;
-                    } else {
-                        unreachable!(
-                            "Non PtrOffset in value for argument: {}",
-                            self.code[self.ip].values[0]
-                        );
-                    }
+                    let o = pop_stack!(self, PtrOffset);
+                    self.ip = (self.ip as isize + o) as usize;
                     continue;
                 }
                 Operation::JumpIf => {
-                    assert!(self.stack.len() >= 1);
-                    let cond = self.stack.pop().unwrap();
-                    if let Value::Bool(b) = cond {
-                        if b != 0 {
-                            if let Value::Ptr(p) = self.code[self.ip].values[0] {
-                                self.ip = p;
-                            } else {
-                                unreachable!(
-                                    "Non Ptr in value for argument: {}",
-                                    self.code[self.ip].values[0]
-                                );
-                            }
-                            continue;
-                        }
+                    assert!(self.stack.len() >= 2);
+                    let addr = pop_stack!(self, Value::Ptr);
+                    let cond = pop_stack!(self, Value::Bool);
+                    if cond != 0 {
+                        self.ip = addr;
+                        continue;
                     }
                 }
                 Operation::JumpRelIf => {
-                    assert!(self.stack.len() >= 1);
-                    let cond = self.stack.pop().unwrap();
-                    if let Value::Bool(b) = cond {
-                        if b != 0 {
-                            if let Value::PtrOffset(o) = self.code[self.ip].values[0] {
-                                self.ip = (self.ip as isize + o) as usize;
-                            } else {
-                                unreachable!(
-                                    "Non PtrOffset in value for argument: {}",
-                                    self.code[self.ip].values[0]
-                                );
-                            }
-                            continue;
-                        }
+                    assert!(self.stack.len() >= 2);
+                    let offset = pop_stack!(self, Value::PtrOffset);
+                    let cond = pop_stack!(self, Value::Bool);
+                    if cond != 0 {
+                        self.ip = (self.ip as isize + offset) as usize;
+                        continue;
                     }
+                }
+                Operation::PrepCall => {
+                    self.stack.push(Value::Ptr(self.ip));
+                    self.stack.push(Value::Ptr(self.bp));
+                }
+                Operation::Return => {
+                    self.stack.truncate(self.bp);
+                    assert!(self.stack.len() >= 2);
+                    self.ip = pop_stack!(self, Value::Ptr);
+                    self.bp = pop_stack!(self, Value::Ptr);
                 }
                 Operation::BoolOr => {
                     assert!(self.stack.len() >= 2);

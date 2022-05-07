@@ -54,8 +54,17 @@ A nullable value is created when on creation a variable is assigned a null value
 
 When it comes to types, you cannot change type except for a Null type promoting to a Nullable type
 
-## Global Variables
+## Call Stack
 
-In a function specify `global name` to bring the global variable name into the local scope
+```
+return ip
+return bp
+args...
+
+local vars...
+
+```
+
+
 
 

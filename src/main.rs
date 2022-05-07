@@ -157,13 +157,14 @@ fn eval_lexer<T: Iterator<Item = String>>(
     typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
+
     if typecheck_only {
         return Ok(());
     }
-    let code = compiler.compile("main".to_string(), &tree);
-    // for (i, instruction) in code.iter().enumerate() {
-    // println!("{:05} {}", i, instruction);
-    // }
+    let code = compiler.compile("main".to_string(), &tree, &typechecker.system);
+    for (i, instruction) in code.iter().enumerate() {
+    println!("{:05} {}", i, instruction);
+    }
     evaluator.eval(code)?;
     println!("{:?}", evaluator.stack);
     Ok(())

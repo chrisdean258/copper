@@ -2,7 +2,7 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::typesystem::{BOOL, UNIT};
+use crate::typesystem::{Signature, TypeSystem, BOOL, UNIT};
 use crate::value::Value;
 use std::collections::HashMap;
 
@@ -10,6 +10,7 @@ pub struct Compiler {
     code: CodeBuilder,
     scopes: Vec<HashMap<String, usize>>,
     need_ref: bool,
+    types: Option<TypeSystem>,
 }
 
 impl Compiler {
@@ -18,16 +19,19 @@ impl Compiler {
             code: CodeBuilder::new(),
             scopes: vec![HashMap::new()],
             need_ref: false,
+            types: None,
         }
     }
 
-    pub fn compile(&mut self, name: String, p: &ParseTree) -> Vec<Instruction> {
+    pub fn compile(&mut self, name: String, p: &ParseTree, types: &TypeSystem) -> Vec<Instruction> {
+        self.types = Some(types.clone());
         self.code.open_function(name);
-        self.code.reserve(p.globals.unwrap() as isize);
+        self.code.reserve(p.globals.unwrap());
         for statement in p.statements.iter() {
             self.statement(statement);
         }
         self.code.close_function();
+        self.types = None;
         self.code.code()
     }
 
@@ -44,6 +48,14 @@ impl Compiler {
         // }
         // }
         // unreachable!()
+    }
+
+    fn insert_scope(&mut self, name: String) -> usize {
+        assert!(self.scopes.len() > 0);
+        let cur_scope = self.scopes.last_mut().unwrap();
+        let val = cur_scope.len();
+        cur_scope.insert(name, val);
+        val
     }
 
     fn lookup_scope_local(&self, name: &str) -> usize {
@@ -83,7 +95,13 @@ impl Compiler {
             ExpressionType::PreUnOp(p) => self.preunop(p),
             ExpressionType::PostUnOp(p) => self.postunop(p),
             ExpressionType::AssignExpr(a) => self.assignment(a),
-            ExpressionType::Function(f) => self.function(f),
+            ExpressionType::Function(f) => self.function(
+                f,
+                self.types
+                    .as_ref()
+                    .unwrap()
+                    .get_signatures_for_func(e.derived_type.unwrap()),
+            ),
             ExpressionType::Lambda(l) => self.lambda(l),
             ExpressionType::List(l) => self.list(l),
             ExpressionType::IndexExpr(i) => self.index(i),
@@ -198,26 +216,24 @@ impl Compiler {
     }
 
     fn whileexpr(&mut self, w: &While) {
-        let start = self.code.jump_unknown();
+        let start = self.code.jump_relative(0);
         let body = self.code.next_function_relative_addr();
         self.expr(w.body.as_ref());
         let stop = self.code.next_function_relative_addr();
-        self.code.backpatch(Operation::JumpRel, start, stop);
+        self.code.backpatch_jump_rel(start, stop as isize);
         self.expr(w.condition.as_ref());
         self.code.jump_relative_if(body as isize);
-        self.code.push(Value::Null);
+        self.code.push(Value::Uninitialized);
     }
 
     fn forexpr(&mut self, _f: &For) {}
 
     fn ifexpr(&mut self, i: &If) {
-        self.code.push(Value::Null); // If return value
-        self.code.push(Value::Bool(0));
+        self.code.push(Value::Uninitialized); // If return value
         self.expr(i.condition.as_ref());
-        self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
         self.code.dup();
         self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
-        let mut next_branch = self.code.jump_unknown();
+        let mut next_branch = self.code.jump_relative_if(0);
         self.expr(i.body.as_ref());
         self.code.rotate(3);
         self.code.swap();
@@ -225,41 +241,72 @@ impl Compiler {
 
         for (body, _) in i.and_bodies.iter() {
             let loc = self.code.next_function_relative_addr();
-            self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
+            self.code.backpatch_jump_rel(next_branch, loc as isize);
             self.expr(body.condition.as_ref());
-            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
             self.code.dup();
+            self.code.rotate(3);
+            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
+            self.code.swap();
             self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
-            next_branch = self.code.jump_unknown();
+            next_branch = self.code.jump_relative_if(0);
             self.expr(body.body.as_ref());
             self.code.rotate(3);
             self.code.swap();
             self.code.pop();
         }
-
         let loc = self.code.next_function_relative_addr();
-        self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
-
+        self.code.backpatch_jump_rel(next_branch, loc as isize);
         if let Some(else_body) = &i.else_body {
-            next_branch = self.code.jump_unknown();
+            next_branch = self.code.jump_relative_if(0);
             self.expr(else_body);
             self.code.swap();
+            self.code.pop();
             let loc = self.code.next_function_relative_addr();
-            self.code.backpatch(Operation::JumpRelIf, next_branch, loc);
+            self.code.backpatch_jump_rel(next_branch, loc as isize);
         }
     }
 
-    fn list(&mut self, _l: &List) {}
+    fn list(&mut self, _l: &List) {
+        todo!()
+    }
 
-    fn index(&mut self, _i: &IndexExpr) {}
+    fn index(&mut self, _i: &IndexExpr) {
+        todo!()
+    }
 
-    fn function(&mut self, _f: &Function) {}
+    fn function(&mut self, f: &Function, sigs: Vec<Signature>) {
+        for sig in sigs.iter() {
+            self.single_function(f, sig);
+        }
+    }
 
-    fn lambda(&mut self, _l: &Lambda) {}
+    fn single_function(&mut self, f: &Function, _sig: &Signature) {
+        self.open_scope();
+        for name in f.argnames.iter() {
+            self.insert_scope(name.clone());
+        }
+        self.close_scope();
+    }
 
-    fn lambdaarg(&mut self, _l: &LambdaArg) {}
+    fn lambda(&mut self, _l: &Lambda) {
+        todo!()
+    }
 
-    fn call(&mut self, _c: &CallExpr) {}
+    fn lambdaarg(&mut self, _l: &LambdaArg) {
+        todo!()
+    }
 
-    fn dotted_lookup(&mut self, _d: &DottedLookup) {}
+    fn call(&mut self, c: &CallExpr) {
+        // self.code.prep_call();
+        for arg in c.args.iter() {
+            self.expr(arg);
+        }
+        self.expr(c.function.as_ref());
+        self.code.push(Value::PtrOffset(c.args.len() as isize));
+        // self.code.jump();
+    }
+
+    fn dotted_lookup(&mut self, _d: &DottedLookup) {
+        todo!()
+    }
 }
