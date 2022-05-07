@@ -35,9 +35,9 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, mut code: Vec<Instruction>) -> Result<Value, String> {
+    pub fn eval(&mut self, mut code: Vec<Instruction>, entry: usize) -> Result<Value, String> {
         use crate::value::Value::*;
-        self.ip = self.code.len();
+        self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         while self.ip < self.code.len() {
             print!(
@@ -120,15 +120,25 @@ impl Evaluator {
                         continue;
                     }
                 }
-                Operation::PrepCall => {
-                    self.stack.push(Value::Ptr(self.ip));
-                    self.stack.push(Value::Ptr(self.bp));
-                }
                 Operation::Return => {
+                    assert!(self.stack.len() >= 3);
+                    let rv = self.stack.pop().unwrap();
                     self.stack.truncate(self.bp);
                     assert!(self.stack.len() >= 2);
-                    self.ip = pop_stack!(self, Value::Ptr);
                     self.bp = pop_stack!(self, Value::Ptr);
+                    self.ip = pop_stack!(self, Value::Ptr);
+                    self.stack.push(rv);
+                }
+                Operation::Call => {
+                    assert!(self.stack.len() >= 2);
+                    let ip = pop_stack!(self, Value::Ptr);
+                    let num_args = pop_stack!(self, Value::Count);
+                    let bp = self.stack.len() - num_args;
+                    self.stack[bp - 1] = Value::Ptr(self.bp);
+                    self.stack[bp - 2] = Value::Ptr(self.ip);
+                    self.bp = bp;
+                    self.ip = ip;
+                    continue;
                 }
                 Operation::BoolOr => {
                     assert!(self.stack.len() >= 2);

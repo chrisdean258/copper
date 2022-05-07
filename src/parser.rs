@@ -3,8 +3,10 @@ use crate::location::Location;
 use crate::operation::Operation;
 use crate::typesystem::Type;
 use crate::value::Value;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::iter::Peekable;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -38,7 +40,7 @@ pub enum ExpressionType {
     PreUnOp(PreUnOp),
     PostUnOp(PostUnOp),
     AssignExpr(AssignExpr),
-    Function(Function),
+    Function(Rc<RefCell<Function>>),
     Lambda(Lambda),
     List(List),
     IndexExpr(IndexExpr),
@@ -126,7 +128,7 @@ pub struct IndexExpr {
 #[derive(Debug, Clone)]
 pub struct RefExpr {
     pub name: String,
-    pub place: Option<usize>,
+    pub is_decl: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -426,13 +428,13 @@ impl ParseTree {
                         _ => unreachable!(),
                     };
                     if methods
-                        .insert(ffun.name.as_ref().unwrap().clone(), fun.clone())
+                        .insert(ffun.borrow().name.as_ref().unwrap().clone(), fun.clone())
                         .is_some()
                     {
                         return Err(format!(
                             "{}: redefinition of method `{}`",
                             fun.location,
-                            ffun.name.clone().unwrap()
+                            ffun.borrow().name.clone().unwrap()
                         ));
                     }
                 }
@@ -841,14 +843,14 @@ impl ParseTree {
 
         Ok(Expression {
             derived_type: None,
-            location: loctoken.location,
-            etype: ExpressionType::Function(Function {
+            location: loctoken.location.clone(),
+            etype: ExpressionType::Function(Rc::new(RefCell::new(Function {
                 argnames: args,
                 body: Box::new(body),
-                name: name,
+                name: name.clone(),
                 default_args,
                 locals: None,
-            }),
+            }))),
         })
     }
 
@@ -919,7 +921,7 @@ impl ParseTree {
                     location: lexer.next().unwrap().location.clone(),
                     etype: ExpressionType::RefExpr(RefExpr {
                         name: i.clone(),
-                        place: None,
+                        is_decl: false,
                     }),
                 }),
                 TokenType::LambdaArg(a) if self.max_arg.len() > 0 => {

@@ -7,7 +7,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, Clone)]
 pub struct CodeBuilder {
     pub active_functions: Vec<Function>,
-    pub finished_functions: Vec<Function>,
+    pub finished_functions: Vec<Instruction>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,10 +79,12 @@ impl CodeBuilder {
         self.active_functions.len() - 1
     }
 
-    pub fn close_function(&mut self) {
+    pub fn close_function(&mut self) -> usize {
         assert!(self.active_functions.len() > 0);
-        let f = self.active_functions.pop().unwrap();
-        self.finished_functions.push(f);
+        let mut f = self.active_functions.pop().unwrap();
+        let rv = self.finished_functions.len();
+        self.finished_functions.append(&mut f.code);
+        rv
     }
 
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, values: Vec<Value>) -> usize {
@@ -94,11 +96,7 @@ impl CodeBuilder {
     }
 
     pub fn code(&self) -> Vec<Instruction> {
-        let mut rv = Vec::new();
-        for func in self.finished_functions.iter() {
-            rv.append(&mut func.code.clone());
-        }
-        rv
+        self.finished_functions.clone()
     }
 
     pub fn next_function_relative_addr(&self) -> usize {
@@ -144,6 +142,14 @@ impl CodeBuilder {
         self.emit(Operation::Store, vec![], vec![])
     }
 
+    pub fn return_(&mut self) -> usize {
+        self.emit(Operation::Return, vec![], vec![])
+    }
+
+    pub fn crash(&mut self) -> usize {
+        self.emit(Operation::Crash, vec![], vec![])
+    }
+
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
         assert!(self.active_functions.len() >= 1);
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
@@ -163,7 +169,11 @@ impl CodeBuilder {
         };
     }
 
-    pub fn jump(&mut self, location: usize) -> usize {
+    pub fn jump(&mut self) -> usize {
+        self.emit(Operation::Jump, vec![], vec![])
+    }
+
+    pub fn jump_to(&mut self, location: usize) -> usize {
         self.push(Value::Ptr(location));
         self.emit(Operation::Jump, vec![], vec![])
     }

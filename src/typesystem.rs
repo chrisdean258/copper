@@ -397,7 +397,7 @@ impl TypeSystem {
         }
     }
 
-    pub fn format_signature(&self, sig: Signature) -> String {
+    pub fn format_signature(&self, sig: &Signature) -> String {
         let arg_types = sig
             .inputs
             .iter()

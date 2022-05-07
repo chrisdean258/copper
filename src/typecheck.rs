@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
-    scopes: Vec<Rc<RefCell<HashMap<String, (Type, usize)>>>>,
-    type_to_func: HashMap<Type, Function>,
+    scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    type_to_func: HashMap<Type, Rc<RefCell<Function>>>,
     type_to_lambda: HashMap<Type, Lambda>,
     allow_insert: Option<Type>,
     lambda_args: Vec<Vec<Type>>,
@@ -70,10 +70,10 @@ impl TypeChecker {
         }
     }
 
-    fn lookup_scope(&mut self, name: &str) -> Option<(Type, usize)> {
+    fn lookup_scope(&mut self, name: &str) -> Option<Type> {
         for scope in self.scopes.iter().rev() {
             match scope.borrow().get(name) {
-                Some((t, p)) => return Some((*t, *p)),
+                Some(t) => return Some(*t),
                 None => (),
             }
         }
@@ -83,7 +83,7 @@ impl TypeChecker {
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
         let mut scope = self.scopes.last().unwrap().borrow_mut();
         let place = scope.len();
-        scope.insert(String::from(name), (t, place));
+        scope.insert(String::from(name), t);
         place
     }
 
@@ -172,14 +172,11 @@ impl TypeChecker {
 
     fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
         match self.lookup_scope(&r.name) {
-            Some((t, p)) => {
-                r.place = Some(p);
-                Ok(t)
-            }
+            Some(t) => Ok(t),
             None if self.allow_insert.is_some() => {
                 let typ = self.allow_insert.unwrap();
-                let spot = self.insert_scope(&r.name, typ);
-                r.place = Some(spot);
+                r.is_decl = true;
+                self.insert_scope(&r.name, typ);
                 Ok(typ)
             }
             None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
@@ -361,8 +358,8 @@ impl TypeChecker {
         Ok(return_type)
     }
 
-    fn function(&mut self, f: &mut Function) -> Result<Type, TypeError> {
-        let typ = match f.name.clone() {
+    fn function(&mut self, f: &mut Rc<RefCell<Function>>) -> Result<Type, TypeError> {
+        let typ = match f.borrow().name.clone() {
             Some(s) => {
                 let rv = self.system.function_type(s.clone());
                 self.insert_scope(&s, rv);
@@ -411,7 +408,7 @@ impl TypeChecker {
             return Ok(t);
         }
 
-        let mut function: Function = self.type_to_func[&functype].clone();
+        let function = self.type_to_func[&functype].clone();
         let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
@@ -420,20 +417,21 @@ impl TypeChecker {
             },
         );
 
-        if args.len() != function.argnames.len() {
+        if args.len() != function.borrow().argnames.len() {
             return Err(self.error(format!(
                 "Trying to call function with {} args. Expected {}",
                 args.len(),
-                function.argnames.len()
+                function.borrow().argnames.len()
             )));
         }
 
         self.openscope();
-        for (typ, name) in args.iter().zip(function.argnames.iter()) {
+        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
 
-        let rv = match self.expr(function.body.as_mut()) {
+        //TODO: check if this is an issue with recursive functions
+        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
                     format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
@@ -449,10 +447,10 @@ impl TypeChecker {
         self.system.patch_signature_return(functype, sig_handle, rv);
         self.closescope();
         self.openscope();
-        for (typ, name) in args.iter().zip(function.argnames.iter()) {
+        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
-        let rv = match self.expr(function.body.as_mut()) {
+        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
             Ok(t) if t == rv => t,
             Ok(t) => {
                 return Err(vec![
@@ -468,7 +466,7 @@ impl TypeChecker {
                 return Err(s);
             }
         };
-        function.locals = Some(self.closescope());
+        function.borrow_mut().locals = Some(self.closescope());
         // c.function.derived_type = Some(self.system.func_type(Signature {
         // inputs: args,
         // output: rv,

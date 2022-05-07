@@ -4,67 +4,74 @@ use crate::operation::Operation;
 use crate::parser::*;
 use crate::typesystem::{Signature, TypeSystem, BOOL, UNIT};
 use crate::value::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub struct Compiler {
     code: CodeBuilder,
-    scopes: Vec<HashMap<String, usize>>,
     need_ref: bool,
     types: Option<TypeSystem>,
+    scopes: Vec<HashMap<String, usize>>,
+    num_args: usize,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             code: CodeBuilder::new(),
-            scopes: vec![HashMap::new()],
             need_ref: false,
+            scopes: vec![HashMap::new()],
             types: None,
+            num_args: 0,
         }
     }
 
-    pub fn compile(&mut self, name: String, p: &ParseTree, types: &TypeSystem) -> Vec<Instruction> {
+    pub fn compile(
+        &mut self,
+        name: String,
+        p: &ParseTree,
+        types: &TypeSystem,
+    ) -> (Vec<Instruction>, usize) {
         self.types = Some(types.clone());
         self.code.open_function(name);
         self.code.reserve(p.globals.unwrap());
         for statement in p.statements.iter() {
             self.statement(statement);
         }
-        self.code.close_function();
+        self.code.crash();
+        let entry = self.code.close_function();
         self.types = None;
-        self.code.code()
+        (self.code.code(), entry)
     }
 
     fn open_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
 
-    fn lookup_scope(&self, _name: &str) -> usize {
-        todo!("Full scoping is hard. Well' talk about it later");
-        // for scope in self.scopes.iter().rev() {
-        // match scope.get(name) {
-        // Some(t) => return *t,
-        // None => (),
-        // }
-        // }
-        // unreachable!()
+    fn close_scope(&mut self) {
+        assert!(self.scopes.len() >= 1);
+        self.scopes.pop();
     }
 
     fn insert_scope(&mut self, name: String) -> usize {
-        assert!(self.scopes.len() > 0);
-        let cur_scope = self.scopes.last_mut().unwrap();
-        let val = cur_scope.len();
-        cur_scope.insert(name, val);
+        assert!(self.scopes.len() >= 1);
+        let scope = self.scopes.last_mut().unwrap();
+        let val = scope.len();
+        assert!(scope.insert(name, val).is_none());
         val
     }
 
-    fn lookup_scope_local(&self, name: &str) -> usize {
+    fn lookup_scope_local(&mut self, name: &str) -> usize {
         assert!(self.scopes.len() >= 1);
-        *self.scopes.last().unwrap().get(name).unwrap()
-    }
-
-    fn close_scope(&mut self) {
-        self.scopes.pop();
+        let scope = self.scopes.last().unwrap();
+        match scope.get(name) {
+            Some(s) => *s,
+            None => unreachable!(
+                "Bug in scope lookup. tried to look up `{}` which had not been declared\n{:#?}",
+                name, self.scopes
+            ),
+        }
     }
 
     fn statement(&mut self, s: &Statement) {
@@ -96,7 +103,7 @@ impl Compiler {
             ExpressionType::PostUnOp(p) => self.postunop(p),
             ExpressionType::AssignExpr(a) => self.assignment(a),
             ExpressionType::Function(f) => self.function(
-                f,
+                f.clone(),
                 self.types
                     .as_ref()
                     .unwrap()
@@ -179,7 +186,11 @@ impl Compiler {
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
-        let offset = r.place.unwrap();
+        let offset = if r.is_decl {
+            self.insert_scope(r.name.clone())
+        } else {
+            self.lookup_scope_local(&r.name)
+        };
         self.code.local_ref(offset as isize);
         if !self.need_ref {
             self.code.load();
@@ -274,18 +285,55 @@ impl Compiler {
         todo!()
     }
 
-    fn function(&mut self, f: &Function, sigs: Vec<Signature>) {
-        for sig in sigs.iter() {
-            self.single_function(f, sig);
+    fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {
+        assert!(
+            sigs.len() == 1,
+            "Temporary until we get function templating working"
+        );
+        if let Some(name) = &f.borrow().name {
+            let off = self.insert_scope(name.clone());
+            for sig in sigs.iter() {
+                let addr = self.single_function(&f.borrow(), sig);
+                self.code.local_ref(off as isize);
+                self.code.push(Value::Ptr(addr));
+                self.code.store();
+            }
+        } else {
+            for sig in sigs.iter() {
+                let addr = self.single_function(&f.borrow(), sig);
+                self.code.push(Value::Ptr(addr));
+            }
         }
     }
 
-    fn single_function(&mut self, f: &Function, _sig: &Signature) {
+    fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
+        assert!(sig.inputs.len() == f.argnames.len());
+        let name = match &f.name {
+            Some(n) => format!(
+                "{}{}",
+                n,
+                self.types.as_ref().unwrap().format_signature(sig)
+            ),
+            None => format!(
+                "<anonymous>{}",
+                self.types.as_ref().unwrap().format_signature(sig)
+            ),
+        };
         self.open_scope();
-        for name in f.argnames.iter() {
-            self.insert_scope(name.clone());
+        self.code.open_function(name);
+        for argname in f.argnames.iter() {
+            self.insert_scope(argname.clone());
         }
+        let old_num_args = self.num_args;
+        self.num_args = sig.inputs.len();
+        if f.locals.unwrap() > f.argnames.len() {
+            self.code.reserve(f.locals.unwrap() - f.argnames.len());
+        }
+        self.expr(f.body.as_ref());
+        self.code.return_();
+        self.num_args = old_num_args;
         self.close_scope();
+        self.code.close_function()
     }
 
     fn lambda(&mut self, _l: &Lambda) {
@@ -297,13 +345,14 @@ impl Compiler {
     }
 
     fn call(&mut self, c: &CallExpr) {
-        // self.code.prep_call();
+        self.code.push(Value::Uninitialized); // ip
+        self.code.push(Value::Uninitialized); // bp
         for arg in c.args.iter() {
             self.expr(arg);
         }
+        self.code.push(Value::Count(c.args.len()));
         self.expr(c.function.as_ref());
-        self.code.push(Value::PtrOffset(c.args.len() as isize));
-        // self.code.jump();
+        self.code.call();
     }
 
     fn dotted_lookup(&mut self, _d: &DottedLookup) {
