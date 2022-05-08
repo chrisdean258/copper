@@ -117,6 +117,10 @@ impl CodeBuilder {
         self.emit(Operation::RefFrame, vec![], vec![])
     }
 
+    pub fn global_ref(&mut self, number: usize) -> usize {
+        self.push(Value::Ptr(number))
+    }
+
     pub fn reserve(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
         self.emit(Operation::Reserve, vec![], vec![])

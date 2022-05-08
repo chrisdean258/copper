@@ -40,15 +40,13 @@ impl Evaluator {
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         while self.ip < self.code.len() {
-            print!(
-                "stack: {:?}\n{:05}: {:<20} ",
-                self.stack,
-                self.ip,
-                self.code[self.ip].to_string(),
-            );
+            // print!( "stack: {:?}\n{:05}: {:<20} ", self.stack, self.ip, self.code[self.ip].to_string(),);
             match self.code[self.ip].op {
                 Operation::Nop => (),
-                Operation::Crash => return Err("Crash Operation".to_string()),
+                Operation::Crash => {
+                    eprintln!("stack: {:?}", self.stack);
+                    return Err("Crash Operation".to_string());
+                }
                 Operation::Push => self.stack.push(self.code[self.ip].values[0]),
                 Operation::Pop => {
                     self.stack.pop();
@@ -361,7 +359,7 @@ impl Evaluator {
             }
             self.ip += 1;
         }
-        println!("stack: {:?}", self.stack);
+        // println!("stack: {:?}", self.stack);
         Ok(Value::Null)
     }
 }

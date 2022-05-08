@@ -398,15 +398,14 @@ impl TypeSystem {
     }
 
     pub fn format_signature(&self, sig: &Signature) -> String {
-        let arg_types = sig
-            .inputs
-            .iter()
+        let arg_types = self.format_args(&sig.inputs);
+        format!("({}) -> {}", arg_types, self.typename(sig.output))
+    }
+
+    pub fn format_args(&self, args: &Vec<Type>) -> String {
+        args.iter()
             .map(|t| self.typename(*t).clone())
-            .collect::<Vec<String>>();
-        format!(
-            "({}) -> {}",
-            arg_types.join(", "),
-            self.typename(sig.output)
-        )
+            .collect::<Vec<String>>()
+            .join(", ")
     }
 }

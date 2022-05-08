@@ -2,10 +2,11 @@
 use crate::code_emitter::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::typesystem::{Signature, TypeSystem, BOOL, UNIT};
+use crate::typesystem::{Signature, Type, TypeSystem, BOOL, UNIT};
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::mem::swap;
 use std::rc::Rc;
 
 pub struct Compiler {
@@ -14,6 +15,7 @@ pub struct Compiler {
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, usize>>,
     num_args: usize,
+    arg_types: Option<Vec<Type>>,
 }
 
 impl Compiler {
@@ -24,6 +26,7 @@ impl Compiler {
             scopes: vec![HashMap::new()],
             types: None,
             num_args: 0,
+            arg_types: None,
         }
     }
 
@@ -37,7 +40,7 @@ impl Compiler {
         self.code.open_function(name);
         self.code.reserve(p.globals.unwrap());
         for statement in p.statements.iter() {
-            self.statement(statement);
+            self.statement(statement, true);
         }
         self.code.crash();
         let entry = self.code.close_function();
@@ -62,23 +65,45 @@ impl Compiler {
         val
     }
 
-    fn lookup_scope_local(&mut self, name: &str) -> usize {
+    fn lookup_scope_local_or_global(&mut self, name: &str) -> (usize, bool) {
         assert!(self.scopes.len() >= 1);
         let scope = self.scopes.last().unwrap();
-        match scope.get(name) {
-            Some(s) => *s,
-            None => unreachable!(
-                "Bug in scope lookup. tried to look up `{}` which had not been declared\n{:#?}",
-                name, self.scopes
-            ),
+        if let Some(u) = scope.get(name) {
+            return (*u, true);
         }
+        if let Some(u) = self.scopes[0].get(name) {
+            return (*u, false);
+        }
+        assert!(
+            self.arg_types.is_some(),
+            "Looking up `{}` with no funciton present failed",
+            name
+        );
+        let types = self
+            .types
+            .as_ref()
+            .unwrap()
+            .format_args(self.arg_types.as_ref().unwrap());
+        let funcname = format!("{}({})", name, types);
+        if let Some(u) = scope.get(&funcname) {
+            return (*u, true);
+        }
+        if let Some(u) = self.scopes[0].get(&funcname) {
+            return (*u, false);
+        };
+        unreachable!(
+            "Tried to lookup `{}` and `{}` which were not present. {:?}",
+            name, funcname, self.scopes
+        );
     }
 
-    fn statement(&mut self, s: &Statement) {
+    fn statement(&mut self, s: &Statement, pop: bool) {
         match s {
             Statement::Expr(e) => {
                 self.expr(e);
-                self.code.emit(Operation::Pop, vec![UNIT], vec![]);
+                if pop {
+                    self.code.emit(Operation::Pop, vec![UNIT], vec![]);
+                }
             }
             Statement::ClassDecl(c) => todo!("{:?}", c),
             Statement::Import(i) => todo!("{:?}", i),
@@ -93,7 +118,12 @@ impl Compiler {
         match &e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
-            ExpressionType::If(i) => self.ifexpr(i),
+            ExpressionType::If(i) => {
+                self.ifexpr(i);
+                if e.derived_type.unwrap() == UNIT {
+                    self.code.pop();
+                }
+            }
             ExpressionType::CallExpr(c) => self.call(c),
             ExpressionType::RefExpr(r) => self.refexpr(r),
             ExpressionType::Immediate(i) => self.immediate(i),
@@ -186,12 +216,16 @@ impl Compiler {
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
-        let offset = if r.is_decl {
-            self.insert_scope(r.name.clone())
+        let (offset, is_local) = if r.is_decl {
+            (self.insert_scope(r.name.clone()), false)
         } else {
-            self.lookup_scope_local(&r.name)
+            self.lookup_scope_local_or_global(&r.name)
         };
-        self.code.local_ref(offset as isize);
+        if is_local {
+            self.code.local_ref(offset as isize);
+        } else {
+            self.code.global_ref(offset);
+        }
         if !self.need_ref {
             self.code.load();
         }
@@ -221,8 +255,13 @@ impl Compiler {
     }
 
     fn block(&mut self, b: &BlockExpr) {
+        let mut first = true;
         for statement in b.statements.iter() {
-            self.statement(statement);
+            if !first {
+                first = false;
+                self.code.pop();
+            }
+            self.statement(statement, false);
         }
     }
 
@@ -286,13 +325,14 @@ impl Compiler {
     }
 
     fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {
-        assert!(
-            sigs.len() == 1,
-            "Temporary until we get function templating working"
-        );
         if let Some(name) = &f.borrow().name {
-            let off = self.insert_scope(name.clone());
             for sig in sigs.iter() {
+                let funcname = format!(
+                    "{}({})",
+                    name,
+                    self.types.as_ref().unwrap().format_args(&sig.inputs)
+                );
+                let off = self.insert_scope(funcname);
                 let addr = self.single_function(&f.borrow(), sig);
                 self.code.local_ref(off as isize);
                 self.code.push(Value::Ptr(addr));
@@ -351,7 +391,12 @@ impl Compiler {
             self.expr(arg);
         }
         self.code.push(Value::Count(c.args.len()));
+
+        let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
+        swap(&mut arg_types, &mut self.arg_types);
         self.expr(c.function.as_ref());
+        self.arg_types = arg_types;
+
         self.code.call();
     }
 
