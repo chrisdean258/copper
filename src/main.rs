@@ -1,4 +1,4 @@
-mod code_emitter;
+mod code_builder;
 mod compiler;
 mod eval;
 mod lex;

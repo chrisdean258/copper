@@ -1,15 +1,14 @@
 #![allow(dead_code)]
-use crate::code_emitter::Instruction;
+use crate::code_builder::Instruction;
+// use crate::memory::Memory;
 use crate::operation::Operation;
 use crate::value::Value;
-
-// #[derive(Clone, Debug)]
-// pub struct Object {}
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     code: Vec<Instruction>,
     pub stack: Vec<Value>,
+    // memory: Memory,
     ip: usize,
     bp: usize,
 }
@@ -26,12 +25,16 @@ macro_rules! pop_stack {
 }
 
 impl Evaluator {
+    pub const STACK_BOTTOM: usize = 0x1000000;
+    pub const CODE: usize = 0x100000;
+
     pub fn new() -> Self {
         Self {
             code: Vec::new(),
             stack: Vec::new(),
-            ip: 0,
-            bp: 0,
+            // memory: Memory::new(),
+            ip: Self::CODE,
+            bp: Self::STACK_BOTTOM,
         }
     }
 
@@ -39,27 +42,30 @@ impl Evaluator {
         use crate::value::Value::*;
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
-        while self.ip < self.code.len() {
-            // print!( "stack: {:?}\n{:05}: {:<20} ", self.stack, self.ip, self.code[self.ip].to_string(),);
-            match self.code[self.ip].op {
+        loop {
+            eprintln!("stack: {:?}", self.stack);
+            eprint!("ip: 0x{:x}: ", self.ip);
+            eprint!("bp: 0x{:x}: ", self.bp);
+            eprint!("{:<20}", self.code[self.ip - Self::CODE].to_string());
+            match self.code[self.ip - Self::CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
-                    eprintln!("stack: {:?}", self.stack);
-                    return Err("Crash Operation".to_string());
+                    break;
                 }
-                Operation::Push => self.stack.push(self.code[self.ip].values[0]),
+                Operation::Push => self.stack.push(self.code[self.ip - Self::CODE].values[0]),
                 Operation::Pop => {
                     self.stack.pop();
                 }
                 Operation::Load => {
                     let addr = pop_stack!(self, Value::Ptr);
-                    self.stack.push(self.stack[addr].clone());
+                    self.stack
+                        .push(self.stack[addr - Self::STACK_BOTTOM].clone());
                 }
                 Operation::Store => {
                     assert!(self.stack.len() >= 2);
                     let value = self.stack.pop().unwrap();
                     let addr = pop_stack!(self, Value::Ptr);
-                    self.stack[addr] = value;
+                    self.stack[addr - Self::STACK_BOTTOM] = value;
                     self.stack.push(value);
                 }
                 Operation::Reserve => {
@@ -121,7 +127,7 @@ impl Evaluator {
                 Operation::Return => {
                     assert!(self.stack.len() >= 3);
                     let rv = self.stack.pop().unwrap();
-                    self.stack.truncate(self.bp);
+                    self.stack.truncate(self.bp - Self::STACK_BOTTOM);
                     assert!(self.stack.len() >= 2);
                     self.bp = pop_stack!(self, Value::Ptr);
                     self.ip = pop_stack!(self, Value::Ptr);
@@ -132,9 +138,9 @@ impl Evaluator {
                     assert!(self.stack.len() >= 2);
                     let ip = pop_stack!(self, Value::Ptr);
                     let num_args = pop_stack!(self, Value::Count);
-                    let bp = self.stack.len() - num_args;
-                    self.stack[bp - 1] = Value::Ptr(self.bp);
-                    self.stack[bp - 2] = Value::Ptr(self.ip + 1);
+                    let bp = self.stack.len() - num_args + Self::STACK_BOTTOM;
+                    self.stack[bp - 1 - Self::STACK_BOTTOM] = Value::Ptr(self.bp);
+                    self.stack[bp - 2 - Self::STACK_BOTTOM] = Value::Ptr(self.ip + 1);
                     self.bp = bp;
                     self.ip = ip;
                     continue;
@@ -359,7 +365,6 @@ impl Evaluator {
             }
             self.ip += 1;
         }
-        // println!("stack: {:?}", self.stack);
         Ok(Value::Null)
     }
 }

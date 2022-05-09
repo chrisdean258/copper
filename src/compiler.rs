@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::code_emitter::{CodeBuilder, Instruction};
+use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
 use crate::typesystem::{Signature, Type, TypeSystem, BOOL, UNIT};
