@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use crate::code_builder::Instruction;
 // use crate::memory::Memory;
+use crate::builtins::BuiltinFunction;
 use crate::operation::Operation;
 use crate::value::Value;
 
@@ -9,6 +10,7 @@ pub struct Evaluator {
     code: Vec<Instruction>,
     pub stack: Vec<Value>,
     // memory: Memory,
+    builtin_table: Vec<BuiltinFunction>,
     ip: usize,
     bp: usize,
 }
@@ -27,12 +29,14 @@ macro_rules! pop_stack {
 impl Evaluator {
     pub const STACK_BOTTOM: usize = 0x1000000;
     pub const CODE: usize = 0x100000;
+    pub const BUILTIN_CODE: usize = 0x10000;
 
     pub fn new() -> Self {
         Self {
             code: Vec::new(),
             stack: Vec::new(),
             // memory: Memory::new(),
+            builtin_table: BuiltinFunction::get_table(),
             ip: Self::CODE,
             bp: Self::STACK_BOTTOM,
         }
@@ -43,10 +47,10 @@ impl Evaluator {
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         loop {
-            eprintln!("stack: {:?}", self.stack);
-            eprint!("ip: 0x{:x}: ", self.ip);
-            eprint!("bp: 0x{:x}: ", self.bp);
-            eprint!("{:<20}", self.code[self.ip - Self::CODE].to_string());
+            // eprintln!("stack: {:?}", self.stack);
+            // eprint!("ip: 0x{:x}: ", self.ip);
+            // eprint!("bp: 0x{:x}: ", self.bp);
+            // eprint!("{:<20}", self.code[self.ip - Self::CODE].to_string());
             match self.code[self.ip - Self::CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
@@ -143,6 +147,15 @@ impl Evaluator {
                     self.stack[bp - 2 - Self::STACK_BOTTOM] = Value::Ptr(self.ip + 1);
                     self.bp = bp;
                     self.ip = ip;
+                    if ip < Self::CODE {
+                        let builtin_idx = ip - Self::BUILTIN_CODE;
+                        (self.builtin_table[builtin_idx].func)(self, num_args);
+                        let rv = self.stack.pop().unwrap();
+                        self.stack.truncate(self.bp - Self::STACK_BOTTOM);
+                        self.bp = pop_stack!(self, Value::Ptr);
+                        self.ip = pop_stack!(self, Value::Ptr);
+                        self.stack.push(rv);
+                    }
                     continue;
                 }
                 Operation::BoolOr => {

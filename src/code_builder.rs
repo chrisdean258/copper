@@ -122,6 +122,10 @@ impl CodeBuilder {
         self.push(Value::Ptr(number + Evaluator::STACK_BOTTOM))
     }
 
+    pub fn builtin_ref(&mut self, number: usize) -> usize {
+        self.push(Value::Ptr(number + Evaluator::BUILTIN_CODE))
+    }
+
     pub fn reserve(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
         self.emit(Operation::Reserve, vec![], vec![])

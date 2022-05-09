@@ -1,3 +1,4 @@
+use crate::builtins::BuiltinFunction;
 use crate::location::Location;
 use crate::parser::ParseTree;
 use crate::parser::*;
@@ -41,6 +42,10 @@ impl TypeChecker {
             globals: 0,
         };
         rv.openscope();
+        for f in BuiltinFunction::get_table() {
+            rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
+        }
+        rv.openscope();
         rv
     }
 
@@ -61,8 +66,8 @@ impl TypeChecker {
                 Err(mut s) => results.append(&mut s),
             }
         }
-        self.globals += self.scopes[0].borrow().len();
-        p.globals = Some(self.scopes[0].borrow().len());
+        self.globals += self.scopes[1].borrow().len();
+        p.globals = Some(self.scopes[1].borrow().len());
         if results.len() > 0 {
             Err(results.join("\n"))
         } else {
@@ -403,6 +408,10 @@ impl TypeChecker {
             }
         }
         check_err!(errs);
+
+        if functype == BUILTIN_FUNCTION {
+            return Ok(UNIT);
+        }
 
         if let Some(t) = self.system.match_signature(functype, &args) {
             return Ok(t);

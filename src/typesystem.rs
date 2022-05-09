@@ -81,12 +81,13 @@ impl Debug for Op {
 
 pub const UNIT: Type = Type { index: 0 };
 pub const UNKNOWN_RETURN: Type = Type { index: 1 };
-pub const NULL: Type = Type { index: 2 };
-pub const BOOL: Type = Type { index: 3 };
-pub const CHAR: Type = Type { index: 4 };
-pub const INT: Type = Type { index: 5 };
-pub const FLOAT: Type = Type { index: 6 };
-pub const STR: Type = Type { index: 7 };
+pub const BUILTIN_FUNCTION: Type = Type { index: 2 };
+pub const NULL: Type = Type { index: 3 };
+pub const BOOL: Type = Type { index: 4 };
+pub const CHAR: Type = Type { index: 5 };
+pub const INT: Type = Type { index: 6 };
+pub const FLOAT: Type = Type { index: 7 };
+pub const STR: Type = Type { index: 8 };
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -94,12 +95,13 @@ impl Display for Type {
         f.write_str(match self.index {
             0 => "unit",
             1 => "UNKNOWN RETURN",
-            2 => "null",
-            3 => "bool",
-            4 => "char",
-            5 => "int",
-            6 => "float",
-            7 => "str",
+            2 => "builtin function",
+            3 => "null",
+            4 => "bool",
+            5 => "char",
+            6 => "int",
+            7 => "float",
+            8 => "str",
             _ => &s,
         })
     }
@@ -125,6 +127,7 @@ impl TypeSystem {
             String::from("UNKNOWN RETURN"),
             TypeEntryType::new_unknown_return(),
         );
+        self.new_type(String::from("builtin function"), TypeEntryType::new_basic());
         self.new_type(String::from("null"), TypeEntryType::new_basic());
         self.new_type(String::from("bool"), TypeEntryType::new_basic());
         self.new_type(String::from("char"), TypeEntryType::new_basic());
@@ -351,6 +354,7 @@ impl TypeSystem {
         match &self.types[func.index].te_type {
             TypeEntryType::UnknownReturnType => true,
             TypeEntryType::FunctionType(_) => true,
+            _ if func == BUILTIN_FUNCTION => true,
             _ => false,
         }
     }

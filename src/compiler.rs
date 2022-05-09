@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
@@ -14,8 +15,15 @@ pub struct Compiler {
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, usize>>,
+    builtins: HashMap<String, usize>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
+}
+
+enum Scope {
+    Local,
+    Global,
+    Builtin,
 }
 
 impl Compiler {
@@ -24,6 +32,13 @@ impl Compiler {
             code: CodeBuilder::new(),
             need_ref: false,
             scopes: vec![HashMap::new()],
+            builtins: {
+                let mut b = HashMap::new();
+                for func in BuiltinFunction::get_table() {
+                    b.insert(func.name.clone(), b.len());
+                }
+                b
+            },
             types: None,
             num_args: 0,
             arg_types: None,
@@ -65,14 +80,17 @@ impl Compiler {
         val
     }
 
-    fn lookup_scope_local_or_global(&mut self, name: &str) -> (usize, bool) {
+    fn lookup_scope_local_or_global(&mut self, name: &str) -> (usize, Scope) {
         assert!(self.scopes.len() >= 1);
         let scope = self.scopes.last().unwrap();
         if let Some(u) = scope.get(name) {
-            return (*u, true);
+            return (*u, Scope::Local);
         }
         if let Some(u) = self.scopes[0].get(name) {
-            return (*u, false);
+            return (*u, Scope::Global);
+        }
+        if let Some(u) = self.builtins.get(name) {
+            return (*u, Scope::Builtin);
         }
         assert!(
             self.arg_types.is_some(),
@@ -86,10 +104,10 @@ impl Compiler {
             .format_args(self.arg_types.as_ref().unwrap());
         let funcname = format!("{}({})", name, types);
         if let Some(u) = scope.get(&funcname) {
-            return (*u, true);
+            return (*u, Scope::Local);
         }
         if let Some(u) = self.scopes[0].get(&funcname) {
-            return (*u, false);
+            return (*u, Scope::Global);
         };
         unreachable!(
             "Tried to lookup `{}` and `{}` which were not present. {:?}",
@@ -216,16 +234,19 @@ impl Compiler {
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
-        let (offset, is_local) = if r.is_decl {
-            (self.insert_scope(r.name.clone()), false)
+        let (offset, scope) = if r.is_decl {
+            (self.insert_scope(r.name.clone()), Scope::Local)
         } else {
             self.lookup_scope_local_or_global(&r.name)
         };
-        if is_local {
-            self.code.local_ref(offset as isize);
-        } else {
-            self.code.global_ref(offset);
-        }
+        match scope {
+            Scope::Local => self.code.local_ref(offset as isize),
+            Scope::Global => self.code.global_ref(offset),
+            Scope::Builtin => {
+                self.code.builtin_ref(offset);
+                return;
+            }
+        };
         if !self.need_ref {
             self.code.load();
         }

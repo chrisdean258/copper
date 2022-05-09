@@ -1,3 +1,4 @@
+mod builtins;
 mod code_builder;
 mod compiler;
 mod eval;
