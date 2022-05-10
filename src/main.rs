@@ -4,6 +4,7 @@ mod compiler;
 mod eval;
 mod lex;
 mod location;
+mod memory;
 mod operation;
 mod parser;
 mod typecheck;

@@ -56,7 +56,9 @@ impl Evaluator {
                 Operation::Crash => {
                     break;
                 }
-                Operation::Push => self.stack.push(self.code[self.ip - Self::CODE].values[0]),
+                Operation::Push => self
+                    .stack
+                    .push(self.code[self.ip - Self::CODE].value.unwrap()),
                 Operation::Pop => {
                     self.stack.pop();
                 }

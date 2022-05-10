@@ -56,3 +56,49 @@ impl Debug for Value {
         }
     }
 }
+
+impl Value {
+    pub fn encode(&self) -> u64 {
+        match self {
+            Value::Uninitialized => 0,
+            Value::Null => 0,
+            Value::Bool(b) => *b as u64,
+            Value::Char(c) => *c as u64,
+            Value::Int(i) => *i as u64 & !(1 << 63),
+            Value::Float(f) => f.to_bits() >> 1,
+            Value::Ptr(p) => {
+                assert!(p & 1 << 63 == 0);
+                *p as u64
+            }
+            Value::PtrOffset(o) => *o as u64 & !(1 << 63),
+            Value::Count(u) => {
+                assert!(u & 1 << 63 == 0);
+                *u as u64
+            }
+        }
+    }
+    pub fn decode_as(bytes: u64, mut what: Value) -> Value {
+        match &mut what {
+            Value::Uninitialized => (),
+            Value::Null => (),
+            Value::Bool(b) => {
+                *b = (bytes & 0x1) as u8;
+            }
+            Value::Char(c) => {
+                *c = (bytes & 0xff) as u8;
+            }
+            Value::Int(i) => {
+                *i = ((bytes as i64) << 1) >> 1;
+            }
+            Value::Float(f) => {
+                *f = f64::from_bits(bytes);
+            }
+            Value::Ptr(p) => *p = bytes as usize,
+            Value::PtrOffset(o) => {
+                *o = ((bytes as isize) << 1) >> 1;
+            }
+            Value::Count(u) => *u = bytes as usize,
+        }
+        what
+    }
+}

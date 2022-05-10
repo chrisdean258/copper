@@ -40,7 +40,127 @@ impl Display for Function {
 pub struct Instruction {
     pub op: Operation,
     pub types: Vec<Type>,
-    pub values: Vec<Value>,
+    pub value: Option<Value>,
+}
+
+impl Instruction {
+    // fn encode(&self) -> u64 {
+    // let mut encoding = match self.op {
+    // Operation::Push => {
+    // return 1 << 63 | self.value[0].encode();
+    // }
+    // Operation::Nop => 0,
+    // Operation::Crash => 1,
+    // Operation::Pop => 2,
+    // Operation::Dup => 3,
+    // Operation::Store => 4,
+    // Operation::Load => 5,
+    // Operation::Rotate => 6,
+    // Operation::Swap => 7,
+    // Operation::Reserve => 8,
+    // Operation::RefFrame => 9,
+    // Operation::Jump => 10,
+    // Operation::JumpRel => 11,
+    // Operation::JumpIf => 12,
+    // Operation::JumpRelIf => 13,
+    // Operation::Call => 14,
+    // Operation::PrepCall => 15,
+    // Operation::Return => 16,
+    // Operation::BoolOr => 17,
+    // Operation::BoolXor => 18,
+    // Operation::BoolAnd => 19,
+    // Operation::BitOr => 20,
+    // Operation::BitXor => 21,
+    // Operation::BitAnd => 22,
+    // Operation::CmpGE => 23,
+    // Operation::CmpGT => 24,
+    // Operation::CmpLE => 25,
+    // Operation::CmpLT => 26,
+    // Operation::CmpEq => 27,
+    // Operation::CmpNotEq => 28,
+    // Operation::BitShiftLeft => 29,
+    // Operation::BitShiftRight => 30,
+    // Operation::Minus => 31,
+    // Operation::Plus => 32,
+    // Operation::Times => 33,
+    // Operation::Mod => 34,
+    // Operation::Div => 35,
+    // Operation::Equal => 36,
+    // Operation::BoolNot => 37,
+    // Operation::BitNot => 38,
+    // _ => unreachable!(),
+    // } << 56;
+    // assert!(self.types.len() <= 2);
+    // for (i, t) in self.types.iter().enumerate() {
+    // encoding |= (t.encode() & 0xFFFF) << i * 16;
+    // }
+    // encoding
+    // }
+
+    // fn decode(op: u64) -> Self {
+    // if (op & 1 << 63) != 0 {
+    // return Instruction {
+    // operation: Operation::Push,
+    // types: Vec::new(),
+    // values: vec![op & !(1<< 63)],
+    // }
+    // }
+    // let mut op = match self.op {
+    // Operation::Push => {
+    // return 1 << 63 | self.values[0].encode();
+    // }
+    // Operation::Nop => 0,
+    // Operation::Crash => 1,
+    // Operation::Pop => 2,
+    // Operation::Dup => 3,
+    // Operation::Store => 4,
+    // Operation::Load => 5,
+    // Operation::Rotate => 6,
+    // Operation::Swap => 7,
+    // Operation::Reserve => 8,
+    // Operation::RefFrame => 9,
+    // Operation::Jump => 10,
+    // Operation::JumpRel => 11,
+    // Operation::JumpIf => 12,
+    // Operation::JumpRelIf => 13,
+    // Operation::Call => 14,
+    // Operation::PrepCall => 15,
+    // Operation::Return => 16,
+    // Operation::BoolOr => 17,
+    // Operation::BoolXor => 18,
+    // Operation::BoolAnd => 19,
+    // Operation::BitOr => 20,
+    // Operation::BitXor => 21,
+    // Operation::BitAnd => 22,
+    // Operation::CmpGE => 23,
+    // Operation::CmpGT => 24,
+    // Operation::CmpLE => 25,
+    // Operation::CmpLT => 26,
+    // Operation::CmpEq => 27,
+    // Operation::CmpNotEq => 28,
+    // Operation::BitShiftLeft => 29,
+    // Operation::BitShiftRight => 30,
+    // Operation::Minus => 31,
+    // Operation::Plus => 32,
+    // Operation::Times => 33,
+    // Operation::Mod => 34,
+    // Operation::Div => 35,
+    // Operation::Equal => 36,
+    // Operation::BoolNot => 37,
+    // Operation::BitNot => 38,
+    // _ => unreachable!(),
+    // } << 56;
+    // assert!(self.types.len() <= 2);
+    // for (i, t) in self.types.iter().enumerate() {
+    // encoding |= (t.encode() & 0xFFFF) << i * 16;
+    // }
+    // encoding
+    // Instruction {
+    // op: Operation::Nop,
+    // types: Vec::new(),
+    // values: Vec::new(),
+    // }
+    // }
 }
 
 impl Display for Instruction {
@@ -58,7 +178,7 @@ impl Display for Instruction {
 
         f.write_fmt(format_args!(
             " ({})",
-            self.values
+            self.value
                 .iter()
                 .map(|t| format!("{}", t))
                 .collect::<Vec<String>>()
@@ -88,11 +208,11 @@ impl CodeBuilder {
         rv + Evaluator::CODE
     }
 
-    pub fn emit(&mut self, op: Operation, types: Vec<Type>, values: Vec<Value>) -> usize {
+    pub fn emit(&mut self, op: Operation, types: Vec<Type>, value: Option<Value>) -> usize {
         assert!(op.is_machineop(), "{}", op);
         assert!(self.active_functions.len() > 0); // If not this is a bug
         let code = &mut self.active_functions.last_mut().unwrap().code;
-        code.push(Instruction { op, types, values });
+        code.push(Instruction { op, types, value });
         code.len() - 1
     }
 
@@ -106,16 +226,16 @@ impl CodeBuilder {
     }
 
     pub fn prep_function_call(&mut self) -> usize {
-        self.emit(Operation::PrepCall, vec![], vec![])
+        self.emit(Operation::PrepCall, vec![], None)
     }
 
     pub fn call(&mut self) -> usize {
-        self.emit(Operation::Call, vec![], vec![])
+        self.emit(Operation::Call, vec![], None)
     }
 
     pub fn local_ref(&mut self, number: isize) -> usize {
         self.push(Value::PtrOffset(number));
-        self.emit(Operation::RefFrame, vec![], vec![])
+        self.emit(Operation::RefFrame, vec![], None)
     }
 
     pub fn global_ref(&mut self, number: usize) -> usize {
@@ -128,35 +248,35 @@ impl CodeBuilder {
 
     pub fn reserve(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
-        self.emit(Operation::Reserve, vec![], vec![])
+        self.emit(Operation::Reserve, vec![], None)
     }
 
     pub fn push(&mut self, value: Value) -> usize {
-        self.emit(Operation::Push, vec![], vec![value])
+        self.emit(Operation::Push, vec![], Some(value))
     }
 
     pub fn pop(&mut self) -> usize {
-        self.emit(Operation::Pop, vec![], vec![])
+        self.emit(Operation::Pop, vec![], None)
     }
 
     pub fn dup(&mut self) -> usize {
-        self.emit(Operation::Dup, vec![], vec![])
+        self.emit(Operation::Dup, vec![], None)
     }
 
     pub fn load(&mut self) -> usize {
-        self.emit(Operation::Load, vec![], vec![])
+        self.emit(Operation::Load, vec![], None)
     }
 
     pub fn store(&mut self) -> usize {
-        self.emit(Operation::Store, vec![], vec![])
+        self.emit(Operation::Store, vec![], None)
     }
 
     pub fn return_(&mut self) -> usize {
-        self.emit(Operation::Return, vec![], vec![])
+        self.emit(Operation::Return, vec![], None)
     }
 
     pub fn crash(&mut self) -> usize {
-        self.emit(Operation::Crash, vec![], vec![])
+        self.emit(Operation::Crash, vec![], None)
     }
 
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
@@ -164,7 +284,7 @@ impl CodeBuilder {
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
             op: Operation::Push,
             types: vec![],
-            values: vec![Value::Ptr(to)],
+            value: Some(Value::Ptr(to)),
         };
     }
 
@@ -174,42 +294,42 @@ impl CodeBuilder {
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
             op: Operation::Push,
             types: vec![],
-            values: vec![Value::PtrOffset(offset)],
+            value: Some(Value::PtrOffset(offset)),
         };
     }
 
     pub fn jump(&mut self) -> usize {
-        self.emit(Operation::Jump, vec![], vec![])
+        self.emit(Operation::Jump, vec![], None)
     }
 
     pub fn jump_to(&mut self, location: usize) -> usize {
         self.push(Value::Ptr(location));
-        self.emit(Operation::Jump, vec![], vec![])
+        self.emit(Operation::Jump, vec![], None)
     }
 
     pub fn jumpif(&mut self, location: usize) -> usize {
         self.push(Value::Ptr(location));
-        self.emit(Operation::JumpIf, vec![], vec![])
+        self.emit(Operation::JumpIf, vec![], None)
     }
 
     pub fn jump_relative_if(&mut self, location: isize) -> usize {
         let offset = location - self.next_function_relative_addr() as isize - 1;
         self.push(Value::PtrOffset(offset));
-        self.emit(Operation::JumpRelIf, vec![], vec![])
+        self.emit(Operation::JumpRelIf, vec![], None)
     }
 
     pub fn jump_relative(&mut self, location: isize) -> usize {
         let offset = location - self.next_function_relative_addr() as isize;
         self.push(Value::PtrOffset(offset));
-        self.emit(Operation::JumpRel, vec![], vec![])
+        self.emit(Operation::JumpRel, vec![], None)
     }
 
     pub fn rotate(&mut self, how_many: usize) -> usize {
         self.push(Value::Count(how_many));
-        self.emit(Operation::Rotate, vec![], vec![])
+        self.emit(Operation::Rotate, vec![], None)
     }
 
     pub fn swap(&mut self) -> usize {
-        self.emit(Operation::Swap, vec![], vec![])
+        self.emit(Operation::Swap, vec![], None)
     }
 }

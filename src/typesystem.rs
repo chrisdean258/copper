@@ -62,6 +62,12 @@ pub struct Type {
     index: usize,
 }
 
+impl Type {
+    pub fn encode(&self) -> u64 {
+        self.index as u64
+    }
+}
+
 impl Debug for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.write_fmt(format_args!("{}", self.index))

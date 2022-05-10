@@ -120,7 +120,7 @@ impl Compiler {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit(Operation::Pop, vec![UNIT], vec![]);
+                    self.code.emit(Operation::Pop, vec![UNIT], None);
                 }
             }
             Statement::ClassDecl(c) => todo!("{:?}", c),
@@ -147,8 +147,8 @@ impl Compiler {
             ExpressionType::Immediate(i) => self.immediate(i),
             ExpressionType::BlockExpr(b) => self.block(b),
             ExpressionType::BinOp(b) => self.binop(b),
-            ExpressionType::PreUnOp(p) => self.preunop(p),
-            ExpressionType::PostUnOp(p) => self.postunop(p),
+            ExpressionType::PreUnOp(p) => self.preunop(p, e.derived_type.unwrap()),
+            ExpressionType::PostUnOp(p) => self.postunop(p, e.derived_type.unwrap()),
             ExpressionType::AssignExpr(a) => self.assignment(a),
             ExpressionType::Function(f) => self.function(
                 f.clone(),
@@ -168,17 +168,17 @@ impl Compiler {
     fn binop(&mut self, b: &BinOp) {
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
-        self.code.emit(b.op, vec![b.lhs.typ(), b.rhs.typ()], vec![]);
+        self.code.emit(b.op, vec![b.lhs.typ(), b.rhs.typ()], None);
     }
 
-    fn preunop(&mut self, p: &PreUnOp) {
+    fn preunop(&mut self, p: &PreUnOp, typ: Type) {
         match p.op {
             Operation::PreInc => {
                 self.get_ref(p.rhs.as_ref());
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit(Operation::Plus, vec![], vec![]);
+                self.code.emit(Operation::Plus, vec![typ], None);
                 self.code.store();
             }
             Operation::PreDec => {
@@ -186,18 +186,18 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit(Operation::Minus, vec![], vec![]);
+                self.code.emit(Operation::Minus, vec![], None);
                 self.code.store();
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
-                self.code.emit(p.op, vec![p.rhs.typ()], vec![]);
+                self.code.emit(p.op, vec![p.rhs.typ()], None);
             }
             _ => unreachable!(),
         }
     }
 
-    fn postunop(&mut self, p: &PostUnOp) {
+    fn postunop(&mut self, p: &PostUnOp, typ: Type) {
         match p.op {
             Operation::PostInc => {
                 self.get_ref(p.lhs.as_ref());
@@ -205,7 +205,7 @@ impl Compiler {
                 self.code.load();
                 self.code.dup();
                 self.code.push(Value::Int(1));
-                self.code.emit(Operation::Plus, vec![], vec![]);
+                self.code.emit(Operation::Plus, vec![typ], None);
                 self.code.swap();
                 self.code.rotate(3);
                 self.code.store();
@@ -217,7 +217,7 @@ impl Compiler {
                 self.code.load();
                 self.code.dup();
                 self.code.push(Value::Int(1));
-                self.code.emit(Operation::Minus, vec![], vec![]);
+                self.code.emit(Operation::Minus, vec![typ], None);
                 self.code.swap();
                 self.code.rotate(3);
                 self.code.store();
@@ -263,7 +263,7 @@ impl Compiler {
             self.code.emit(
                 a.op.underlying_binop(),
                 vec![a.lhs.typ(), a.rhs.typ()],
-                vec![],
+                None,
             );
         } else {
             self.expr(a.rhs.as_ref());
@@ -303,7 +303,7 @@ impl Compiler {
         self.code.push(Value::Uninitialized); // If return value
         self.expr(i.condition.as_ref());
         self.code.dup();
-        self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
+        self.code.emit(Operation::BoolNot, vec![BOOL], None);
         let mut next_branch = self.code.jump_relative_if(0);
         self.expr(i.body.as_ref());
         self.code.rotate(3);
@@ -316,9 +316,9 @@ impl Compiler {
             self.expr(body.condition.as_ref());
             self.code.dup();
             self.code.rotate(3);
-            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], vec![]);
+            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], None);
             self.code.swap();
-            self.code.emit(Operation::BoolNot, vec![BOOL], vec![]);
+            self.code.emit(Operation::BoolNot, vec![BOOL], None);
             next_branch = self.code.jump_relative_if(0);
             self.expr(body.body.as_ref());
             self.code.rotate(3);
