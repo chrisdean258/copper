@@ -63,6 +63,7 @@ pub struct Type {
 }
 
 impl Type {
+    #[inline]
     pub fn encode(&self) -> u64 {
         self.index as u64
     }

@@ -58,7 +58,7 @@ impl Debug for Value {
 }
 
 impl Value {
-    pub fn encode(&self) -> u64 {
+    pub fn encode_for_push(&self) -> u64 {
         match self {
             Value::Uninitialized => 0,
             Value::Null => 0,
@@ -77,7 +77,47 @@ impl Value {
             }
         }
     }
-    pub fn decode_as(bytes: u64, mut what: Value) -> Value {
+
+    pub fn encode_full(&self) -> u64 {
+        match self {
+            Value::Uninitialized => 0,
+            Value::Null => 0,
+            Value::Bool(b) => *b as u64,
+            Value::Char(c) => *c as u64,
+            Value::Int(i) => *i as u64,
+            Value::Float(f) => f.to_bits(),
+            Value::Ptr(p) => *p as u64,
+            Value::PtrOffset(o) => *o as u64,
+            Value::Count(u) => *u as u64,
+        }
+    }
+
+    pub fn decode_full(bytes: u64, mut what: Value) -> Value {
+        match &mut what {
+            Value::Uninitialized => assert_eq!(bytes, 0),
+            Value::Null => assert_eq!(bytes, 0),
+            Value::Bool(b) => {
+                *b = (bytes & 0x1) as u8;
+            }
+            Value::Char(c) => {
+                *c = (bytes & 0xff) as u8;
+            }
+            Value::Int(i) => {
+                *i = bytes as i64;
+            }
+            Value::Float(f) => {
+                *f = f64::from_bits(bytes);
+            }
+            Value::Ptr(p) => *p = bytes as usize,
+            Value::PtrOffset(o) => {
+                *o = bytes as isize;
+            }
+            Value::Count(u) => *u = bytes as usize,
+        }
+        what
+    }
+
+    pub fn decode_push(bytes: u64, mut what: Value) -> Value {
         match &mut what {
             Value::Uninitialized => (),
             Value::Null => (),
@@ -91,7 +131,7 @@ impl Value {
                 *i = ((bytes as i64) << 1) >> 1;
             }
             Value::Float(f) => {
-                *f = f64::from_bits(bytes);
+                *f = f64::from_bits(bytes << 1);
             }
             Value::Ptr(p) => *p = bytes as usize,
             Value::PtrOffset(o) => {
