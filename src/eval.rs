@@ -125,50 +125,49 @@ impl Evaluator {
                     self.memory.pop();
                 }
                 Operation::Load => {
-                    let addr = pop_stack!(self, Value::Ptr);
+                    let addr = self.memory.pop() as usize;
                     self.memory.push_enc(self.memory[addr]);
                 }
                 Operation::Store => {
                     let value = self.memory.pop();
-                    let addr = pop_stack!(self, Value::Ptr);
+                    let addr = self.memory.pop() as usize;
                     self.memory[addr] = value;
                     self.memory.push_enc(value);
                 }
                 Operation::Reserve => {
-                    let size = pop_stack!(self, Value::Count);
+                    let size = self.memory.pop() as usize;
                     self.memory.reserve(size);
                 }
                 Operation::Rotate => {
-                    let num = pop_stack!(self, Value::Count);
+                    let num = self.memory.pop() as usize;
                     self.memory.rotate(num);
                 }
                 Operation::Dup => self.memory.dup(),
                 Operation::Swap => self.memory.swap(),
                 Operation::RefFrame => {
-                    let o = pop_stack!(self, PtrOffset);
-                    self.memory
-                        .push(Value::Ptr((self.bp as isize + o) as usize))
+                    let o = self.memory.pop_int() as isize;
+                    self.memory.push_enc((self.bp as isize + o) as u64)
                 }
                 Operation::Jump => {
-                    self.ip = pop_stack!(self, Ptr);
+                    self.ip = self.memory.pop() as usize;
                     continue;
                 }
                 Operation::JumpRel => {
-                    let o = pop_stack!(self, PtrOffset);
+                    let o = self.memory.pop_int() as isize;
                     self.ip = (self.ip as isize + o) as usize;
                     continue;
                 }
                 Operation::JumpIf => {
-                    let addr = pop_stack!(self, Value::Ptr);
-                    let cond = pop_stack!(self, Value::Bool);
+                    let addr = self.memory.pop() as usize;
+                    let cond = self.memory.pop_bool();
                     if cond != 0 {
                         self.ip = addr;
                         continue;
                     }
                 }
                 Operation::JumpRelIf => {
-                    let offset = pop_stack!(self, Value::PtrOffset);
-                    let cond = pop_stack!(self, Value::Bool);
+                    let offset = self.memory.pop_int() as isize;
+                    let cond = self.memory.pop_bool();
                     if cond != 0 {
                         self.ip = (self.ip as isize + offset) as usize;
                         continue;
@@ -177,14 +176,14 @@ impl Evaluator {
                 Operation::Return => {
                     let rv = self.memory.pop();
                     self.memory.truncate_stack(self.bp);
-                    self.bp = pop_stack!(self, Value::Ptr);
-                    self.ip = pop_stack!(self, Value::Ptr);
+                    self.bp = self.memory.pop() as usize;
+                    self.ip = self.memory.pop() as usize;
                     self.memory.push_enc(rv);
                     continue;
                 }
                 Operation::Call => {
-                    let ip = pop_stack!(self, Value::Ptr);
-                    let num_args = pop_stack!(self, Value::Count);
+                    let ip = self.memory.pop() as usize;
+                    let num_args = self.memory.pop() as usize;
                     let bp = self.memory.stack_top() - num_args;
                     self.memory[bp - 1] = self.bp as u64;
                     self.memory[bp - 2] = (self.ip + 1) as u64;
@@ -195,8 +194,8 @@ impl Evaluator {
                         (self.builtin_table[builtin_idx].func)(self, num_args);
                         let rv = self.memory.pop();
                         self.memory.truncate_stack(self.bp);
-                        self.bp = pop_stack!(self, Value::Ptr);
-                        self.ip = pop_stack!(self, Value::Ptr);
+                        self.bp = self.memory.pop() as usize;
+                        self.ip = self.memory.pop() as usize;
                         self.memory.push_enc(rv);
                     }
                     continue;
@@ -274,12 +273,12 @@ impl Evaluator {
                 }
                 Operation::BitShiftLeft => {
                     if self.code[self.ip].types[0] == typesystem::CHAR {
-                        let a = pop_stack!(self, Value::Int);
-                        let b = pop_stack!(self, Value::Char);
+                        let a = self.memory.pop_int();
+                        let b = self.memory.pop_char();
                         self.memory.push(Value::Char(b << a));
                     } else if self.code[self.ip].types[0] == typesystem::INT {
-                        let a = pop_stack!(self, Value::Int);
-                        let b = pop_stack!(self, Value::Int);
+                        let a = self.memory.pop_int();
+                        let b = self.memory.pop_int();
                         self.memory.push(Value::Int(b << a));
                     } else {
                         panic!("Weird type");
@@ -287,12 +286,12 @@ impl Evaluator {
                 }
                 Operation::BitShiftRight => {
                     if self.code[self.ip].types[0] == typesystem::CHAR {
-                        let a = pop_stack!(self, Value::Int);
-                        let b = pop_stack!(self, Value::Char);
+                        let a = self.memory.pop_int();
+                        let b = self.memory.pop_char();
                         self.memory.push(Value::Char(b << a));
                     } else if self.code[self.ip].types[0] == typesystem::INT {
-                        let a = pop_stack!(self, Value::Int);
-                        let b = pop_stack!(self, Value::Int);
+                        let a = self.memory.pop_int();
+                        let b = self.memory.pop_int();
                         self.memory.push(Value::Int(b << a));
                     } else {
                         panic!("Weird type");
@@ -333,7 +332,8 @@ impl Evaluator {
                     );
                 }
                 Operation::BoolNot => {
-                    do_unop!(self, BOOL => Bool; !);
+                    let a = self.memory.pop_bool();
+                    self.memory.push_enc((1 - a) as u64);
                 }
                 Operation::BitNot => {
                     do_unop!(self, INT => Int, CHAR => Char; !);

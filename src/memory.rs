@@ -22,35 +22,45 @@ impl Memory {
         }
     }
 
-    #[inline]
     pub fn push(&mut self, val: Value) {
         self.stack.push(val.encode_full());
     }
 
-    #[inline]
     pub fn push_enc(&mut self, val: u64) {
         self.stack.push(val);
     }
 
-    #[inline]
     pub fn pop_as(&mut self, what: Value) -> Value {
-        assert!(self.stack.len() >= 1);
         let val = self.stack.pop().unwrap();
         Value::decode_full(val, what)
     }
 
-    #[inline]
     pub fn pop(&mut self) -> u64 {
-        assert!(self.stack.len() >= 1);
         self.stack.pop().unwrap()
     }
 
-    #[inline]
+    pub fn pop_int(&mut self) -> i64 {
+        self.stack.pop().unwrap() as i64
+    }
+
+    pub fn pop_float(&mut self) -> f64 {
+        f64::from_bits(self.stack.pop().unwrap())
+    }
+
+    pub fn pop_char(&mut self) -> u8 {
+        self.stack.pop().unwrap() as u8
+    }
+
+    pub fn pop_bool(&mut self) -> u8 {
+        let rv = self.stack.pop().unwrap();
+        assert!(rv == 0 || rv == 1, "rv = {}", rv);
+        rv as u8
+    }
+
     pub fn reserve(&mut self, count: usize) {
         self.stack.resize(self.stack.len() + count, 0)
     }
 
-    #[inline]
     pub fn rotate(&mut self, count: usize) {
         assert!(self.stack.len() >= count && count >= 2);
         let val = *self.stack.last().unwrap();
@@ -61,13 +71,11 @@ impl Memory {
         self.stack[idx] = val;
     }
 
-    #[inline]
     pub fn dup(&mut self) {
         assert!(self.stack.len() >= 1);
         self.stack.push(*self.stack.last().unwrap());
     }
 
-    #[inline]
     pub fn swap(&mut self) {
         assert!(self.stack.len() >= 2);
         let a = self.pop();
@@ -76,12 +84,10 @@ impl Memory {
         self.push_enc(b);
     }
 
-    #[inline]
     pub fn truncate_stack(&mut self, ptr: usize) {
         self.stack.truncate(ptr - STACK);
     }
 
-    #[inline]
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }

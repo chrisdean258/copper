@@ -40,7 +40,11 @@ impl Debug for Value {
         match self {
             Value::Uninitialized => f.write_str("Uninit"),
             Value::Null => f.write_str("Null"),
-            Value::Bool(b) => f.write_str(if *b == 0 { "Bool(false)" } else { "Bool(true)" }),
+            Value::Bool(b) => f.write_fmt(format_args!(
+                "Bool({} = {})",
+                if *b == 0 { "false" } else { "true" },
+                *b
+            )),
             Value::Char(c) => f.write_fmt(format_args!("Char('{}')", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("Int({})", i)),
             Value::Float(fl) => f.write_fmt(format_args!("Float({})", fl)),
