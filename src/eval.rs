@@ -55,22 +55,12 @@ macro_rules! do_comparison {
 }
 
 macro_rules! do_binop {
-    ($self:ident, $op:tt, $($ts:ident => $v:ident),+ $(,)?) => {
+    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
         let mut run = false;
         $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = pop_stack!($self, Value::$v);
-            let b = pop_stack!($self, Value::$v);
-            $self.memory.push($v(a $op b));
-            run = true;
-        })+
-        if !run { panic!("Unsupported type in binop");}
-    };
-    ($self:ident, $op:expr, $($ts:ident, $typ:ty => $v:ident),+ $(,)?) => {
-        let mut run = false;
-        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = pop_stack!($self, Value::$v, $typ);
-            let b = pop_stack!($self, Value::$v, $typ);
-            $self.memory.push($v($op(a, b)));
+            let a = $self.memory.$pop();
+            let b = $self.memory.$pop();
+            $self.memory.$push(b $op a);
             run = true;
         })+
         if !run { panic!("Unsupported type in binop");}
@@ -201,30 +191,30 @@ impl Evaluator {
                     continue;
                 }
                 Operation::BoolOr => {
-                    do_binop!(self, |, BOOL => Bool);
+                    do_binop!(self, |, BOOL, pop_bool => push_bool);
                 }
                 Operation::BoolXor => {
-                    do_binop!(self, ^, BOOL => Bool);
+                    do_binop!(self, ^, BOOL, pop_bool => push_bool);
                 }
                 Operation::BoolAnd => {
-                    do_binop!(self, &, BOOL => Bool);
+                    do_binop!(self, &, BOOL, pop_bool => push_bool);
                 }
                 Operation::BitOr => {
                     do_binop!(self, |,
-                        INT => Int,
-                        CHAR => Char,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::BitXor => {
                     do_binop!(self, ^,
-                        INT => Int,
-                        CHAR => Char,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::BitAnd => {
                     do_binop!(self, &,
-                        INT => Int,
-                        CHAR => Char,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::CmpGE => {
@@ -298,37 +288,37 @@ impl Evaluator {
                     }
                 }
                 Operation::Minus => {
-                    do_binop!(self, |a, b| b - a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_binop!(self, -,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::Plus => {
-                    do_binop!(self, |a, b| b + a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_binop!(self, +,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::Times => {
-                    do_binop!(self, |a, b| b * a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_binop!(self, *,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::Mod => {
                     do_binop!(self, %,
-                        CHAR => Char,
-                        INT => Int,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::Div => {
-                    do_binop!(self, |a, b| b / a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_binop!(self, /,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::BoolNot => {
