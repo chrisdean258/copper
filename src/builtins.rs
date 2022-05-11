@@ -1,11 +1,12 @@
 use crate::eval::Evaluator;
 use crate::typesystem::*;
+use crate::value::Value;
 
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub struct BuiltinFunction {
-    pub func: fn(&mut Evaluator, usize, usize) -> usize,
+    pub func: fn(&mut Evaluator, usize, usize, usize) -> usize,
     pub name: String,
     pub returns: Type,
 }
@@ -25,10 +26,23 @@ impl BuiltinFunction {
         }]
     }
 }
+// println!(
+// "stack_len: {}, first: {:x}, first_type: {:x}, count: {}",
+// eval.memory.stack.len(),
+// first,
+// first_type,
+// count
+// );
 
-fn print_value(eval: &mut Evaluator, first: usize, count: usize) -> usize {
-    for arg in first..(first + count) {
-        print!("{} ", eval.memory[arg]);
+fn print_value(eval: &mut Evaluator, first: usize, first_type: usize, count: usize) -> usize {
+    for arg in 0..count {
+        if arg != 0 {
+            print!(" ");
+        }
+        print!(
+            "{}",
+            Value::decode_from_type(eval.memory[first + arg], eval.memory[first_type + arg])
+        );
     }
     println!("");
     0

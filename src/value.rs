@@ -1,3 +1,4 @@
+use crate::typesystem::*;
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Clone, Copy)]
@@ -11,6 +12,7 @@ pub enum Value {
     Ptr(usize),
     PtrOffset(isize),
     Count(usize),
+    Type(u64),
 }
 
 impl Display for Value {
@@ -19,7 +21,7 @@ impl Display for Value {
             Value::Uninitialized => f.write_str("uninit"),
             Value::Null => f.write_str("null"),
             Value::Bool(b) => f.write_str(if *b == 0 { "false" } else { "true" }),
-            Value::Char(c) => f.write_fmt(format_args!("'{}'", *c as char)),
+            Value::Char(c) => f.write_fmt(format_args!("{}", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("{}", i)),
             Value::Float(fl) => f.write_fmt(format_args!("{}", fl)),
             Value::Ptr(p) => f.write_fmt(format_args!("0x{:x}", p)),
@@ -31,6 +33,7 @@ impl Display for Value {
                     f.write_fmt(format_args!("-0x{:x}", -o))
                 }
             }
+            Value::Type(u) => f.write_fmt(format_args!("{}", Type::decode(*u))),
         }
     }
 }
@@ -57,6 +60,7 @@ impl Debug for Value {
                     f.write_fmt(format_args!("PtrOffset(-0x{:x})", -o))
                 }
             }
+            Value::Type(u) => f.write_fmt(format_args!("{:?}", Type::decode(*u))),
         }
     }
 }
@@ -79,6 +83,10 @@ impl Value {
                 assert!(u & 1 << 63 == 0);
                 *u as u64
             }
+            Value::Type(u) => {
+                assert!(u & 1 << 63 == 0);
+                *u as u64
+            }
         }
     }
 
@@ -93,13 +101,29 @@ impl Value {
             Value::Ptr(p) => *p as u64,
             Value::PtrOffset(o) => *o as u64,
             Value::Count(u) => *u as u64,
+            Value::Type(u) => *u as u64,
         }
     }
 
-    pub fn decode_full(bytes: u64, mut what: Value) -> Value {
+    pub fn decode_from_type(bytes: u64, type_enc: u64) -> Value {
+        match type_enc {
+            0 => panic!("Unit type in live system"),
+            1 => panic!("Unknown return in live system"),
+            2 => Value::decode_bytes(bytes, Value::Ptr(0)),
+            3 => Value::decode_bytes(bytes, Value::Null),
+            4 => Value::decode_bytes(bytes, Value::Bool(0)),
+            5 => Value::decode_bytes(bytes, Value::Char(0)),
+            6 => Value::decode_bytes(bytes, Value::Int(0)),
+            7 => Value::decode_bytes(bytes, Value::Float(0.0)),
+            8 => todo!(),
+            _ => panic!("No!"),
+        }
+    }
+
+    pub fn decode_bytes(bytes: u64, mut what: Value) -> Value {
         match &mut what {
-            Value::Uninitialized => assert_eq!(bytes, 0),
-            Value::Null => assert_eq!(bytes, 0),
+            Value::Uninitialized => (),
+            Value::Null => (),
             Value::Bool(b) => {
                 *b = (bytes & 0x1) as u8;
             }
@@ -113,35 +137,9 @@ impl Value {
                 *f = f64::from_bits(bytes);
             }
             Value::Ptr(p) => *p = bytes as usize,
-            Value::PtrOffset(o) => {
-                *o = bytes as isize;
-            }
+            Value::PtrOffset(o) => *o = bytes as isize,
             Value::Count(u) => *u = bytes as usize,
-        }
-        what
-    }
-
-    pub fn decode_push(bytes: u64, mut what: Value) -> Value {
-        match &mut what {
-            Value::Uninitialized => (),
-            Value::Null => (),
-            Value::Bool(b) => {
-                *b = (bytes & 0x1) as u8;
-            }
-            Value::Char(c) => {
-                *c = (bytes & 0xff) as u8;
-            }
-            Value::Int(i) => {
-                *i = ((bytes as i64) << 1) >> 1;
-            }
-            Value::Float(f) => {
-                *f = f64::from_bits(bytes << 1);
-            }
-            Value::Ptr(p) => *p = bytes as usize,
-            Value::PtrOffset(o) => {
-                *o = ((bytes as isize) << 1) >> 1;
-            }
-            Value::Count(u) => *u = bytes as usize,
+            Value::Type(u) => *u = bytes,
         }
         what
     }

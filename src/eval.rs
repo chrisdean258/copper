@@ -144,7 +144,12 @@ impl Evaluator {
                     self.ip = ip;
                     if ip < Self::CODE {
                         let builtin_idx = ip - Self::BUILTIN_CODE;
-                        let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
+                        let rv = (self.builtin_table[builtin_idx].func)(
+                            self,
+                            self.bp,
+                            self.bp + num_args / 2,
+                            num_args / 2,
+                        );
                         self.memory.truncate_stack(self.bp);
                         self.bp = self.memory.pop() as usize;
                         self.ip = self.memory.pop() as usize;

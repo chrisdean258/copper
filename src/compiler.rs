@@ -3,7 +3,7 @@ use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::typesystem::{Signature, Type, TypeSystem, BOOL, UNIT};
+use crate::typesystem::{Signature, Type, TypeSystem, BOOL, BUILTIN_FUNCTION, UNIT};
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -186,7 +186,7 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit(Operation::Minus, vec![], None);
+                self.code.emit(Operation::Minus, vec![typ], None);
                 self.code.store();
             }
             t if t.is_preunop() => {
@@ -374,7 +374,6 @@ impl Compiler {
             }
         }
     }
-
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
         assert!(sig.inputs.len() == f.argnames.len());
         let name = match &f.name {
@@ -419,7 +418,15 @@ impl Compiler {
         for arg in c.args.iter() {
             self.expr(arg);
         }
-        self.code.push(Value::Count(c.args.len()));
+        if c.function.derived_type == Some(BUILTIN_FUNCTION) {
+            for arg in c.args.iter() {
+                self.code
+                    .push(Value::Type(arg.derived_type.unwrap().encode()));
+            }
+            self.code.push(Value::Count(c.args.len() * 2));
+        } else {
+            self.code.push(Value::Count(c.args.len()));
+        }
 
         let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
         swap(&mut arg_types, &mut self.arg_types);

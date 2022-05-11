@@ -67,11 +67,49 @@ impl Type {
     pub fn encode(&self) -> u64 {
         self.index as u64
     }
+
+    pub fn decode(val: u64) -> Type {
+        Type {
+            index: val as usize,
+        }
+    }
 }
 
 impl Debug for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("{}", self.index))
+        f.write_fmt(format_args!(
+            "{}",
+            match self.index {
+                0 => "UNIT".to_string(),
+                1 => "UNKNOWN_RETURN".to_string(),
+                2 => "BUILTIN_FUNCTION".to_string(),
+                3 => "NULL".to_string(),
+                4 => "BOOL".to_string(),
+                5 => "CHAR".to_string(),
+                6 => "INT".to_string(),
+                7 => "FLOAT".to_string(),
+                8 => "STR".to_string(),
+                t => t.to_string(),
+            }
+        ))
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let s = format!("{}", self.index);
+        f.write_str(match self.index {
+            0 => "unit",
+            1 => "UNKNOWN RETURN",
+            2 => "builtin function",
+            3 => "null",
+            4 => "bool",
+            5 => "char",
+            6 => "int",
+            7 => "float",
+            8 => "str",
+            _ => &s,
+        })
     }
 }
 
@@ -95,24 +133,6 @@ pub const CHAR: Type = Type { index: 5 };
 pub const INT: Type = Type { index: 6 };
 pub const FLOAT: Type = Type { index: 7 };
 pub const STR: Type = Type { index: 8 };
-
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let s = format!("{}", self.index);
-        f.write_str(match self.index {
-            0 => "unit",
-            1 => "UNKNOWN RETURN",
-            2 => "builtin function",
-            3 => "null",
-            4 => "bool",
-            5 => "char",
-            6 => "int",
-            7 => "float",
-            8 => "str",
-            _ => &s,
-        })
-    }
-}
 
 impl TypeSystem {
     pub fn new() -> Self {

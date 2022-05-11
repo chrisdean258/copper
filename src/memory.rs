@@ -30,10 +30,10 @@ impl Memory {
         self.stack.push(val);
     }
 
-    pub fn pop_as(&mut self, what: Value) -> Value {
-        let val = self.stack.pop().unwrap();
-        Value::decode_full(val, what)
-    }
+    // pub fn pop_as(&mut self, what: Value) -> Value {
+    // let val = self.stack.pop().unwrap();
+    // Value::decode_full(val, what)
+    // }
 
     pub fn pop(&mut self) -> u64 {
         self.stack.pop().unwrap()

@@ -9,7 +9,7 @@ run-test()
 	if [ $# -gt 1 ]; then
 		! diff -y <(./target/debug/copper "$file" 2>&1) "$file.out"
 	else
-		! diff -q <(./target/debug/copper "$file" 2>&1) "$file.out"
+		! diff -q <(./target/debug/copper "$file" 2>&1) "$file.out" &>/dev/null
 	fi
 }
 
