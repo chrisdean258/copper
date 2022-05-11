@@ -57,18 +57,22 @@ impl Memory {
         rv as u8
     }
 
+    #[inline]
     pub fn push_int(&mut self, v: i64) {
         self.stack.push(v as u64);
     }
 
+    #[inline]
     pub fn push_float(&mut self, v: f64) {
         self.stack.push(v.to_bits());
     }
 
+    #[inline]
     pub fn push_char(&mut self, v: u8) {
         self.stack.push(v as u64);
     }
 
+    #[inline]
     pub fn push_bool(&mut self, v: u8) {
         self.stack.push(v as u64);
     }
@@ -100,10 +104,12 @@ impl Memory {
         self.push_enc(b);
     }
 
+    #[inline]
     pub fn truncate_stack(&mut self, ptr: usize) {
         self.stack.truncate(ptr - STACK);
     }
 
+    #[inline]
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }

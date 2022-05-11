@@ -17,39 +17,33 @@ pub struct Evaluator {
 
 macro_rules! do_comparison {
     ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
-        let mut run = false;
-        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
+        if false { }
+        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
             let a = $self.memory.$pop();
             let b = $self.memory.$pop();
             $self.memory.push_bool(if b $op a { 1 } else { 0 });
-            run = true;
         })+
-        if !run { panic!("Unsupported type in comparison");}
     };
 }
 
 macro_rules! do_binop {
     ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
-        let mut run = false;
-        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
+        if false { }
+        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
             let a = $self.memory.$pop();
             let b = $self.memory.$pop();
             $self.memory.$push(b $op a);
-            run = true;
         })+
-        if !run { panic!("Unsupported type in binop");}
     };
 }
 
 macro_rules! do_unop {
     ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+) => {
-        let mut run = false;
-        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
+        if false { }
+        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
             let a = $self.memory.$pop();
             $self.memory.$push($op a);
-            run = true;
         })+
-        if !run { panic!("Unsupported type in unop");}
     };
 }
 
@@ -72,10 +66,6 @@ impl Evaluator {
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         loop {
-            // eprintln!("stack: {:?}", self.stack);
-            // eprint!("ip: 0x{:x}: ", self.ip);
-            // eprint!("bp: 0x{:x}: ", self.bp);
-            // eprint!("{:<20}", self.code[self.ip - Self::CODE].to_string());
             match self.code[self.ip - Self::CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
@@ -154,12 +144,11 @@ impl Evaluator {
                     self.ip = ip;
                     if ip < Self::CODE {
                         let builtin_idx = ip - Self::BUILTIN_CODE;
-                        (self.builtin_table[builtin_idx].func)(self, num_args);
-                        let rv = self.memory.pop();
+                        let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
                         self.memory.truncate_stack(self.bp);
                         self.bp = self.memory.pop() as usize;
                         self.ip = self.memory.pop() as usize;
-                        self.memory.push_enc(rv);
+                        self.memory.push_enc(rv as u64);
                     }
                     continue;
                 }
@@ -238,26 +227,22 @@ impl Evaluator {
                     if self.code[self.ip].types[0] == typesystem::CHAR {
                         let a = self.memory.pop_int();
                         let b = self.memory.pop_char();
-                        self.memory.push(Value::Char(b << a));
+                        self.memory.push_char(b << a);
                     } else if self.code[self.ip].types[0] == typesystem::INT {
                         let a = self.memory.pop_int();
                         let b = self.memory.pop_int();
-                        self.memory.push(Value::Int(b << a));
-                    } else {
-                        panic!("Weird type");
+                        self.memory.push_int(b << a);
                     }
                 }
                 Operation::BitShiftRight => {
                     if self.code[self.ip].types[0] == typesystem::CHAR {
                         let a = self.memory.pop_int();
                         let b = self.memory.pop_char();
-                        self.memory.push(Value::Char(b << a));
+                        self.memory.push_char(b << a);
                     } else if self.code[self.ip].types[0] == typesystem::INT {
                         let a = self.memory.pop_int();
                         let b = self.memory.pop_int();
-                        self.memory.push(Value::Int(b << a));
-                    } else {
-                        panic!("Weird type");
+                        self.memory.push_int(b << a);
                     }
                 }
                 Operation::Minus => {
