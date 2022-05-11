@@ -300,40 +300,60 @@ impl Compiler {
     fn forexpr(&mut self, _f: &For) {}
 
     fn ifexpr(&mut self, i: &If) {
-        self.code.push(Value::Uninitialized); // If return value
-        self.expr(i.condition.as_ref());
-        self.code.dup();
-        self.code.emit(Operation::BoolNot, vec![BOOL], None);
-        let mut next_branch = self.code.jump_relative_if(0);
-        self.expr(i.body.as_ref());
-        self.code.rotate(3);
-        self.code.swap();
-        self.code.pop();
-
-        for (body, _) in i.and_bodies.iter() {
-            let loc = self.code.next_function_relative_addr();
-            self.code.backpatch_jump_rel(next_branch, loc as isize);
-            self.expr(body.condition.as_ref());
+        if i.and_bodies.len() > 0 {
+            self.code.push(Value::Uninitialized); // If return value
+            self.expr(i.condition.as_ref());
             self.code.dup();
-            self.code.rotate(3);
-            self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], None);
-            self.code.swap();
             self.code.emit(Operation::BoolNot, vec![BOOL], None);
-            next_branch = self.code.jump_relative_if(0);
-            self.expr(body.body.as_ref());
+            let mut next_branch = self.code.jump_relative_if(0);
+            self.expr(i.body.as_ref());
             self.code.rotate(3);
             self.code.swap();
             self.code.pop();
-        }
-        let loc = self.code.next_function_relative_addr();
-        self.code.backpatch_jump_rel(next_branch, loc as isize);
-        if let Some(else_body) = &i.else_body {
-            next_branch = self.code.jump_relative_if(0);
-            self.expr(else_body);
-            self.code.swap();
-            self.code.pop();
+
+            for (body, _) in i.and_bodies.iter() {
+                let loc = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(next_branch, loc as isize);
+                self.expr(body.condition.as_ref());
+                self.code.dup();
+                self.code.rotate(3);
+                self.code.emit(Operation::BoolOr, vec![BOOL, BOOL], None);
+                self.code.swap();
+                self.code.emit(Operation::BoolNot, vec![BOOL], None);
+                next_branch = self.code.jump_relative_if(0);
+                self.expr(body.body.as_ref());
+                self.code.rotate(3);
+                self.code.swap();
+                self.code.pop();
+            }
             let loc = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(next_branch, loc as isize);
+            if let Some(else_body) = &i.else_body {
+                next_branch = self.code.jump_relative_if(0);
+                self.expr(else_body);
+                self.code.swap();
+                self.code.pop();
+                let loc = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(next_branch, loc as isize);
+            }
+        } else {
+            self.expr(i.condition.as_ref());
+            if let Some(else_body) = &i.else_body {
+                let true_branch = self.code.jump_relative_if(0);
+                self.expr(else_body);
+                let jump_to_end = self.code.jump_relative(0);
+                let true_loc = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(true_branch, true_loc as isize);
+                self.expr(i.body.as_ref());
+                let end = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(jump_to_end, end as isize);
+            } else {
+                self.code.emit(Operation::BoolNot, vec![BOOL], None);
+                let jump_to_end = self.code.jump_relative_if(0);
+                self.expr(i.body.as_ref());
+                let end = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(jump_to_end, end as isize);
+            }
         }
     }
 
