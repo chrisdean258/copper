@@ -15,32 +15,6 @@ pub struct Evaluator {
     bp: usize,
 }
 
-macro_rules! _pop_stack {
-    ($self:ident, $type:expr) => {{
-        $self.memory.pop_as($type)
-    }};
-}
-
-macro_rules! value_as {
-    ($val:expr, $type:path) => {{
-        match $val {
-            $type(t) => t,
-            t => unreachable!("Unexpected {} on stack. Expected {}", t, stringify!($type)),
-        }
-    }};
-}
-
-macro_rules! pop_stack {
-    ($self:ident, $type:path, $typ:ty) => {{
-        let val = _pop_stack!($self, $type(0 as $typ));
-        value_as!(val, $type)
-    }};
-    ($self:ident, $type:path) => {{
-        let val = _pop_stack!($self, $type(0));
-        value_as!(val, $type)
-    }};
-}
-
 macro_rules! do_comparison {
     ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
         let mut run = false;
@@ -68,11 +42,11 @@ macro_rules! do_binop {
 }
 
 macro_rules! do_unop {
-    ($self:ident, $($ts:ident => $v:ident),+; $op:tt) => {
+    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+) => {
         let mut run = false;
         $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = pop_stack!($self, Value::$v);
-            $self.memory.push($v($op a));
+            let a = $self.memory.$pop();
+            $self.memory.$push($op a);
             run = true;
         })+
         if !run { panic!("Unsupported type in unop");}
@@ -95,7 +69,6 @@ impl Evaluator {
     }
 
     pub fn eval(&mut self, mut code: Vec<Instruction>, entry: usize) -> Result<Value, String> {
-        use crate::value::Value::*;
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         loop {
@@ -326,7 +299,9 @@ impl Evaluator {
                     self.memory.push_enc((1 - a) as u64);
                 }
                 Operation::BitNot => {
-                    do_unop!(self, INT => Int, CHAR => Char; !);
+                    do_unop!(self, !,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char);
                 }
                 t => unreachable!("{}", t),
             }
