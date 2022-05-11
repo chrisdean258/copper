@@ -198,33 +198,23 @@ impl Compiler {
     }
 
     fn postunop(&mut self, p: &PostUnOp, typ: Type) {
-        match p.op {
-            Operation::PostInc => {
-                self.get_ref(p.lhs.as_ref());
-                self.code.dup();
-                self.code.load();
-                self.code.dup();
-                self.code.push(Value::Int(1));
-                self.code.emit(Operation::Plus, vec![typ], None);
-                self.code.swap();
-                self.code.rotate(3);
-                self.code.store();
-                self.code.pop();
-            }
-            Operation::PostDec => {
-                self.get_ref(p.lhs.as_ref());
-                self.code.dup();
-                self.code.load();
-                self.code.dup();
-                self.code.push(Value::Int(1));
-                self.code.emit(Operation::Minus, vec![typ], None);
-                self.code.swap();
-                self.code.rotate(3);
-                self.code.store();
-                self.code.pop();
-            }
-            _ => unreachable!(),
-        }
+        self.get_ref(p.lhs.as_ref());
+        self.code.dup();
+        self.code.load();
+        self.code.dup();
+        self.code.rotate(3);
+        self.code.push(Value::Int(1));
+        self.code.emit(
+            match p.op {
+                Operation::PostInc => Operation::Plus,
+                Operation::PostDec => Operation::Minus,
+                _ => unreachable!(),
+            },
+            vec![typ],
+            None,
+        );
+        self.code.store();
+        self.code.pop();
     }
 
     fn get_ref(&mut self, e: &Expression) {
@@ -253,9 +243,7 @@ impl Compiler {
     }
 
     fn assignment(&mut self, a: &AssignExpr) {
-        self.need_ref = true;
-        self.expr(a.lhs.as_ref());
-        self.need_ref = false;
+        self.get_ref(a.lhs.as_ref());
         if a.op != Operation::Equal {
             self.code.dup();
             self.code.load();
