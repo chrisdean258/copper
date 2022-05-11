@@ -57,6 +57,22 @@ impl Memory {
         rv as u8
     }
 
+    pub fn push_int(&mut self, v: i64) {
+        self.stack.push(v as u64);
+    }
+
+    pub fn push_float(&mut self, v: f64) {
+        self.stack.push(v.to_bits());
+    }
+
+    pub fn push_char(&mut self, v: u8) {
+        self.stack.push(v as u64);
+    }
+
+    pub fn push_bool(&mut self, v: u8) {
+        self.stack.push(v as u64);
+    }
+
     pub fn reserve(&mut self, count: usize) {
         self.stack.resize(self.stack.len() + count, 0)
     }

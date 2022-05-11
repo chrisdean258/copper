@@ -55,21 +55,21 @@ macro_rules! do_comparison {
 }
 
 macro_rules! do_binop {
+    ($self:ident, $op:tt, $($ts:ident => $v:ident),+ $(,)?) => {
+        let mut run = false;
+        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
+            let a = pop_stack!($self, Value::$v);
+            let b = pop_stack!($self, Value::$v);
+            $self.memory.push($v(a $op b));
+            run = true;
+        })+
+        if !run { panic!("Unsupported type in binop");}
+    };
     ($self:ident, $op:expr, $($ts:ident, $typ:ty => $v:ident),+ $(,)?) => {
         let mut run = false;
         $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
             let a = pop_stack!($self, Value::$v, $typ);
             let b = pop_stack!($self, Value::$v, $typ);
-            $self.memory.push($v($op(a, b)));
-            run = true;
-        })+
-        if !run { panic!("Unsupported type in binop");}
-    };
-    ($self:ident, $op:expr, $($ts:ident => $v:ident),+ $(,)?) => {
-        let mut run = false;
-        $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = pop_stack!($self, Value::$v);
-            let b = pop_stack!($self, Value::$v);
             $self.memory.push($v($op(a, b)));
             run = true;
         })+
@@ -201,28 +201,28 @@ impl Evaluator {
                     continue;
                 }
                 Operation::BoolOr => {
-                    do_binop!(self, |a, b| b|a, BOOL => Bool);
+                    do_binop!(self, |, BOOL => Bool);
                 }
                 Operation::BoolXor => {
-                    do_binop!(self, |a, b| b^a, BOOL => Bool);
+                    do_binop!(self, ^, BOOL => Bool);
                 }
                 Operation::BoolAnd => {
-                    do_binop!(self, |a, b| b&a, BOOL => Bool);
+                    do_binop!(self, &, BOOL => Bool);
                 }
                 Operation::BitOr => {
-                    do_binop!(self, |a, b| b|a,
+                    do_binop!(self, |,
                         INT => Int,
                         CHAR => Char,
                     );
                 }
                 Operation::BitXor => {
-                    do_binop!(self, |a, b| b^a,
+                    do_binop!(self, ^,
                         INT => Int,
                         CHAR => Char,
                     );
                 }
                 Operation::BitAnd => {
-                    do_binop!(self, |a, b| b&a,
+                    do_binop!(self, &,
                         INT => Int,
                         CHAR => Char,
                     );
@@ -319,7 +319,7 @@ impl Evaluator {
                     );
                 }
                 Operation::Mod => {
-                    do_binop!(self, |a, b| b % a,
+                    do_binop!(self, %,
                         CHAR => Char,
                         INT => Int,
                     );
