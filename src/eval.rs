@@ -42,12 +42,12 @@ macro_rules! pop_stack {
 }
 
 macro_rules! do_comparison {
-    ($self:ident, $op:expr, $($ts:ident, $typ:ty => $v:ident),+ $(,)?) => {
+    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
         let mut run = false;
         $(if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = pop_stack!($self, Value::$v, $typ);
-            let b = pop_stack!($self, Value::$v, $typ);
-            $self.memory.push(Value::Bool(if $op(a, b) { 1 } else { 0 }));
+            let a = $self.memory.$pop();
+            let b = $self.memory.$pop();
+            $self.memory.push_bool(if b $op a { 1 } else { 0 });
             run = true;
         })+
         if !run { panic!("Unsupported type in comparison");}
@@ -218,47 +218,47 @@ impl Evaluator {
                     );
                 }
                 Operation::CmpGE => {
-                    do_comparison!(self, |a, b| b >= a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_comparison!(self, >=,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::CmpGT => {
-                    do_comparison!(self, |a, b| b > a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_comparison!(self, > ,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::CmpLE => {
-                    do_comparison!(self, |a, b| b <= a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_comparison!(self, <=,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::CmpLT => {
-                    do_comparison!(self, |a, b| b < a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
+                    do_comparison!(self, <,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
                     );
                 }
                 Operation::CmpEq => {
-                    do_comparison!(self, |a, b| b == a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
-                        BOOL, u8 => Bool
+                    do_comparison!(self, ==,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
+                        BOOL, pop_bool => push_bool,
                     );
                 }
                 Operation::CmpNotEq => {
-                    do_comparison!(self, |a, b| b != a,
-                        FLOAT, f64 => Float,
-                        CHAR, u8 => Char,
-                        INT, i64 => Int,
-                        BOOL, u8 => Bool
+                    do_comparison!(self, !=,
+                        FLOAT, pop_float => push_float,
+                        INT, pop_int => push_int,
+                        CHAR, pop_char => push_char,
+                        BOOL, pop_bool => push_bool,
                     );
                 }
                 Operation::BitShiftLeft => {
