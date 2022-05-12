@@ -3,7 +3,7 @@ use crate::builtins::BuiltinFunction;
 use crate::code_builder::Instruction;
 use crate::memory::Memory;
 use crate::operation::Operation;
-use crate::typesystem;
+// use crate::typesystem;
 use crate::value::Value;
 
 #[derive(Clone, Debug)]
@@ -13,38 +13,6 @@ pub struct Evaluator {
     builtin_table: Vec<BuiltinFunction>,
     ip: usize,
     bp: usize,
-}
-
-macro_rules! do_comparison {
-    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
-        if false { }
-        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = $self.memory.$pop();
-            let b = $self.memory.$pop();
-            $self.memory.push_bool(if b $op a { 1 } else { 0 });
-        })+
-    };
-}
-
-macro_rules! do_binop {
-    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+ $(,)?) => {
-        if false { }
-        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = $self.memory.$pop();
-            let b = $self.memory.$pop();
-            $self.memory.$push(b $op a);
-        })+
-    };
-}
-
-macro_rules! do_unop {
-    ($self:ident, $op:tt, $($ts:ident, $pop:tt => $push:tt),+) => {
-        if false { }
-        $(else if $self.code[$self.ip - Self::CODE].types[0] == typesystem::$ts {
-            let a = $self.memory.$pop();
-            $self.memory.$push($op a);
-        })+
-    };
 }
 
 impl Evaluator {
@@ -63,6 +31,48 @@ impl Evaluator {
     }
 
     pub fn eval(&mut self, mut code: Vec<Instruction>, entry: usize) -> Result<Value, String> {
+        // for (i, instr) in code.iter().enumerate() { println!("{:05x}: {}", i + Self::CODE, instr); }
+        macro_rules! pop {
+            ($typ:path) => {
+                match self.memory.pop() {
+                    $typ(a) => a,
+                    t => unreachable!("Trying to pop {} found {:?}", stringify!($typ), t),
+                }
+            };
+        }
+
+        macro_rules! do_binop {
+            ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
+                let a = self.memory.pop();
+                let b = self.memory.pop();
+                self.memory.push(match (a, b) {
+                    $(
+                        (Value::$t1(aa), Value::$t2(bb)) => Value::$to(bb $op aa),
+                    )+
+                    _ => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b),
+                })
+            };
+        }
+        macro_rules! do_comparison {
+            ($op:tt, $($t1:ident, $t2:ident),+ $(,)?) => {
+                let a = self.memory.pop();
+                let b = self.memory.pop();
+                self.memory.push(match (a, b) {
+                    $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(if bb $op aa {1} else {0}),)+
+                    _ => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b),
+                })
+            };
+        }
+
+        macro_rules! do_unop {
+            ($op:tt, $($t:ident),+ $(,)?) => {
+                let a = self.memory.pop();
+                self.memory.push(match a {
+                    $(Value::$t(aa) => Value::$t($op aa),)+
+                    _ => unreachable!("Trying to apply binop {} {:?}", stringify!(op), a),
+                })
+            };
+        }
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         loop {
@@ -78,49 +88,50 @@ impl Evaluator {
                     self.memory.pop();
                 }
                 Operation::Load => {
-                    let addr = self.memory.pop() as usize;
-                    self.memory.push_enc(self.memory[addr]);
+                    let addr = pop!(Value::Ptr);
+                    self.memory.push(self.memory[addr]);
                 }
                 Operation::Store => {
                     let value = self.memory.pop();
-                    let addr = self.memory.pop() as usize;
+                    let addr = pop!(Value::Ptr);
                     self.memory[addr] = value;
-                    self.memory.push_enc(value);
+                    self.memory.push(value);
                 }
                 Operation::Reserve => {
-                    let size = self.memory.pop() as usize;
+                    let size = pop!(Value::Count);
                     self.memory.reserve(size);
                 }
                 Operation::Rotate => {
-                    let num = self.memory.pop() as usize;
+                    let num = pop!(Value::Count);
                     self.memory.rotate(num);
                 }
                 Operation::Dup => self.memory.dup(),
                 Operation::Swap => self.memory.swap(),
                 Operation::RefFrame => {
-                    let o = self.memory.pop_int() as isize;
-                    self.memory.push_enc((self.bp as isize + o) as u64)
+                    let o = pop!(Value::PtrOffset);
+                    self.memory
+                        .push(Value::Ptr((self.bp as isize + o) as usize));
                 }
                 Operation::Jump => {
-                    self.ip = self.memory.pop() as usize;
+                    self.ip = pop!(Value::Ptr);
                     continue;
                 }
                 Operation::JumpRel => {
-                    let o = self.memory.pop_int() as isize;
+                    let o = pop!(Value::PtrOffset);
                     self.ip = (self.ip as isize + o) as usize;
                     continue;
                 }
                 Operation::JumpIf => {
-                    let addr = self.memory.pop() as usize;
-                    let cond = self.memory.pop_bool();
+                    let addr = pop!(Value::Ptr);
+                    let cond = pop!(Value::Bool);
                     if cond != 0 {
                         self.ip = addr;
                         continue;
                     }
                 }
                 Operation::JumpRelIf => {
-                    let offset = self.memory.pop_int() as isize;
-                    let cond = self.memory.pop_bool();
+                    let offset = pop!(Value::PtrOffset);
+                    let cond = pop!(Value::Bool);
                     if cond != 0 {
                         self.ip = (self.ip as isize + offset) as usize;
                         continue;
@@ -129,169 +140,153 @@ impl Evaluator {
                 Operation::Return => {
                     let rv = self.memory.pop();
                     self.memory.truncate_stack(self.bp);
-                    self.bp = self.memory.pop() as usize;
-                    self.ip = self.memory.pop() as usize;
-                    self.memory.push_enc(rv);
+                    self.bp = pop!(Value::Ptr);
+                    self.ip = pop!(Value::Ptr);
+                    self.memory.push(rv);
                     continue;
                 }
                 Operation::Call => {
-                    let ip = self.memory.pop() as usize;
-                    let num_args = self.memory.pop() as usize;
+                    let ip = pop!(Value::Ptr);
+                    let num_args = pop!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
-                    self.memory[bp - 1] = self.bp as u64;
-                    self.memory[bp - 2] = (self.ip + 1) as u64;
+                    self.memory[bp - 1] = Value::Ptr(self.bp);
+                    self.memory[bp - 2] = Value::Ptr(self.ip + 1);
                     self.bp = bp;
                     self.ip = ip;
                     if ip < Self::CODE {
                         let builtin_idx = ip - Self::BUILTIN_CODE;
-                        let rv = (self.builtin_table[builtin_idx].func)(
-                            self,
-                            self.bp,
-                            self.bp + num_args / 2,
-                            num_args / 2,
-                        );
+                        let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
                         self.memory.truncate_stack(self.bp);
-                        self.bp = self.memory.pop() as usize;
-                        self.ip = self.memory.pop() as usize;
-                        self.memory.push_enc(rv as u64);
+                        self.bp = pop!(Value::Ptr);
+                        self.ip = pop!(Value::Ptr);
+                        self.memory.push(rv);
                     }
                     continue;
                 }
                 Operation::BoolOr => {
-                    do_binop!(self, |, BOOL, pop_bool => push_bool);
+                    do_binop!(|, Bool, Bool => Bool);
                 }
                 Operation::BoolXor => {
-                    do_binop!(self, ^, BOOL, pop_bool => push_bool);
+                    do_binop!(^, Bool, Bool => Bool);
                 }
                 Operation::BoolAnd => {
-                    do_binop!(self, &, BOOL, pop_bool => push_bool);
+                    do_binop!(&, Bool, Bool => Bool);
                 }
                 Operation::BitOr => {
-                    do_binop!(self, |,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(|,
+                        Int, Int => Int,
+                        Char, Char => Char,
                     );
                 }
                 Operation::BitXor => {
-                    do_binop!(self, ^,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(^,
+                        Int, Int => Int,
+                        Char, Char => Char,
                     );
                 }
                 Operation::BitAnd => {
-                    do_binop!(self, &,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(&,
+                        Int, Int => Int,
+                        Char, Char => Char,
                     );
                 }
                 Operation::CmpGE => {
-                    do_comparison!(self, >=,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_comparison!(>=,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
                     );
                 }
                 Operation::CmpGT => {
-                    do_comparison!(self, > ,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_comparison!(>,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
                     );
                 }
                 Operation::CmpLE => {
-                    do_comparison!(self, <=,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_comparison!(<=,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
                     );
                 }
                 Operation::CmpLT => {
-                    do_comparison!(self, <,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_comparison!(<,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
                     );
                 }
                 Operation::CmpEq => {
-                    do_comparison!(self, ==,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
-                        BOOL, pop_bool => push_bool,
+                    do_comparison!(==,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
+                        Bool, Bool,
                     );
                 }
                 Operation::CmpNotEq => {
-                    do_comparison!(self, !=,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
-                        BOOL, pop_bool => push_bool,
+                    do_comparison!(!=,
+                        Float, Float,
+                        Int, Int,
+                        Char, Char,
+                        Bool, Bool,
                     );
                 }
                 Operation::BitShiftLeft => {
-                    if self.code[self.ip].types[0] == typesystem::CHAR {
-                        let a = self.memory.pop_int();
-                        let b = self.memory.pop_char();
-                        self.memory.push_char(b << a);
-                    } else if self.code[self.ip].types[0] == typesystem::INT {
-                        let a = self.memory.pop_int();
-                        let b = self.memory.pop_int();
-                        self.memory.push_int(b << a);
-                    }
+                    do_binop!(<<,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        // Char, Int => Char,
+                    );
                 }
                 Operation::BitShiftRight => {
-                    if self.code[self.ip].types[0] == typesystem::CHAR {
-                        let a = self.memory.pop_int();
-                        let b = self.memory.pop_char();
-                        self.memory.push_char(b << a);
-                    } else if self.code[self.ip].types[0] == typesystem::INT {
-                        let a = self.memory.pop_int();
-                        let b = self.memory.pop_int();
-                        self.memory.push_int(b << a);
-                    }
+                    do_binop!(>>,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        // Char, Int => Char,
+                    );
                 }
                 Operation::Minus => {
-                    do_binop!(self, -,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(-,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        Float, Float => Float
                     );
                 }
                 Operation::Plus => {
-                    do_binop!(self, +,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(+,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        Float, Float => Float
                     );
                 }
                 Operation::Times => {
-                    do_binop!(self, *,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(*,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        Float, Float => Float
                     );
                 }
                 Operation::Mod => {
-                    do_binop!(self, %,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(%,
+                        Int, Int => Int,
+                        Char, Char => Char,
                     );
                 }
                 Operation::Div => {
-                    do_binop!(self, /,
-                        FLOAT, pop_float => push_float,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char,
+                    do_binop!(/,
+                        Int, Int => Int,
+                        Char, Char => Char,
+                        Float, Float => Float
                     );
                 }
                 Operation::BoolNot => {
-                    let a = self.memory.pop_bool();
-                    self.memory.push_enc((1 - a) as u64);
+                    do_unop!(!, Bool);
                 }
                 Operation::BitNot => {
-                    do_unop!(self, !,
-                        INT, pop_int => push_int,
-                        CHAR, pop_char => push_char);
+                    do_unop!(!, Int, Char);
                 }
                 t => unreachable!("{}", t),
             }

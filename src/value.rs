@@ -1,4 +1,3 @@
-use crate::typesystem::*;
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Clone, Copy)]
@@ -61,39 +60,6 @@ impl Debug for Value {
                 }
             }
             Value::Type(u) => f.write_fmt(format_args!("{:?}", u)),
-        }
-    }
-}
-
-impl Value {
-    pub fn encode_full(&self) -> u64 {
-        match self {
-            Value::Uninitialized => 0,
-            Value::Null => 0,
-            Value::Bool(b) => *b as u64,
-            Value::Char(c) => *c as u64,
-            Value::Int(i) => *i as u64,
-            Value::Float(f) => f.to_bits(),
-            Value::Ptr(p) => *p as u64,
-            Value::PtrOffset(o) => *o as u64,
-            Value::Count(u) => *u as u64,
-            Value::Type(u) => *u as u64,
-        }
-    }
-
-    pub fn decode_from_type(bytes: u64, type_enc: u64) -> Value {
-        match type_enc as usize {
-            UNIT => panic!("Unit type in live system"),
-            UNKNOWN_RETURN => panic!("Unknown return in live system"),
-            BUILTIN_FUNCTION => Value::Ptr(bytes as usize),
-            NULL => Value::Null,
-            PTR => Value::Ptr(bytes as usize),
-            BOOL => Value::Bool((bytes & 1) as u8),
-            CHAR => Value::Char(bytes as u8),
-            INT => Value::Int(bytes as i64),
-            FLOAT => Value::Float(f64::from_bits(bytes)),
-            STR => todo!(),
-            _ => panic!("No!"),
         }
     }
 }

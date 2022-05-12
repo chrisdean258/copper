@@ -3,14 +3,13 @@ use std::ops::{Index, IndexMut};
 
 pub const HEAP: usize = 0x10000000;
 pub const STACK: usize = 0x1000000;
-pub const CODE: usize = 0x100000;
+// pub const CODE: usize = 0x100000;
 pub const BUILTIN_CODE: usize = 0x10000;
 
 #[derive(Clone, Debug)]
 pub struct Memory {
-    pub stack: Vec<u64>,
-    pub heap: Vec<u64>,
-    pub code: Vec<u64>,
+    pub stack: Vec<Value>,
+    pub heap: Vec<Value>,
 }
 
 impl Memory {
@@ -18,67 +17,20 @@ impl Memory {
         Self {
             stack: Vec::new(),
             heap: Vec::new(),
-            code: Vec::new(),
         }
     }
 
     pub fn push(&mut self, val: Value) {
-        self.stack.push(val.encode_full());
-    }
-
-    pub fn push_enc(&mut self, val: u64) {
         self.stack.push(val);
     }
 
-    // pub fn pop_as(&mut self, what: Value) -> Value {
-    // let val = self.stack.pop().unwrap();
-    // Value::decode_full(val, what)
-    // }
-
-    pub fn pop(&mut self) -> u64 {
+    pub fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
     }
 
-    pub fn pop_int(&mut self) -> i64 {
-        self.stack.pop().unwrap() as i64
-    }
-
-    pub fn pop_float(&mut self) -> f64 {
-        f64::from_bits(self.stack.pop().unwrap())
-    }
-
-    pub fn pop_char(&mut self) -> u8 {
-        self.stack.pop().unwrap() as u8
-    }
-
-    pub fn pop_bool(&mut self) -> u8 {
-        let rv = self.stack.pop().unwrap();
-        assert!(rv == 0 || rv == 1, "rv = {}", rv);
-        rv as u8
-    }
-
-    #[inline]
-    pub fn push_int(&mut self, v: i64) {
-        self.stack.push(v as u64);
-    }
-
-    #[inline]
-    pub fn push_float(&mut self, v: f64) {
-        self.stack.push(v.to_bits());
-    }
-
-    #[inline]
-    pub fn push_char(&mut self, v: u8) {
-        self.stack.push(v as u64);
-    }
-
-    #[inline]
-    pub fn push_bool(&mut self, v: u8) {
-        self.stack.push(v as u64);
-    }
-
     pub fn reserve(&mut self, count: usize) {
-        self.stack.resize(self.stack.len() + count, 0)
+        self.stack
+            .resize(self.stack.len() + count, Value::Uninitialized)
     }
 
     pub fn rotate(&mut self, count: usize) {
@@ -100,8 +52,8 @@ impl Memory {
         assert!(self.stack.len() >= 2);
         let a = self.pop();
         let b = self.pop();
-        self.push_enc(a);
-        self.push_enc(b);
+        self.push(a);
+        self.push(b);
     }
 
     #[inline]
@@ -121,8 +73,6 @@ impl IndexMut<usize> for Memory {
             &mut self.heap[addr - HEAP]
         } else if addr >= STACK && addr - STACK < self.stack.len() {
             &mut self.stack[addr - STACK]
-        } else if addr >= CODE && addr - CODE < self.code.len() {
-            &mut self.code[addr - CODE]
         } else if addr >= BUILTIN_CODE {
             panic!("Cannot write builtin code as addr 0x{:x}", addr)
         } else {
@@ -132,14 +82,12 @@ impl IndexMut<usize> for Memory {
 }
 
 impl Index<usize> for Memory {
-    type Output = u64;
+    type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
         if addr >= HEAP {
             &self.heap[addr - HEAP]
         } else if addr >= STACK {
             &self.stack[addr - STACK]
-        } else if addr >= CODE {
-            &self.code[addr - CODE]
         } else if addr >= BUILTIN_CODE {
             panic!("Cannot read builtin code as addr 0x{:x}", addr)
         } else {

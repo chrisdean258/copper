@@ -6,7 +6,7 @@ use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub struct BuiltinFunction {
-    pub func: fn(&mut Evaluator, usize, usize, usize) -> usize,
+    pub func: fn(&mut Evaluator, usize, usize) -> Value,
     pub name: String,
     pub returns: Type,
 }
@@ -26,24 +26,13 @@ impl BuiltinFunction {
         }]
     }
 }
-// println!(
-// "stack_len: {}, first: {:x}, first_type: {:x}, count: {}",
-// eval.memory.stack.len(),
-// first,
-// first_type,
-// count
-// );
-
-fn print_value(eval: &mut Evaluator, first: usize, first_type: usize, count: usize) -> usize {
+fn print_value(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     for arg in 0..count {
         if arg != 0 {
             print!(" ");
         }
-        print!(
-            "{}",
-            Value::decode_from_type(eval.memory[first + arg], eval.memory[first_type + arg])
-        );
+        print!("{}", eval.memory[first + arg]);
     }
     println!("");
-    0
+    Value::Null
 }

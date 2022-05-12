@@ -418,14 +418,7 @@ impl Compiler {
         for arg in c.args.iter() {
             self.expr(arg);
         }
-        if c.function.derived_type == Some(BUILTIN_FUNCTION) {
-            for arg in c.args.iter() {
-                self.code.push(Value::Type(arg.derived_type.unwrap()));
-            }
-            self.code.push(Value::Count(c.args.len() * 2));
-        } else {
-            self.code.push(Value::Count(c.args.len()));
-        }
+        self.code.push(Value::Count(c.args.len()));
 
         let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
         swap(&mut arg_types, &mut self.arg_types);
