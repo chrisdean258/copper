@@ -85,39 +85,15 @@ impl Value {
         match type_enc as usize {
             UNIT => panic!("Unit type in live system"),
             UNKNOWN_RETURN => panic!("Unknown return in live system"),
-            BUILTIN_FUNCTION => Value::decode_bytes(bytes, Value::Ptr(0)),
-            NULL => Value::decode_bytes(bytes, Value::Null),
-            PTR => Value::decode_bytes(bytes, Value::Ptr(bytes as usize)),
-            BOOL => Value::decode_bytes(bytes, Value::Bool(0)),
-            CHAR => Value::decode_bytes(bytes, Value::Char(0)),
-            INT => Value::decode_bytes(bytes, Value::Int(0)),
-            FLOAT => Value::decode_bytes(bytes, Value::Float(0.0)),
+            BUILTIN_FUNCTION => Value::Ptr(bytes as usize),
+            NULL => Value::Null,
+            PTR => Value::Ptr(bytes as usize),
+            BOOL => Value::Bool((bytes & 1) as u8),
+            CHAR => Value::Char(bytes as u8),
+            INT => Value::Int(bytes as i64),
+            FLOAT => Value::Float(f64::from_bits(bytes)),
             STR => todo!(),
             _ => panic!("No!"),
         }
-    }
-
-    pub fn decode_bytes(bytes: u64, mut what: Value) -> Value {
-        match &mut what {
-            Value::Uninitialized => (),
-            Value::Null => (),
-            Value::Bool(b) => {
-                *b = (bytes & 0x1) as u8;
-            }
-            Value::Char(c) => {
-                *c = (bytes & 0xff) as u8;
-            }
-            Value::Int(i) => {
-                *i = bytes as i64;
-            }
-            Value::Float(f) => {
-                *f = f64::from_bits(bytes);
-            }
-            Value::Ptr(p) => *p = bytes as usize,
-            Value::PtrOffset(o) => *o = bytes as isize,
-            Value::Count(u) => *u = bytes as usize,
-            Value::Type(u) => *u = bytes as usize,
-        }
-        what
     }
 }
