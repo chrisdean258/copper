@@ -1,14 +1,12 @@
 #![allow(dead_code)]
 use crate::operation::Operation;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct TypeSystem {
     pub types: Vec<TypeEntry>,
     types_by_name: HashMap<String, Type>,
     operations: HashMap<Operation, GenericOperation>,
-    ops_by_name: HashMap<String, Op>,
     func_type_cache: HashMap<Signature, Type>,
 }
 
@@ -57,82 +55,17 @@ pub struct Signature {
     pub output: Type,
 }
 
-#[derive(Clone, Copy, PartialEq, Hash, Eq)]
-pub struct Type {
-    index: usize,
-}
-
-impl Type {
-    #[inline]
-    pub fn encode(&self) -> u64 {
-        self.index as u64
-    }
-
-    pub fn decode(val: u64) -> Type {
-        Type {
-            index: val as usize,
-        }
-    }
-}
-
-impl Debug for Type {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!(
-            "{}",
-            match self.index {
-                0 => "UNIT".to_string(),
-                1 => "UNKNOWN_RETURN".to_string(),
-                2 => "BUILTIN_FUNCTION".to_string(),
-                3 => "NULL".to_string(),
-                4 => "BOOL".to_string(),
-                5 => "CHAR".to_string(),
-                6 => "INT".to_string(),
-                7 => "FLOAT".to_string(),
-                8 => "STR".to_string(),
-                t => t.to_string(),
-            }
-        ))
-    }
-}
-
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let s = format!("{}", self.index);
-        f.write_str(match self.index {
-            0 => "unit",
-            1 => "UNKNOWN RETURN",
-            2 => "builtin function",
-            3 => "null",
-            4 => "bool",
-            5 => "char",
-            6 => "int",
-            7 => "float",
-            8 => "str",
-            _ => &s,
-        })
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub struct Op {
-    index: usize,
-}
-
-impl Debug for Op {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("{}", self.index))
-    }
-}
-
-pub const UNIT: Type = Type { index: 0 };
-pub const UNKNOWN_RETURN: Type = Type { index: 1 };
-pub const BUILTIN_FUNCTION: Type = Type { index: 2 };
-pub const NULL: Type = Type { index: 3 };
-pub const BOOL: Type = Type { index: 4 };
-pub const CHAR: Type = Type { index: 5 };
-pub const INT: Type = Type { index: 6 };
-pub const FLOAT: Type = Type { index: 7 };
-pub const STR: Type = Type { index: 8 };
+pub type Type = usize;
+pub const UNIT: Type = 0;
+pub const UNKNOWN_RETURN: Type = 1;
+pub const BUILTIN_FUNCTION: Type = 2;
+pub const NULL: Type = 3;
+pub const PTR: Type = 4;
+pub const BOOL: Type = 5;
+pub const CHAR: Type = 6;
+pub const INT: Type = 7;
+pub const FLOAT: Type = 8;
+pub const STR: Type = 9;
 
 impl TypeSystem {
     pub fn new() -> Self {
@@ -140,7 +73,6 @@ impl TypeSystem {
             types: Vec::new(),
             types_by_name: HashMap::new(),
             operations: HashMap::new(),
-            ops_by_name: HashMap::new(),
             func_type_cache: HashMap::new(),
         };
         rv.add_default_types();
@@ -264,9 +196,7 @@ impl TypeSystem {
             name: name.clone(),
             te_type,
         });
-        let rv = Type {
-            index: self.types.len() - 1,
-        };
+        let rv = self.types.len() - 1;
         self.types_by_name.insert(name, rv);
         rv
     }
@@ -283,13 +213,13 @@ impl TypeSystem {
     } */
 
     pub fn list_type(&mut self, t: Type) -> Type {
-        match self.types[t.index].list_type {
+        match self.types[t].list_type {
             Some(t) => return t,
             None => (),
         }
         let new_name = format!("list<{}>", self.typename(t));
         let list_type = self.new_type(new_name, TypeEntryType::ContainerType(t));
-        self.types[t.index].list_type = Some(list_type);
+        self.types[t].list_type = Some(list_type);
 
         self.add_signature(
             Operation::Equal,
@@ -303,7 +233,7 @@ impl TypeSystem {
     }
 
     pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
-        match self.types[t.index].te_type {
+        match self.types[t].te_type {
             TypeEntryType::ContainerType(t) => Some(t),
             _ => None,
         }
@@ -321,7 +251,7 @@ impl TypeSystem {
     }
 
     pub fn typename(&self, t: Type) -> String {
-        self.types[t.index].name.clone()
+        self.types[t].name.clone()
     }
 
     pub fn lookup_binop(&self, binop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
@@ -378,7 +308,7 @@ impl TypeSystem {
     }
 
     pub fn is_function(&self, func: Type) -> bool {
-        match &self.types[func.index].te_type {
+        match &self.types[func].te_type {
             TypeEntryType::UnknownReturnType => true,
             TypeEntryType::FunctionType(_) => true,
             _ if func == BUILTIN_FUNCTION => true,
@@ -392,7 +322,7 @@ impl TypeSystem {
                 return Some(UNKNOWN_RETURN);
             }
         }
-        let ft = match &self.types[func.index].te_type {
+        let ft = match &self.types[func].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to match a signatures with a non function"),
         };
@@ -405,7 +335,7 @@ impl TypeSystem {
     }
 
     pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> usize {
-        let ft = match &mut self.types[func.index].te_type {
+        let ft = match &mut self.types[func].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to add a signature to a non function"),
         };
@@ -414,7 +344,7 @@ impl TypeSystem {
     }
 
     pub fn patch_signature_return(&mut self, func: Type, handle: usize, return_type: Type) {
-        let ft = match &mut self.types[func.index].te_type {
+        let ft = match &mut self.types[func].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to patch signature to a non function"),
         };
@@ -422,7 +352,7 @@ impl TypeSystem {
     }
 
     pub fn get_signatures_for_func(&self, typ: Type) -> Vec<Signature> {
-        match &self.types[typ.index].te_type {
+        match &self.types[typ].te_type {
             TypeEntryType::FunctionType(s) => s.signatures.clone(),
             t => panic!("Trying to look for concrete type but found {:?}", t),
         }

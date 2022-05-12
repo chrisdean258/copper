@@ -12,7 +12,7 @@ pub enum Value {
     Ptr(usize),
     PtrOffset(isize),
     Count(usize),
-    Type(u64),
+    Type(usize),
 }
 
 impl Display for Value {
@@ -33,7 +33,7 @@ impl Display for Value {
                     f.write_fmt(format_args!("-0x{:x}", -o))
                 }
             }
-            Value::Type(u) => f.write_fmt(format_args!("{}", Type::decode(*u))),
+            Value::Type(u) => f.write_fmt(format_args!("{}", u)),
         }
     }
 }
@@ -60,36 +60,12 @@ impl Debug for Value {
                     f.write_fmt(format_args!("PtrOffset(-0x{:x})", -o))
                 }
             }
-            Value::Type(u) => f.write_fmt(format_args!("{:?}", Type::decode(*u))),
+            Value::Type(u) => f.write_fmt(format_args!("{:?}", u)),
         }
     }
 }
 
 impl Value {
-    pub fn encode_for_push(&self) -> u64 {
-        match self {
-            Value::Uninitialized => 0,
-            Value::Null => 0,
-            Value::Bool(b) => *b as u64,
-            Value::Char(c) => *c as u64,
-            Value::Int(i) => *i as u64 & !(1 << 63),
-            Value::Float(f) => f.to_bits() >> 1,
-            Value::Ptr(p) => {
-                assert!(p & 1 << 63 == 0);
-                *p as u64
-            }
-            Value::PtrOffset(o) => *o as u64 & !(1 << 63),
-            Value::Count(u) => {
-                assert!(u & 1 << 63 == 0);
-                *u as u64
-            }
-            Value::Type(u) => {
-                assert!(u & 1 << 63 == 0);
-                *u as u64
-            }
-        }
-    }
-
     pub fn encode_full(&self) -> u64 {
         match self {
             Value::Uninitialized => 0,
@@ -106,16 +82,17 @@ impl Value {
     }
 
     pub fn decode_from_type(bytes: u64, type_enc: u64) -> Value {
-        match type_enc {
-            0 => panic!("Unit type in live system"),
-            1 => panic!("Unknown return in live system"),
-            2 => Value::decode_bytes(bytes, Value::Ptr(0)),
-            3 => Value::decode_bytes(bytes, Value::Null),
-            4 => Value::decode_bytes(bytes, Value::Bool(0)),
-            5 => Value::decode_bytes(bytes, Value::Char(0)),
-            6 => Value::decode_bytes(bytes, Value::Int(0)),
-            7 => Value::decode_bytes(bytes, Value::Float(0.0)),
-            8 => todo!(),
+        match type_enc as usize {
+            UNIT => panic!("Unit type in live system"),
+            UNKNOWN_RETURN => panic!("Unknown return in live system"),
+            BUILTIN_FUNCTION => Value::decode_bytes(bytes, Value::Ptr(0)),
+            NULL => Value::decode_bytes(bytes, Value::Null),
+            PTR => Value::decode_bytes(bytes, Value::Ptr(bytes as usize)),
+            BOOL => Value::decode_bytes(bytes, Value::Bool(0)),
+            CHAR => Value::decode_bytes(bytes, Value::Char(0)),
+            INT => Value::decode_bytes(bytes, Value::Int(0)),
+            FLOAT => Value::decode_bytes(bytes, Value::Float(0.0)),
+            STR => todo!(),
             _ => panic!("No!"),
         }
     }
@@ -139,7 +116,7 @@ impl Value {
             Value::Ptr(p) => *p = bytes as usize,
             Value::PtrOffset(o) => *o = bytes as isize,
             Value::Count(u) => *u = bytes as usize,
-            Value::Type(u) => *u = bytes,
+            Value::Type(u) => *u = bytes as usize,
         }
         what
     }

@@ -420,8 +420,7 @@ impl Compiler {
         }
         if c.function.derived_type == Some(BUILTIN_FUNCTION) {
             for arg in c.args.iter() {
-                self.code
-                    .push(Value::Type(arg.derived_type.unwrap().encode()));
+                self.code.push(Value::Type(arg.derived_type.unwrap()));
             }
             self.code.push(Value::Count(c.args.len() * 2));
         } else {
