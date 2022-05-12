@@ -135,6 +135,7 @@ impl TypeChecker {
             ExpressionType::IndexExpr(i) => self.index(i),
             ExpressionType::DottedLookup(d) => todo!("{:?}", d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
+            ExpressionType::Str(s) => self.string(s),
         }?;
         e.derived_type = Some(rv);
         Ok(rv)
@@ -389,6 +390,10 @@ impl TypeChecker {
             panic!("Trying to derive type of lambda arg in non lambda. This is a bug");
         }
         Ok(self.lambda_args.last().unwrap()[l.number])
+    }
+
+    fn string(&mut self, _s: &mut Str) -> Result<Type, TypeError> {
+        Ok(STR)
     }
 
     fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {

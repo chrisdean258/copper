@@ -30,8 +30,14 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, mut code: Vec<Instruction>, entry: usize) -> Result<Value, String> {
+    pub fn eval(
+        &mut self,
+        mut code: Vec<Instruction>,
+        mut strings: Vec<String>,
+        entry: usize,
+    ) -> Result<Value, String> {
         // for (i, instr) in code.iter().enumerate() { println!("{:05x}: {}", i + Self::CODE, instr); }
+        self.memory.add_strings(&mut strings);
         macro_rules! pop {
             ($typ:path) => {
                 match self.memory.pop() {
@@ -256,11 +262,21 @@ impl Evaluator {
                     );
                 }
                 Operation::Plus => {
-                    do_binop!(+,
-                        Int, Int => Int,
-                        Char, Char => Char,
-                        Float, Float => Float
-                    );
+                    let a = self.memory.pop();
+                    let b = self.memory.pop();
+                    let val = match (a, b) {
+                        (Value::Int(aa), Value::Int(bb)) => Value::Int(bb + aa),
+                        (Value::Char(aa), Value::Char(bb)) => Value::Char(bb + aa),
+                        (Value::Float(aa), Value::Float(bb)) => Value::Float(bb + aa),
+                        (Value::Str(aa), Value::Str(bb)) => Value::Str(self.memory.alloc_string(
+                            format!("{}{}", self.memory.strings[bb], self.memory.strings[aa]),
+                        )),
+                        _ => {
+                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                        }
+                    };
+                    // println!("Got this value from binop plus {:?}", val);
+                    self.memory.push(val);
                 }
                 Operation::Times => {
                     do_binop!(*,

@@ -10,6 +10,7 @@ pub const BUILTIN_CODE: usize = 0x10000;
 pub struct Memory {
     pub stack: Vec<Value>,
     pub heap: Vec<Value>,
+    pub strings: Vec<String>,
 }
 
 impl Memory {
@@ -17,10 +18,21 @@ impl Memory {
         Self {
             stack: Vec::new(),
             heap: Vec::new(),
+            strings: Vec::new(),
         }
     }
 
+    pub fn add_strings(&mut self, strings: &mut Vec<String>) {
+        self.strings.append(strings);
+    }
+
+    pub fn alloc_string(&mut self, string: String) -> usize {
+        self.strings.push(string);
+        self.strings.len() - 1
+    }
+
     pub fn push(&mut self, val: Value) {
+        // println!("Pushing {:?}", val);
         self.stack.push(val);
     }
 

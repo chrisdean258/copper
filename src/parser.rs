@@ -43,6 +43,7 @@ pub enum ExpressionType {
     Function(Rc<RefCell<Function>>),
     Lambda(Lambda),
     List(List),
+    Str(Str),
     IndexExpr(IndexExpr),
     DottedLookup(DottedLookup),
     LambdaArg(LambdaArg),
@@ -191,6 +192,11 @@ pub struct Lambda {
 #[derive(Debug, Clone)]
 pub struct List {
     pub exprs: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Str {
+    pub string: String,
 }
 
 #[derive(Debug, Clone)]
@@ -943,13 +949,11 @@ impl ParseTree {
                         value: Value::Char(c.clone() as u8),
                     }),
                 }),
-                TokenType::Str(_s) => {
-                    todo!("Strings");
-                    // Ok(Expression::Immediate(Immediate {
-                    // value: Value::Str(s.chars().map(|c| c as u8).collect()),
-                    // location: lexer.next().unwrap().location,
-                    // }));
-                }
+                TokenType::Str(s) => Ok(Expression {
+                    derived_type: None,
+                    location: lexer.next().unwrap().location,
+                    etype: ExpressionType::Str(Str { string: s.clone() }),
+                }),
                 TokenType::Int(i) => Ok(Expression {
                     derived_type: None,
                     location: lexer.next().unwrap().location,

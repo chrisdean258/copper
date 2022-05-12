@@ -31,7 +31,10 @@ fn print_value(eval: &mut Evaluator, first: usize, count: usize) -> Value {
         if arg != 0 {
             print!(" ");
         }
-        print!("{}", eval.memory[first + arg]);
+        match eval.memory[first + arg] {
+            Value::Str(p) => print!("{}", eval.memory.strings[p]),
+            a => print!("{}", a),
+        }
     }
     println!("");
     Value::Null

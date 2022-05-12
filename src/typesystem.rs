@@ -81,18 +81,24 @@ impl TypeSystem {
     }
 
     fn add_default_types(&mut self) {
-        self.new_type(String::from("unit"), TypeEntryType::new_unit());
-        self.new_type(
+        self.new_type_with_num(String::from("unit"), TypeEntryType::new_unit(), UNIT);
+        self.new_type_with_num(
             String::from("UNKNOWN RETURN"),
             TypeEntryType::new_unknown_return(),
+            UNKNOWN_RETURN,
         );
-        self.new_type(String::from("builtin function"), TypeEntryType::new_basic());
-        self.new_type(String::from("null"), TypeEntryType::new_basic());
-        self.new_type(String::from("bool"), TypeEntryType::new_basic());
-        self.new_type(String::from("char"), TypeEntryType::new_basic());
-        self.new_type(String::from("int"), TypeEntryType::new_basic());
-        self.new_type(String::from("float"), TypeEntryType::new_basic());
-        self.new_type(String::from("str"), TypeEntryType::new_basic());
+        self.new_type_with_num(
+            String::from("builtin function"),
+            TypeEntryType::new_basic(),
+            BUILTIN_FUNCTION,
+        );
+        self.new_type_with_num(String::from("null"), TypeEntryType::new_basic(), NULL);
+        self.new_type_with_num(String::from("ptr"), TypeEntryType::new_basic(), PTR);
+        self.new_type_with_num(String::from("bool"), TypeEntryType::new_basic(), BOOL);
+        self.new_type_with_num(String::from("char"), TypeEntryType::new_basic(), CHAR);
+        self.new_type_with_num(String::from("int"), TypeEntryType::new_basic(), INT);
+        self.new_type_with_num(String::from("float"), TypeEntryType::new_basic(), FLOAT);
+        self.new_type_with_num(String::from("str"), TypeEntryType::new_basic(), STR);
     }
 
     fn add_default_ops(&mut self) {
@@ -199,6 +205,12 @@ impl TypeSystem {
         let rv = self.types.len() - 1;
         self.types_by_name.insert(name, rv);
         rv
+    }
+
+    fn new_type_with_num(&mut self, name: String, te_type: TypeEntryType, expected: Type) -> Type {
+        let typ = self.new_type(name, te_type);
+        assert_eq!(typ, expected);
+        typ
     }
 
     /* pub fn func_type(&mut self, sig: Signature) -> Type {

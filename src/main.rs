@@ -163,9 +163,9 @@ fn eval_lexer<T: Iterator<Item = String>>(
     if typecheck_only {
         return Ok(());
     }
-    let (code, entry) = compiler.compile("main".to_string(), &tree, &typechecker.system);
+    let (code, strings, entry) = compiler.compile("main".to_string(), &tree, &typechecker.system);
     // for (i, instruction) in code.iter().enumerate() { println!("{:05} {}", i, instruction); }
-    evaluator.eval(code, entry)?;
+    evaluator.eval(code, strings, entry)?;
     // println!("{:?}", evaluator.stack);
     Ok(())
 }

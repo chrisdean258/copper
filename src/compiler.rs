@@ -3,7 +3,7 @@ use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::Operation;
 use crate::parser::*;
-use crate::typesystem::{Signature, Type, TypeSystem, BOOL, BUILTIN_FUNCTION, UNIT};
+use crate::typesystem::{Signature, Type, TypeSystem, BOOL, UNIT};
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -18,6 +18,7 @@ pub struct Compiler {
     builtins: HashMap<String, usize>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
+    strings: Vec<String>,
 }
 
 enum Scope {
@@ -42,6 +43,7 @@ impl Compiler {
             types: None,
             num_args: 0,
             arg_types: None,
+            strings: Vec::new(),
         }
     }
 
@@ -50,7 +52,7 @@ impl Compiler {
         name: String,
         p: &ParseTree,
         types: &TypeSystem,
-    ) -> (Vec<Instruction>, usize) {
+    ) -> (Vec<Instruction>, Vec<String>, usize) {
         self.types = Some(types.clone());
         self.code.open_function(name);
         self.code.reserve(p.globals.unwrap());
@@ -60,7 +62,7 @@ impl Compiler {
         self.code.crash();
         let entry = self.code.close_function();
         self.types = None;
-        (self.code.code(), entry)
+        (self.code.code(), self.strings.clone(), entry)
     }
 
     fn open_scope(&mut self) {
@@ -115,6 +117,11 @@ impl Compiler {
         );
     }
 
+    fn entomb_string(&mut self, string: String) -> usize {
+        self.strings.push(string);
+        self.strings.len() - 1
+    }
+
     fn statement(&mut self, s: &Statement, pop: bool) {
         match s {
             Statement::Expr(e) => {
@@ -162,6 +169,7 @@ impl Compiler {
             ExpressionType::IndexExpr(i) => self.index(i),
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
+            ExpressionType::Str(s) => self.string(s),
         }
     }
 
@@ -343,6 +351,11 @@ impl Compiler {
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             }
         }
+    }
+
+    fn string(&mut self, s: &Str) {
+        let str_idx = self.entomb_string(s.string.clone());
+        self.code.push(Value::Str(str_idx));
     }
 
     fn list(&mut self, _l: &List) {
