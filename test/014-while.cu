@@ -1,5 +1,5 @@
 a = true
-while(a)
+while a 
 {
 	print("Hello, ")
 	a = false

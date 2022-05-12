@@ -1,4 +1,4 @@
-while(false){
+while false {
 	print("hello")
 }
 print("world")

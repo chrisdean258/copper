@@ -55,7 +55,9 @@ impl Compiler {
     ) -> (Vec<Instruction>, Vec<String>, usize) {
         self.types = Some(types.clone());
         self.code.open_function(name);
-        self.code.reserve(p.globals.unwrap());
+        if p.globals.unwrap() > 0 {
+            self.code.reserve(p.globals.unwrap());
+        }
         for statement in p.statements.iter() {
             self.statement(statement, true);
         }

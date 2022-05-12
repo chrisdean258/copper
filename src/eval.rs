@@ -36,7 +36,9 @@ impl Evaluator {
         mut strings: Vec<String>,
         entry: usize,
     ) -> Result<Value, String> {
-        // for (i, instr) in code.iter().enumerate() { println!("{:05x}: {}", i + Self::CODE, instr); }
+        for (i, instr) in code.iter().enumerate() {
+            eprintln!("{:05x}: {}", i + Self::CODE, instr);
+        }
         self.memory.add_strings(&mut strings);
         macro_rules! pop {
             ($typ:path) => {
@@ -82,6 +84,10 @@ impl Evaluator {
         self.ip = self.code.len() + entry;
         self.code.append(&mut code);
         loop {
+            eprintln!("Stack: {:?}", self.memory.stack);
+            eprint!("IP: 0x{:08x}:  ", self.ip);
+            eprint!("{:20}  ", self.code[self.ip - Self::CODE].to_string());
+            eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - Self::CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
@@ -299,7 +305,11 @@ impl Evaluator {
                     );
                 }
                 Operation::BoolNot => {
-                    do_unop!(!, Bool);
+                    let a = self.memory.pop();
+                    self.memory.push(match a {
+                        Value::Bool(aa) => Value::Bool(1 - aa),
+                        _ => unreachable!("Trying to apply binop !{:?}", a),
+                    })
                 }
                 Operation::BitNot => {
                     do_unop!(!, Int, Char);
