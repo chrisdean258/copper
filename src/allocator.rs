@@ -56,16 +56,3 @@ impl<T> IndexMut<usize> for Allocator<T> {
         &mut self.memory[addr - self.base]
     }
 }
-
-impl<T> IntoIterator for Allocator<T> {
-    type Item = T;
-
-    fn iter(&mut self) -> Vec<T>::IntoIter {
-        self.memory
-            .iter()
-            .enumerate()
-            .filter(|(i, v)| !self.free.contains(&i))
-            .collect()
-            .into_iter()
-    }
-}
