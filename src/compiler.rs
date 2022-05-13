@@ -145,12 +145,7 @@ impl Compiler {
         match &e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
-            ExpressionType::If(i) => {
-                self.ifexpr(i);
-                if e.derived_type.unwrap() == UNIT {
-                    self.code.pop();
-                }
-            }
+            ExpressionType::If(i) => self.ifexpr(i),
             ExpressionType::CallExpr(c) => self.call(c),
             ExpressionType::RefExpr(r) => self.refexpr(r),
             ExpressionType::Immediate(i) => self.immediate(i),

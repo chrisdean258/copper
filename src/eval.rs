@@ -36,9 +36,6 @@ impl Evaluator {
         mut strings: Vec<String>,
         entry: usize,
     ) -> Result<Value, String> {
-        for (i, instr) in code.iter().enumerate() {
-            eprintln!("{:05x}: {}", i + Self::CODE, instr);
-        }
         self.memory.add_strings(&mut strings);
         macro_rules! pop {
             ($typ:path) => {
@@ -82,12 +79,13 @@ impl Evaluator {
             };
         }
         self.ip = self.code.len() + entry;
+        // for (i, instr) in code.iter().enumerate() { eprintln!("{:05x}: {}", i + Self::CODE, instr); }
         self.code.append(&mut code);
         loop {
-            eprintln!("Stack: {:?}", self.memory.stack);
-            eprint!("IP: 0x{:08x}:  ", self.ip);
-            eprint!("{:20}  ", self.code[self.ip - Self::CODE].to_string());
-            eprint!("BP: 0x{:08x}     ", self.bp);
+            // eprintln!("Stack: {:?}", self.memory.stack);
+            // eprint!("IP: 0x{:08x}:  ", self.ip);
+            // eprint!("{:20}  ", self.code[self.ip - Self::CODE].to_string());
+            // eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - Self::CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
