@@ -1,8 +1,0 @@
-class string {
-	fn __len__(self) {
-		len(self)
-	}
-}
-
-a = "hi"
-print(a.__len__(a))
