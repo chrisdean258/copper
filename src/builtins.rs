@@ -28,9 +28,6 @@ impl BuiltinFunction {
 }
 fn print_value(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     for arg in 0..count {
-        if arg != 0 {
-            print!(" ");
-        }
         match eval.memory[first + arg] {
             Value::Str(p) => print!("{}", eval.memory.strings[p]),
             a => print!("{}", a),

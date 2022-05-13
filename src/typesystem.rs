@@ -284,6 +284,9 @@ impl TypeSystem {
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
+        if lhs == rhs && aop == Operation::Equal {
+            return Some(lhs);
+        }
         for sig in self.operations.get(&aop).unwrap().signatures.iter() {
             if sig.inputs.len() == 2 && sig.inputs[0] == lhs && sig.inputs[1] == rhs {
                 return Some(sig.output);

@@ -206,7 +206,7 @@ impl TypeChecker {
                 "Cannot assign type `{}` {} `{}`",
                 self.system.typename(lhstype),
                 a.op,
-                self.system.typename(rhstype)
+                self.system.typename(rhstype),
             )))
     }
 
