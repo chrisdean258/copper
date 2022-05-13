@@ -1,3 +1,4 @@
+mod allocator;
 mod builtins;
 mod code_builder;
 mod compiler;
