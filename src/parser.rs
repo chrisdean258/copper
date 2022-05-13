@@ -41,7 +41,7 @@ pub enum ExpressionType {
     PostUnOp(PostUnOp),
     AssignExpr(AssignExpr),
     Function(Rc<RefCell<Function>>),
-    Lambda(Lambda),
+    Lambda(Rc<RefCell<Lambda>>),
     List(List),
     Str(Str),
     IndexExpr(IndexExpr),
@@ -187,6 +187,7 @@ pub struct Function {
 pub struct Lambda {
     pub num_args: usize,
     pub body: Box<Expression>,
+    pub locals: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -883,10 +884,11 @@ impl ParseTree {
         Ok(Expression {
             derived_type: None,
             location,
-            etype: ExpressionType::Lambda(Lambda {
+            etype: ExpressionType::Lambda(Rc::new(RefCell::new(Lambda {
                 num_args,
                 body: Box::new(body),
-            }),
+                locals: None,
+            }))),
         })
     }
 

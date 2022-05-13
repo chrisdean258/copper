@@ -7,15 +7,16 @@ use crate::typesystem::*;
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::mem::swap;
 use std::rc::Rc;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     type_to_func: HashMap<Type, Rc<RefCell<Function>>>,
-    type_to_lambda: HashMap<Type, Lambda>,
+    type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
     allow_insert: Option<Type>,
-    lambda_args: Vec<Vec<Type>>,
+    lambda_args: Vec<Type>,
     location: Option<Location>,
     globals: usize,
 }
@@ -60,12 +61,14 @@ impl TypeChecker {
 
     pub fn typecheck(&mut self, p: &mut ParseTree) -> Result<(), String> {
         let mut results = Vec::new();
+        // println!("self.scopes = {:?}", self.scopes);
         for statement in p.statements.iter_mut() {
             match self.statement(statement) {
                 Ok(_) => (),
                 Err(mut s) => results.append(&mut s),
             }
         }
+        // println!("self.scopes = {:?}", self.scopes);
         self.globals += self.scopes[1].borrow().len();
         p.globals = Some(self.scopes[1].borrow().len());
         if results.len() > 0 {
@@ -379,17 +382,18 @@ impl TypeChecker {
         Ok(typ)
     }
 
-    fn lambda(&mut self, l: &mut Lambda) -> Result<Type, TypeError> {
+    fn lambda(&mut self, l: &mut Rc<RefCell<Lambda>>) -> Result<Type, TypeError> {
         let typ = self.system.function_type("<lambda>".to_string());
         self.type_to_lambda.insert(typ, l.clone());
         Ok(typ)
     }
 
     fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
-        if self.lambda_args.len() == 0 {
-            panic!("Trying to derive type of lambda arg in non lambda. This is a bug");
-        }
-        Ok(self.lambda_args.last().unwrap()[l.number])
+        assert!(
+            self.lambda_args.len() > 0,
+            "Trying to derive type of lambda arg in non lambda. This is a bug"
+        );
+        Ok(self.lambda_args[l.number])
     }
 
     fn string(&mut self, _s: &mut Str) -> Result<Type, TypeError> {
@@ -422,7 +426,28 @@ impl TypeChecker {
             return Ok(t);
         }
 
-        let function = self.type_to_func[&functype].clone();
+        return match self.type_to_func.get_mut(&functype) {
+            Some(func) => {
+                let func = func.clone();
+                self.call_function(func, functype, args, funcloc)
+            }
+            None => match self.type_to_lambda.get_mut(&functype) {
+                Some(lambda) => {
+                    let lambda = lambda.clone();
+                    self.call_lambda(lambda, functype, args, funcloc)
+                }
+                None => unreachable!(),
+            },
+        };
+    }
+
+    fn call_function(
+        &mut self,
+        function: Rc<RefCell<Function>>,
+        functype: Type,
+        args: Vec<Type>,
+        funcloc: Location,
+    ) -> Result<Type, TypeError> {
         let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
@@ -444,7 +469,6 @@ impl TypeChecker {
             self.insert_scope(name, *typ);
         }
 
-        //TODO: check if this is an issue with recursive functions
         let rv = match self.expr(function.borrow_mut().body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
@@ -481,10 +505,43 @@ impl TypeChecker {
             }
         };
         function.borrow_mut().locals = Some(self.closescope());
-        // c.function.derived_type = Some(self.system.func_type(Signature {
-        // inputs: args,
-        // output: rv,
-        // }));
+        Ok(rv)
+    }
+
+    fn call_lambda(
+        &mut self,
+        lambda: Rc<RefCell<Lambda>>,
+        functype: Type,
+        mut args: Vec<Type>,
+        funcloc: Location,
+    ) -> Result<Type, TypeError> {
+        let sig_handle = self.system.add_function_signature(
+            functype,
+            Signature {
+                inputs: args.clone(),
+                output: UNKNOWN_RETURN,
+            },
+        );
+
+        swap(&mut self.lambda_args, &mut args);
+
+        self.openscope();
+        let rv = match self.expr(lambda.borrow_mut().body.as_mut()) {
+            Ok(t) if t == UNKNOWN_RETURN => {
+                return Err(vec![
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
+                    self.errmsg("Originating with this function call".to_string())
+                ]);
+            }
+            Ok(t) => t,
+            Err(mut s) => {
+                s.push(self.errmsg("Originating with this function call".to_string()));
+                return Err(s);
+            }
+        };
+        lambda.borrow_mut().locals = Some(self.closescope() + args.len());
+        swap(&mut self.lambda_args, &mut args);
+        self.system.patch_signature_return(functype, sig_handle, rv);
         Ok(rv)
     }
 }

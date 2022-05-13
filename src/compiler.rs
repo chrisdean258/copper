@@ -19,6 +19,7 @@ pub struct Compiler {
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: Vec<String>,
+    // lambda_arg_types: Option<Vec<Type>>,
 }
 
 enum Scope {
@@ -44,6 +45,7 @@ impl Compiler {
             num_args: 0,
             arg_types: None,
             strings: Vec::new(),
+            // lambda_arg_types: None,
         }
     }
 
@@ -161,7 +163,13 @@ impl Compiler {
                     .unwrap()
                     .get_signatures_for_func(e.derived_type.unwrap()),
             ),
-            ExpressionType::Lambda(l) => self.lambda(l),
+            ExpressionType::Lambda(l) => self.lambda(
+                l.clone(),
+                self.types
+                    .as_ref()
+                    .unwrap()
+                    .get_signatures_for_func(e.derived_type.unwrap()),
+            ),
             ExpressionType::List(l) => self.list(l),
             ExpressionType::IndexExpr(i) => self.index(i),
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
@@ -384,6 +392,7 @@ impl Compiler {
             }
         }
     }
+
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
         assert!(sig.inputs.len() == f.argnames.len());
         let name = match &f.name {
@@ -414,12 +423,39 @@ impl Compiler {
         self.code.close_function()
     }
 
-    fn lambda(&mut self, _l: &Lambda) {
-        todo!()
+    fn lambda(&mut self, l: Rc<RefCell<Lambda>>, sigs: Vec<Signature>) {
+        assert!(
+            sigs.len() == 1,
+            "Type dispatch on lambdas not supported yet"
+        );
+        for sig in sigs.iter() {
+            let addr = self.single_lambda(&l.borrow(), sig);
+            self.code.push(Value::Ptr(addr));
+        }
     }
 
-    fn lambdaarg(&mut self, _l: &LambdaArg) {
-        todo!()
+    fn single_lambda(&mut self, l: &Lambda, sig: &Signature) -> usize {
+        let name = format!(
+            "<lambda>{}",
+            self.types.as_ref().unwrap().format_signature(sig)
+        );
+        self.open_scope();
+        self.code.open_function(name);
+        let old_num_args = self.num_args;
+        self.num_args = sig.inputs.len();
+        if l.locals.unwrap() > sig.inputs.len() {
+            self.code.reserve(l.locals.unwrap() - sig.inputs.len());
+        }
+        self.expr(l.body.as_ref());
+        self.code.return_();
+        self.num_args = old_num_args;
+        self.close_scope();
+        self.code.close_function()
+    }
+
+    fn lambdaarg(&mut self, l: &LambdaArg) {
+        self.code.local_ref(l.number as isize);
+        self.code.load();
     }
 
     fn call(&mut self, c: &CallExpr) {
