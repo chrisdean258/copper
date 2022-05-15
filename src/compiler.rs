@@ -394,7 +394,7 @@ impl Compiler {
     }
 
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
-        assert!(sig.inputs.len() == f.argnames.len());
+        assert!(sig.inputs.len() == f.argnames.len(), "{:#?}\n-------------------\n{:#?}", f, sig);
         let name = match &f.name {
             Some(n) => format!(
                 "{}{}",

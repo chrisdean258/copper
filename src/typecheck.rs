@@ -401,8 +401,6 @@ impl TypeChecker {
     }
 
     fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
-        // TODO: maybe used RC Refcell to store functions in map to prevent copying
-        // Although this will be tricky to pull off with recursion and ownership
         let functype = self.expr(c.function.as_mut())?;
         let funcloc = c.function.location.clone();
         if !self.system.is_function(functype) {
@@ -422,14 +420,10 @@ impl TypeChecker {
             return Ok(UNIT);
         }
 
-        if let Some(t) = self.system.match_signature(functype, &args) {
-            return Ok(t);
-        }
-
         return match self.type_to_func.get_mut(&functype) {
             Some(func) => {
                 let func = func.clone();
-                self.call_function(func, functype, args, funcloc)
+                self.call_function(func, functype, args, funcloc, c)
             }
             None => match self.type_to_lambda.get_mut(&functype) {
                 Some(lambda) => {
@@ -445,9 +439,40 @@ impl TypeChecker {
         &mut self,
         function: Rc<RefCell<Function>>,
         functype: Type,
-        args: Vec<Type>,
+        mut args: Vec<Type>,
         funcloc: Location,
+        c: &mut CallExpr,
     ) -> Result<Type, TypeError> {
+        // Recursion Gaurd -- if this works we may be able to remove signature backpatching
+        match function.try_borrow_mut() {
+            Ok(_) => (),
+            Err(_) => return Ok(UNKNOWN_RETURN),
+        }
+
+        let num_default_needed = function.borrow().argnames.len() - args.len();
+
+        if num_default_needed > function.borrow().default_args.len() {
+            return Err(self.error(format!(
+                "Trying to call function with {} args + {} default args. Expected {} total",
+                args.len(),
+                function.borrow().default_args.len(),
+                function.borrow().argnames.len(),
+            )));
+        }
+
+        let first_default = function.borrow().default_args.len() - num_default_needed;
+
+        for i in 0..num_default_needed {
+            let mut expr = function.borrow().default_args[i + first_default].clone();
+            let typ = self.expr(&mut expr)?;
+            c.args.push(expr);
+            args.push(typ);
+        }
+
+        if let Some(t) = self.system.match_signature(functype, &args) {
+            return Ok(t);
+        }
+
         let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
@@ -455,14 +480,6 @@ impl TypeChecker {
                 output: UNKNOWN_RETURN,
             },
         );
-
-        if args.len() != function.borrow().argnames.len() {
-            return Err(self.error(format!(
-                "Trying to call function with {} args. Expected {}",
-                args.len(),
-                function.borrow().argnames.len()
-            )));
-        }
 
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
@@ -515,6 +532,9 @@ impl TypeChecker {
         mut args: Vec<Type>,
         funcloc: Location,
     ) -> Result<Type, TypeError> {
+        if let Some(t) = self.system.match_signature(functype, &args) {
+            return Ok(t);
+        }
         let sig_handle = self.system.add_function_signature(
             functype,
             Signature {

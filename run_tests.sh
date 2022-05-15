@@ -13,6 +13,15 @@ run-test()
 	fi
 }
 
+color() {
+	tput setaf "$1"
+	shift
+	echo "$@"
+	tput sgr0
+}
+
+
+
 
 
 if [ $# -eq 0 ]; then
@@ -22,10 +31,10 @@ if [ $# -eq 0 ]; then
 	for file in ./test/*.cu; do
 		num_tests=$(($num_tests + 1))
 		if run-test "$file"; then
-			echo "Failed $file"
+			color 1 "Failed $file"
 		else
 			num_passed="$(echo "$num_passed" | awk '{print $1 + 1}')"
-			echo "Passed $file"
+			color 2 "Passed $file"
 		fi
 	done
 	echo "Passed $num_passed/$num_tests"
