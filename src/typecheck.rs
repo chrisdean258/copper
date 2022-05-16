@@ -44,7 +44,6 @@ impl TypeChecker {
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
-
             rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
         }
         rv.openscope();
@@ -499,6 +498,7 @@ impl TypeChecker {
             }
         };
         self.system.patch_signature_return(functype, sig_handle, rv);
+        c.sig_handle = Some(sig_handle);
         self.closescope();
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {

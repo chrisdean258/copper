@@ -117,30 +117,30 @@ impl Compiler {
         if let Some(u) = self.scopes[0].get(name) {
             return *u;
         }
-        assert!(
-            self.arg_types.is_some(),
-            "Looking up `{}` with no function present failed",
+        unreachable!(
+            // self.arg_types.is_some(),
+            "Looking up `{}` failed",
             name
         );
-        let types = self
-            .types
-            .as_ref()
-            .unwrap()
-            .format_args(self.arg_types.as_ref().unwrap());
-        let funcname = format!("{}({})", name, types);
-        if let Some(u) = scope.get(&funcname) {
-            return *u;
-        }
-        if let Some(u) = self.scopes[1].get(&funcname) {
-            return *u;
-        }
-        if let Some(u) = self.scopes[0].get(&funcname) {
-            return *u;
-        }
-        unreachable!(
-            "Tried to lookup `{}` and `{}` which were not present. {:?}",
-            name, funcname, self.scopes
-        );
+        // let types = self
+        // .types
+        // .as_ref()
+        // .unwrap()
+        // .format_args(self.arg_types.as_ref().unwrap());
+        // let funcname = format!("{}({})", name, types);
+        // if let Some(u) = scope.get(&funcname) {
+        // return *u;
+        // }
+        // if let Some(u) = self.scopes[1].get(&funcname) {
+        // return *u;
+        // }
+        // if let Some(u) = self.scopes[0].get(&funcname) {
+        // return *u;
+        // }
+        // unreachable!(
+        // "Tried to lookup `{}` and `{}` which were not present. {:?}",
+        // name, funcname, self.scopes
+        // );
     }
 
     fn entomb_string(&mut self, string: String) -> usize {
@@ -401,13 +401,13 @@ impl Compiler {
     fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {
         if let Some(name) = &f.borrow().name {
             for sig in sigs.iter() {
-                let funcname = format!(
-                    "{}({})",
-                    name,
-                    self.types.as_ref().unwrap().format_args(&sig.inputs)
-                );
+                // let funcname = format!(
+                // "{}({})",
+                // name,
+                // self.types.as_ref().unwrap().format_args(&sig.inputs)
+                // );
                 let varloc = self.next_local();
-                self.insert_scope(funcname, varloc);
+                self.insert_scope(name.clone(), varloc);
                 let addr = self.single_function(&f.borrow(), sig);
                 match varloc {
                     MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
@@ -416,6 +416,7 @@ impl Compiler {
                 };
                 self.code.push(Value::Ptr(addr));
                 self.code.store();
+                break;
             }
         } else {
             for sig in sigs.iter() {
@@ -462,13 +463,10 @@ impl Compiler {
     }
 
     fn lambda(&mut self, l: Rc<RefCell<Lambda>>, sigs: Vec<Signature>) {
-        assert!(
-            sigs.len() == 1,
-            "Type dispatch on lambdas not supported yet"
-        );
         for sig in sigs.iter() {
             let addr = self.single_lambda(&l.borrow(), sig);
             self.code.push(Value::Ptr(addr));
+            break;
         }
     }
 
