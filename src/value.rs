@@ -47,7 +47,7 @@ impl Debug for Value {
                 if *b == 0 { "false" } else { "true" },
                 *b
             )),
-            Value::Char(c) => f.write_fmt(format_args!("Char('{}')", *c as char)),
+            Value::Char(c) => f.write_fmt(format_args!("Char({:?})", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("Int({})", i)),
             Value::Float(fl) => f.write_fmt(format_args!("Float({})", fl)),
             Value::Ptr(p) => f.write_fmt(format_args!("Ptr(0x{:x})", p)),

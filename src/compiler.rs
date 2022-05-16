@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::Operation;
@@ -10,22 +9,25 @@ use std::collections::HashMap;
 use std::mem::swap;
 use std::rc::Rc;
 
+#[derive(Debug, Clone, Copy)]
+enum MemoryLocation {
+    BuiltinFunction(usize),
+    // CodeLocation(usize),
+    GlobalVariable(usize),
+    LocalVariable(usize),
+}
+
+#[derive(Debug, Clone)]
 pub struct Compiler {
     code: CodeBuilder,
     need_ref: bool,
     types: Option<TypeSystem>,
-    scopes: Vec<HashMap<String, usize>>,
-    builtins: HashMap<String, usize>,
+    scopes: Vec<HashMap<String, MemoryLocation>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
-    strings: Vec<String>,
+    strings: HashMap<String, usize>,
+    num_locals: Vec<usize>,
     // lambda_arg_types: Option<Vec<Type>>,
-}
-
-enum Scope {
-    Local,
-    Global,
-    Builtin,
 }
 
 impl Compiler {
@@ -33,19 +35,22 @@ impl Compiler {
         Self {
             code: CodeBuilder::new(),
             need_ref: false,
-            scopes: vec![HashMap::new()],
-            builtins: {
-                let mut b = HashMap::new();
-                for func in BuiltinFunction::get_table() {
-                    b.insert(func.name.clone(), b.len());
-                }
-                b
-            },
+            scopes: vec![
+                {
+                    // Builtins
+                    let mut b = HashMap::new();
+                    for (i, func) in BuiltinFunction::get_table().iter().enumerate() {
+                        b.insert(func.name.clone(), MemoryLocation::BuiltinFunction(i));
+                    }
+                    b
+                },
+                HashMap::new(), //globals
+            ],
             types: None,
             num_args: 0,
             arg_types: None,
-            strings: Vec::new(),
-            // lambda_arg_types: None,
+            strings: HashMap::new(),
+            num_locals: vec![0, 0],
         }
     }
 
@@ -58,49 +63,63 @@ impl Compiler {
         self.types = Some(types.clone());
         self.code.open_function(name);
         if p.globals.unwrap() > 0 {
-            self.code.reserve(p.globals.unwrap());
+            self.code.reserve(p.globals.unwrap() - self.scopes[1].len());
         }
         for statement in p.statements.iter() {
             self.statement(statement, true);
         }
-        self.code.crash();
         let entry = self.code.close_function();
         self.types = None;
-        (self.code.code(), self.strings.clone(), entry)
+        let mut strings = vec![String::new(); self.strings.len()];
+        for (s, p) in self.strings.iter() {
+            strings[*p] = s.clone();
+        }
+
+        (self.code.code(), strings, entry)
     }
 
     fn open_scope(&mut self) {
+        self.num_locals.push(0);
         self.scopes.push(HashMap::new());
     }
 
     fn close_scope(&mut self) {
         assert!(self.scopes.len() >= 1);
+        self.num_locals.pop();
         self.scopes.pop();
     }
 
-    fn insert_scope(&mut self, name: String) -> usize {
-        assert!(self.scopes.len() >= 1);
+    fn insert_scope(&mut self, name: String, what: MemoryLocation) {
+        assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last_mut().unwrap();
-        let val = scope.len();
-        assert!(scope.insert(name, val).is_none());
-        val
+        assert!(scope.insert(name.clone(), what).is_none());
     }
 
-    fn lookup_scope_local_or_global(&mut self, name: &str) -> (usize, Scope) {
-        assert!(self.scopes.len() >= 1);
+    fn next_local(&mut self) -> MemoryLocation {
+        // Actually local == global so we will write out a global
+        *self.num_locals.last_mut().unwrap() += 1;
+        if self.scopes.len() == 2 {
+            MemoryLocation::GlobalVariable(*self.num_locals.last().unwrap() - 1)
+        } else {
+            MemoryLocation::LocalVariable(*self.num_locals.last().unwrap() - 1)
+        }
+    }
+
+    fn lookup_scope_local_or_global(&mut self, name: &str) -> MemoryLocation {
+        assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last().unwrap();
         if let Some(u) = scope.get(name) {
-            return (*u, Scope::Local);
+            return *u;
+        }
+        if let Some(u) = self.scopes[1].get(name) {
+            return *u;
         }
         if let Some(u) = self.scopes[0].get(name) {
-            return (*u, Scope::Global);
-        }
-        if let Some(u) = self.builtins.get(name) {
-            return (*u, Scope::Builtin);
+            return *u;
         }
         assert!(
             self.arg_types.is_some(),
-            "Looking up `{}` with no funciton present failed",
+            "Looking up `{}` with no function present failed",
             name
         );
         let types = self
@@ -110,11 +129,14 @@ impl Compiler {
             .format_args(self.arg_types.as_ref().unwrap());
         let funcname = format!("{}({})", name, types);
         if let Some(u) = scope.get(&funcname) {
-            return (*u, Scope::Local);
+            return *u;
+        }
+        if let Some(u) = self.scopes[1].get(&funcname) {
+            return *u;
         }
         if let Some(u) = self.scopes[0].get(&funcname) {
-            return (*u, Scope::Global);
-        };
+            return *u;
+        }
         unreachable!(
             "Tried to lookup `{}` and `{}` which were not present. {:?}",
             name, funcname, self.scopes
@@ -122,8 +144,8 @@ impl Compiler {
     }
 
     fn entomb_string(&mut self, string: String) -> usize {
-        self.strings.push(string);
-        self.strings.len() - 1
+        let len = self.strings.len();
+        *self.strings.entry(string).or_insert(len)
     }
 
     fn statement(&mut self, s: &Statement, pop: bool) {
@@ -237,18 +259,23 @@ impl Compiler {
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
-        let (offset, scope) = if r.is_decl {
-            (self.insert_scope(r.name.clone()), Scope::Local)
+        let mem: MemoryLocation = if r.is_decl {
+            let new_var = self.next_local();
+            self.insert_scope(r.name.clone(), new_var);
+            new_var
         } else {
             self.lookup_scope_local_or_global(&r.name)
         };
-        match scope {
-            Scope::Local => self.code.local_ref(offset as isize),
-            Scope::Global => self.code.global_ref(offset),
-            Scope::Builtin => {
-                self.code.builtin_ref(offset);
+        match mem {
+            MemoryLocation::BuiltinFunction(u) if !self.need_ref => {
+                self.code.builtin_ref(u);
                 return;
             }
+            MemoryLocation::BuiltinFunction(u) => panic!("Cannot write to builtin function {}", u),
+            // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
+            // MemoryLocation::CodeLocation(u) => panic!("Cannot write to builtin function {}", u),
+            MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
+            MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
         };
         if !self.need_ref {
             self.code.load();
@@ -379,9 +406,14 @@ impl Compiler {
                     name,
                     self.types.as_ref().unwrap().format_args(&sig.inputs)
                 );
-                let off = self.insert_scope(funcname);
+                let varloc = self.next_local();
+                self.insert_scope(funcname, varloc);
                 let addr = self.single_function(&f.borrow(), sig);
-                self.code.local_ref(off as isize);
+                match varloc {
+                    MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+                    MemoryLocation::GlobalVariable(u) => self.code.local_ref(u as isize),
+                    _ => unreachable!(),
+                };
                 self.code.push(Value::Ptr(addr));
                 self.code.store();
             }
@@ -394,7 +426,12 @@ impl Compiler {
     }
 
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
-        assert!(sig.inputs.len() == f.argnames.len(), "{:#?}\n-------------------\n{:#?}", f, sig);
+        assert!(
+            sig.inputs.len() == f.argnames.len(),
+            "{:#?}\n-------------------\n{:#?}",
+            f,
+            sig
+        );
         let name = match &f.name {
             Some(n) => format!(
                 "{}{}",
@@ -409,7 +446,8 @@ impl Compiler {
         self.open_scope();
         self.code.open_function(name);
         for argname in f.argnames.iter() {
-            self.insert_scope(argname.clone());
+            let var = self.next_local();
+            self.insert_scope(argname.clone(), var);
         }
         let old_num_args = self.num_args;
         self.num_args = sig.inputs.len();

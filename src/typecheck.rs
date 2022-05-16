@@ -44,6 +44,7 @@ impl TypeChecker {
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
+
             rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
         }
         rv.openscope();
@@ -61,14 +62,12 @@ impl TypeChecker {
 
     pub fn typecheck(&mut self, p: &mut ParseTree) -> Result<(), String> {
         let mut results = Vec::new();
-        // println!("self.scopes = {:?}", self.scopes);
         for statement in p.statements.iter_mut() {
             match self.statement(statement) {
                 Ok(_) => (),
                 Err(mut s) => results.append(&mut s),
             }
         }
-        // println!("self.scopes = {:?}", self.scopes);
         self.globals += self.scopes[1].borrow().len();
         p.globals = Some(self.scopes[1].borrow().len());
         if results.len() > 0 {

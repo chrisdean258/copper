@@ -1,6 +1,10 @@
 use crate::eval::Evaluator;
 use crate::typesystem::*;
 use crate::value::Value;
+use std::fs::File;
+use std::io::Write;
+use std::mem;
+use std::os::unix::io::FromRawFd;
 
 use std::fmt::{Debug, Formatter};
 
@@ -20,19 +24,25 @@ impl Debug for BuiltinFunction {
 impl BuiltinFunction {
     pub fn get_table() -> Vec<BuiltinFunction> {
         vec![BuiltinFunction {
-            name: "print".to_string(),
-            func: print_value,
+            name: "write".to_string(),
+            func: write,
             returns: UNIT,
         }]
     }
 }
-fn print_value(eval: &mut Evaluator, first: usize, count: usize) -> Value {
+
+fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
+    let mut f = unsafe { File::from_raw_fd(1) };
     for arg in 0..count {
-        match eval.memory[first + arg] {
-            Value::Str(p) => print!("{}", eval.memory.strings[p]),
-            a => print!("{}", a),
+        let a = match eval.memory[first + arg] {
+            Value::Str(p) => write!(&mut f, "{}", eval.memory.strings[p]),
+            a => write!(&mut f, "{}", a),
+        };
+        match a {
+            Ok(_) => (),
+            Err(s) => panic!("{}", s),
         }
     }
-    println!("");
+    mem::forget(f);
     Value::Null
 }

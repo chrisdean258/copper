@@ -17,7 +17,7 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 
-// static STDLIB: &'static str = "/home/chris/git/copper/stdlib/stdlib.cu";
+static STDLIB: &'static str = "/home/chris/git/copper/stdlib/stdlib.cu";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -78,17 +78,20 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
 }
 
 fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Evaluator), String> {
-    let typechecker = typecheck::TypeChecker::new();
-    let evaluator = eval::Evaluator::new();
-    let compiler = compiler::Compiler::new();
-    /* let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
+    let mut typechecker = typecheck::TypeChecker::new();
+    let mut evaluator = eval::Evaluator::new();
+    let mut compiler = compiler::Compiler::new();
+    let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
     let mut stdlib_tree = parser::parse(stdlib_lexer)?;
     typechecker
         .typecheck(&mut stdlib_tree)
         .map_err(|e| e.to_string())?;
-    _evaluator.eval(&mut stdlib_tree)?; */
+    let (code, strings, entry) =
+        compiler.compile("stdlib".to_string(), &stdlib_tree, &typechecker.system);
+
+    evaluator.eval(code, strings, entry)?;
     Ok((typechecker, compiler, evaluator))
 }
 
@@ -154,9 +157,18 @@ fn eval_lexer<T: Iterator<Item = String>>(
     lexer: lex::Lexer<T>,
     typecheck_only: bool,
 ) -> Result<(), String> {
-    let (mut typechecker, mut compiler, mut evaluator) = stdlib_env()?;
+    let mut typechecker = typecheck::TypeChecker::new();
+    let mut evaluator = eval::Evaluator::new();
+    let mut compiler = compiler::Compiler::new();
 
+    let file = File::open(STDLIB).map_err(|e| format!("{}: {}", STDLIB, e))?;
+    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
+    let stdlib_lexer = lex::Lexer::new(STDLIB, &mut lines);
+    let mut stdlib_tree = parser::parse(stdlib_lexer)?;
     let mut tree = parser::parse(lexer)?;
+    typechecker
+        .typecheck(&mut stdlib_tree)
+        .map_err(|e| e.to_string())?;
     typechecker
         .typecheck(&mut tree)
         .map_err(|s| s.to_string())?;
@@ -164,10 +176,17 @@ fn eval_lexer<T: Iterator<Item = String>>(
     if typecheck_only {
         return Ok(());
     }
-    let (code, strings, entry) = compiler.compile("main".to_string(), &tree, &typechecker.system);
-    // for (i, instruction) in code.iter().enumerate() { println!("{:05} {}", i, instruction); }
+
+    let (s_code, s_strings, s_entry) =
+        compiler.compile("stdlib".to_string(), &stdlib_tree, &typechecker.system);
+    // evaluator.eval(s_code, s_strings, s_entry)?;
+    // eprintln!("after stdlib compile {:?}", compiler);
+    let (code, strings, entry) =
+        compiler.compile("__main__".to_string(), &tree, &typechecker.system);
+
+    evaluator.eval(s_code, s_strings, s_entry)?;
     evaluator.eval(code, strings, entry)?;
-    // println!("{:?}", evaluator.stack);
+
     Ok(())
 }
 

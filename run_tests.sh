@@ -5,12 +5,7 @@ cargo build || exit 1
 
 run-test()
 {
-	file="$1"
-	if [ $# -gt 1 ]; then
-		! diff -y <(./target/debug/copper "$file" 2>&1) "$file.out"
-	else
-		! diff -q <(./target/debug/copper "$file" 2>&1) "$file.out" &>/dev/null
-	fi
+	diff -y <(./target/debug/copper "$1" 2>&1) "$1.out"
 }
 
 color() {
@@ -30,18 +25,18 @@ if [ $# -eq 0 ]; then
 
 	for file in ./test/*.cu; do
 		num_tests=$(($num_tests + 1))
-		if run-test "$file"; then
-			color 1 "Failed $file"
-		else
+		if run-test "$file" &>/dev/null; then
 			num_passed="$(echo "$num_passed" | awk '{print $1 + 1}')"
 			color 2 "Passed $file"
+		else
+			color 1 "Failed $file"
 		fi
 	done
 	echo "Passed $num_passed/$num_tests"
 else 
 	for t in "$@"; do 
 		file="$(find ./test -name '*.cu' | grep "$t" | head -n 1)"
-		run-test "$file" 1
+		run-test "$file"
 	done
 fi
 
