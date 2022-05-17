@@ -118,7 +118,7 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-    pub sig_handle: Option<usize>,
+    pub resolved_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -765,7 +765,7 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
-                            sig_handle: None,
+                            resolved_type: None,
                         }),
                     }
                 }

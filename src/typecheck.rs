@@ -418,7 +418,7 @@ impl TypeChecker {
             return Ok(UNIT);
         }
 
-        return match self.type_to_func.get_mut(&functype) {
+        let rv = match self.type_to_func.get_mut(&functype) {
             Some(func) => {
                 let func = func.clone();
                 self.call_function(func, functype, args, funcloc, c)
@@ -426,11 +426,13 @@ impl TypeChecker {
             None => match self.type_to_lambda.get_mut(&functype) {
                 Some(lambda) => {
                     let lambda = lambda.clone();
-                    self.call_lambda(lambda, functype, args, funcloc)
+                    self.call_lambda(lambda, functype, args, funcloc, c)
                 }
                 None => unreachable!(),
             },
         };
+        c.function.derived_type = c.resolved_type;
+        rv
     }
 
     fn call_function(
@@ -498,8 +500,8 @@ impl TypeChecker {
             }
         };
         self.system.patch_signature_return(functype, sig_handle, rv);
-        c.sig_handle = Some(sig_handle);
         self.closescope();
+        c.resolved_type = Some(self.system.function_type_resolve(functype, sig_handle));
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
@@ -530,6 +532,7 @@ impl TypeChecker {
         functype: Type,
         mut args: Vec<Type>,
         funcloc: Location,
+        c: &mut CallExpr,
     ) -> Result<Type, TypeError> {
         if let Some(t) = self.system.match_signature(functype, &args) {
             return Ok(t);
@@ -561,6 +564,7 @@ impl TypeChecker {
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
         swap(&mut self.lambda_args, &mut args);
         self.system.patch_signature_return(functype, sig_handle, rv);
+        c.resolved_type = Some(self.system.function_type_resolve(functype, sig_handle));
         Ok(rv)
     }
 }

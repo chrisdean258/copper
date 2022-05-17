@@ -17,6 +17,7 @@ pub enum TypeEntryType {
     BasicType,
     ContainerType(Type),
     FunctionType(FunctionType),
+    ResolvedFunctionType(ResolvedFunctionType),
 }
 
 impl TypeEntryType {
@@ -47,6 +48,11 @@ struct GenericOperation {
 #[derive(Debug, Clone)]
 pub struct FunctionType {
     signatures: Vec<Signature>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedFunctionType {
+    signature: Signature,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -364,6 +370,23 @@ impl TypeSystem {
             _ => panic!("trying to patch signature to a non function"),
         };
         ft.signatures[handle].output = return_type;
+    }
+
+    pub fn function_type_resolve(&mut self, func: Type, handle: usize) -> Type {
+        let ft = match &mut self.types[func].te_type {
+            TypeEntryType::FunctionType(ft) => ft,
+            _ => panic!("trying to signature resolve a non function"),
+        };
+        let signature = ft.signatures[handle].clone();
+        let typename = format!(
+            "{}({})",
+            self.typename(func),
+            self.format_args(&signature.inputs)
+        );
+        self.new_type(
+            typename,
+            TypeEntryType::ResolvedFunctionType(ResolvedFunctionType { signature }),
+        )
     }
 
     pub fn get_signatures_for_func(&self, typ: Type) -> Vec<Signature> {
