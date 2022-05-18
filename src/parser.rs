@@ -262,12 +262,39 @@ macro_rules! binop {
         }
     }
 }
+
 macro_rules! expect {
     ( $lexer:ident, $token:path ) => {{
         let token = $lexer.peek().ok_or("Unexpected EOF")?;
         match &token.token_type {
             $token => $lexer.next().unwrap(),
-            _ => return Err(format!("{}. Expected {}", unexpected(&token), $token)),
+            _ => {
+                return Err(format!(
+                    "{}. Expected {}",
+                    unexpected(&token),
+                    stringify!($token)
+                ))
+            }
+        }
+    }};
+}
+
+macro_rules! expect_val {
+    ( $lexer:ident, $token:path ) => {{
+        let token = $lexer.peek().ok_or("Unexpected EOF")?;
+        match &token.token_type {
+            $token(v) => {
+                let a = v.clone();
+                $lexer.next();
+                a
+            }
+            _ => {
+                return Err(format!(
+                    "{}. Expected {}",
+                    unexpected(&token),
+                    stringify!($token)
+                ))
+            }
         }
     }};
 }
@@ -375,11 +402,7 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::Import).location;
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        let filename = match token.token_type {
-            TokenType::Identifier(s) => s,
-            _ => return Err(unexpected(&token)),
-        };
+        let filename = expect_val!(lexer, TokenType::Identifier);
         Ok(Statement::Import(Import { location, filename }))
     }
 
@@ -388,17 +411,9 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::From).location;
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        let file = match token.token_type {
-            TokenType::Identifier(s) => s,
-            _ => return Err(unexpected(&token)),
-        };
+        let file = expect_val!(lexer, TokenType::Identifier);
         expect!(lexer, TokenType::Import);
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        let what = match token.token_type {
-            TokenType::Identifier(s) => s,
-            _ => return Err(unexpected(&token)),
-        };
+        let what = expect_val!(lexer, TokenType::Identifier);
         Ok(Statement::FromImport(FromImport {
             location,
             file,
@@ -412,12 +427,7 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
         let _location = expect!(lexer, TokenType::Class).location;
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        let _name = match &token.token_type {
-            TokenType::Identifier(s) => s.clone(),
-            _ => return Err(unexpected(&token)),
-        };
-
+        let _name = expect_val!(lexer, TokenType::Identifier);
         expect!(lexer, TokenType::OpenBrace);
 
         let mut fields = HashSet::new();
@@ -599,7 +609,7 @@ impl ParseTree {
     ) -> Result<Expression, String> {
         expect!(lexer, TokenType::Else);
 
-        let token = lexer.peek().expect("Unexpected EOF".into());
+        let token = lexer.peek().ok_or("Unexpected EOF")?;
         match &token.token_type {
             TokenType::If => self.parse_if(lexer),
             TokenType::OpenBrace => self.parse_block(lexer),
@@ -1014,11 +1024,7 @@ impl ParseTree {
         lhs: Expression,
     ) -> Result<Expression, String> {
         let location = expect!(lexer, TokenType::Dot).location;
-        let token = lexer.next().ok_or("Unexpected EOF")?;
-        let rhs = match token.token_type {
-            TokenType::Identifier(s) => s,
-            _ => return Err(unexpected(&token)),
-        };
+        let rhs = expect_val!(lexer, TokenType::Identifier);
         Ok(Expression {
             derived_type: None,
             location,
