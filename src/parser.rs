@@ -224,13 +224,10 @@ pub struct Continue {
     pub location: Location,
 }
 
-#[allow(dead_code)]
-fn err_msg(token: &Token, reason: &str) -> String {
-    format!("{}: {}", token.location, reason)
-}
-
 fn unexpected(token: &Token) -> String {
-    format!("{}: Unexpected `{}`", token.location, token.token_type)
+    token
+        .location
+        .errfmt(format_args!("Unexpected `{}`", token.token_type))
 }
 
 macro_rules! binop {
@@ -362,10 +359,7 @@ impl ParseTree {
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::Continue).location;
         if self.loop_count == 0 {
-            return Err(format!(
-                "{}: `continue` not allowed in the current context",
-                location
-            ));
+            return Err(location.err("`continue` not allowed in the current context"));
         }
         Ok(Statement::Continue(Continue { location }))
     }
@@ -389,10 +383,7 @@ impl ParseTree {
     ) -> Result<Statement, String> {
         let location = expect!(lexer, TokenType::Break).location;
         if self.loop_count == 0 {
-            return Err(format!(
-                "{}: `break` not allowed in the current context",
-                location
-            ));
+            return Err(location.err("`break` not allowed in the current context"));
         }
         Ok(Statement::Break(Break { location }))
     }
@@ -449,11 +440,10 @@ impl ParseTree {
                         .insert(ffun.borrow().name.as_ref().unwrap().clone(), fun.clone())
                         .is_some()
                     {
-                        return Err(format!(
-                            "{}: redefinition of method `{}`",
-                            fun.location,
+                        return Err(fun.location.errfmt(format_args!(
+                            "Redefinition of method `{}`",
                             ffun.borrow().name.clone().unwrap()
-                        ));
+                        )));
                     }
                 }
                 TokenType::Field => {
@@ -465,10 +455,9 @@ impl ParseTree {
                             _ => break,
                         };
                         if !fields.insert(fieldname.clone()) {
-                            return Err(format!(
-                                "{}: redefinition of field {}",
-                                token.location, fieldname
-                            ));
+                            return Err(token
+                                .location
+                                .errfmt(format_args!("Redefinition of field {}", fieldname)));
                         }
                         if if_expect!(lexer, TokenType::Semicolon) {
                             break;
