@@ -5,3 +5,7 @@
 fn print(a1="", a2="", a3="", a4="") {
 	write(a1, a2, a3, a4, '\n')
 }
+
+fn prints(a1="", a2="", a3="", a4="") {
+	write(a1, a2, a3, a4)
+}
