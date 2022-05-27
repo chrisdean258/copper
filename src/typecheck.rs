@@ -20,6 +20,7 @@ pub struct TypeChecker {
     lambda_args: Vec<Type>,
     location: Option<Location>,
     globals: usize,
+    allow_raw_func: bool,
 }
 
 type TypeError = Vec<String>;
@@ -43,6 +44,7 @@ impl TypeChecker {
             lambda_args: Vec::new(),
             location: None,
             globals: 0,
+            allow_raw_func: false,
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
@@ -231,10 +233,15 @@ impl TypeChecker {
                 self.insert_scope(&r.name, typ);
                 return Ok(typ);
             }
-            _ => (),
+            None => (),
+            // None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
         }
         match self.lookup_func_scope(&r.name) {
-            Some(t) => Ok(t),
+            Some(t) if self.allow_raw_func => Ok(t),
+            Some(_) => Err(self.error(format!(
+                "`{}` is a function whose types cannot be determined. Try wrapping it in a lambda",
+                r.name
+            ))),
             None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
         }
     }
@@ -474,7 +481,10 @@ impl TypeChecker {
                 }
             };
         }
+        let save = self.allow_raw_func;
+        self.allow_raw_func = true;
         let functype = self.expr(c.function.as_mut())?;
+        self.allow_raw_func = save;
         let funcloc = c.function.location.clone();
 
         if !self.system.is_function(functype) {
