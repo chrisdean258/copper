@@ -12,7 +12,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
     BuiltinFunction(usize),
-    // CodeLocation(usize),
+    CodeLocation(usize),
     GlobalVariable(usize),
     LocalVariable(usize),
 }
@@ -23,6 +23,7 @@ pub struct Compiler {
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
+    func_scopes: Vec<HashMap<String, Rc<RefCell<Function>>>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
@@ -46,6 +47,7 @@ impl Compiler {
                 },
                 HashMap::new(), //globals
             ],
+            func_scopes: vec![HashMap::new(), HashMap::new()],
             types: None,
             num_args: 0,
             arg_types: None,
@@ -81,12 +83,14 @@ impl Compiler {
     fn open_scope(&mut self) {
         self.num_locals.push(0);
         self.scopes.push(HashMap::new());
+        self.func_scopes.push(HashMap::new());
     }
 
     fn close_scope(&mut self) {
         assert!(self.scopes.len() >= 1);
         self.num_locals.pop();
         self.scopes.pop();
+        self.func_scopes.pop();
     }
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
@@ -105,23 +109,31 @@ impl Compiler {
         }
     }
 
-    fn lookup_scope_local_or_global(&mut self, name: &str) -> MemoryLocation {
+    fn lookup_scope_local_or_global_can_fail(&mut self, name: &str) -> Option<MemoryLocation> {
         assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last().unwrap();
-        if let Some(u) = scope.get(name) {
-            return *u;
+        if let Some(a) = scope.get(name) {
+            return Some(*a);
         }
-        if let Some(u) = self.scopes[1].get(name) {
-            return *u;
+        if let Some(a) = self.scopes[1].get(name) {
+            return Some(*a);
         }
-        if let Some(u) = self.scopes[0].get(name) {
-            return *u;
+        if let Some(a) = self.scopes[0].get(name) {
+            return Some(*a);
         }
-        unreachable!(
-            // self.arg_types.is_some(),
-            "Looking up `{}` failed",
-            name
-        );
+        None
+    }
+
+    fn lookup_scope_local_or_global(&mut self, name: &str) -> MemoryLocation {
+        if let Some(a) = self.lookup_scope_local_or_global_can_fail(name) {
+            a
+        } else {
+            unreachable!(
+                // self.arg_types.is_some(),
+                "Looking up `{}` failed",
+                name
+            )
+        }
         // let types = self
         // .types
         // .as_ref()
@@ -172,6 +184,7 @@ impl Compiler {
             ExpressionType::If(i) => self.ifexpr(i),
             ExpressionType::CallExpr(c) => self.call(c),
             ExpressionType::RefExpr(r) => self.refexpr(r),
+            ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
             ExpressionType::Immediate(i) => self.immediate(i),
             ExpressionType::BlockExpr(b) => self.block(b),
             ExpressionType::BinOp(b) => self.binop(b),
@@ -273,13 +286,40 @@ impl Compiler {
             }
             MemoryLocation::BuiltinFunction(u) => panic!("Cannot write to builtin function {}", u),
             // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
-            // MemoryLocation::CodeLocation(u) => panic!("Cannot write to builtin function {}", u),
+            MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
             MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
         };
         if !self.need_ref {
             self.code.load();
         }
+    }
+
+    fn funcrefexpr(&mut self, r: &FuncRefExpr) {
+        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
+        if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
+            match val {
+                MemoryLocation::CodeLocation(a) => {
+                    self.code.push(Value::Ptr(a));
+                    return;
+                }
+                t => unreachable!("Expected CodeLocation found {:?}", t),
+            }
+        }
+        let mut func = None;
+        for scope in self.func_scopes.iter().rev() {
+            match scope.get(&r.name) {
+                Some(f) => {
+                    func = Some(f.clone());
+                    break;
+                }
+                None => (),
+            }
+        }
+        let func = func.expect("Could not find a func names in func_scope");
+        let addr = self.single_function(&func.borrow(), &r.sig);
+        self.insert_scope(mangled_name, MemoryLocation::CodeLocation(addr));
+        self.code.push(Value::Ptr(addr));
     }
 
     fn assignment(&mut self, a: &AssignExpr) {
@@ -399,26 +439,33 @@ impl Compiler {
     }
 
     fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {
+        // names functions are rendered in accordance with FuncRefExprs so that more instances can be rendered when needed
         if let Some(name) = &f.borrow().name {
-            for sig in sigs.iter() {
-                // let funcname = format!(
-                // "{}({})",
-                // name,
-                // self.types.as_ref().unwrap().format_args(&sig.inputs)
-                // );
-                let varloc = self.next_local();
-                self.insert_scope(name.clone(), varloc);
-                let addr = self.single_function(&f.borrow(), sig);
-                match varloc {
-                    MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
-                    MemoryLocation::GlobalVariable(u) => self.code.local_ref(u as isize),
-                    _ => unreachable!(),
-                };
-                self.code.push(Value::Ptr(addr));
-                self.code.store();
-                break;
-            }
+            self.func_scopes
+                .last_mut()
+                .unwrap()
+                .insert(name.clone(), f.clone());
+            self.code.push(Value::Uninitialized);
+            // for sig in sigs.iter() {
+            // let funcname = format!(
+            // "{}({})",
+            // name,
+            // self.types.as_ref().unwrap().format_args(&sig.inputs)
+            // );
+            // let varloc = self.next_local();
+            // self.insert_scope(name.clone(), varloc);
+            // let addr = self.single_function(&f.borrow(), sig);
+            // match varloc {
+            // MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+            // MemoryLocation::GlobalVariable(u) => self.code.local_ref(u as isize),
+            // _ => unreachable!(),
+            // };
+            // self.code.push(Value::Ptr(addr));
+            // self.code.store();
+            // break;
+            // }
         } else {
+            // I think this is broken but it _might_ work
             for sig in sigs.iter() {
                 let addr = self.single_function(&f.borrow(), sig);
                 self.code.push(Value::Ptr(addr));

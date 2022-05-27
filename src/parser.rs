@@ -1,6 +1,7 @@
 use crate::lex::*;
 use crate::location::Location;
 use crate::operation::Operation;
+use crate::typesystem::Signature;
 use crate::typesystem::Type;
 use crate::value::Value;
 use std::cell::RefCell;
@@ -47,6 +48,7 @@ pub enum ExpressionType {
     IndexExpr(IndexExpr),
     DottedLookup(DottedLookup),
     LambdaArg(LambdaArg),
+    FuncRefExpr(FuncRefExpr),
 }
 
 impl Expression {
@@ -118,7 +120,6 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-    pub resolved_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +132,12 @@ pub struct IndexExpr {
 pub struct RefExpr {
     pub name: String,
     pub is_decl: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FuncRefExpr {
+    pub name: String,
+    pub sig: Signature,
 }
 
 #[derive(Debug, Clone)]
@@ -764,7 +771,6 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
-                            resolved_type: None,
                         }),
                     }
                 }

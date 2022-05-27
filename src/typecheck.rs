@@ -13,6 +13,7 @@ use std::rc::Rc;
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    func_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     type_to_func: HashMap<Type, Rc<RefCell<Function>>>,
     type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
     allow_insert: Option<Type>,
@@ -35,6 +36,7 @@ impl TypeChecker {
         let mut rv = Self {
             system: TypeSystem::new(),
             scopes: Vec::new(),
+            func_scopes: Vec::new(),
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
             allow_insert: None,
@@ -86,6 +88,16 @@ impl TypeChecker {
         None
     }
 
+    fn lookup_func_scope(&mut self, name: &str) -> Option<Type> {
+        for scope in self.func_scopes.iter().rev() {
+            match scope.borrow().get(name) {
+                Some(t) => return Some(*t),
+                None => (),
+            }
+        }
+        None
+    }
+
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
         let mut scope = self.scopes.last().unwrap().borrow_mut();
         let place = scope.len();
@@ -93,11 +105,38 @@ impl TypeChecker {
         place
     }
 
+    fn insert_func_scope(&mut self, name: &str, t: Type) -> usize {
+        let mut scope = self.func_scopes.last().unwrap().borrow_mut();
+        let place = scope.len();
+        scope.insert(String::from(name), t);
+        place
+    }
+
+    fn func_mangle_name_scope_insert(&mut self, name: &str, sig: Signature) {
+        let mut idx = None;
+        for (i, scope) in self.func_scopes.iter().rev().enumerate() {
+            match scope.borrow().get(name) {
+                Some(_) => {
+                    idx = Some(self.scopes.len() - i - 1);
+                    break;
+                }
+                None => (),
+            }
+        }
+        let idx = idx.expect("If not this is bug");
+        let typ = self.system.func_type_from_sig(&sig);
+        self.scopes[idx]
+            .borrow_mut()
+            .insert(self.system.mangle(name, &sig), typ);
+    }
+
     fn openscope(&mut self) {
         self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
+        self.func_scopes.push(Rc::new(RefCell::new(HashMap::new())));
     }
 
     fn closescope(&mut self) -> usize {
+        self.func_scopes.pop();
         assert!(self.scopes.len() > 0);
         let rv = self.scopes.last().unwrap().borrow().len();
         self.scopes.pop();
@@ -137,6 +176,7 @@ impl TypeChecker {
             ExpressionType::DottedLookup(d) => todo!("{:?}", d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
+            ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
         }?;
         e.derived_type = Some(rv);
         Ok(rv)
@@ -179,14 +219,26 @@ impl TypeChecker {
 
     fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
         match self.lookup_scope(&r.name) {
-            Some(t) => Ok(t),
+            Some(t) => return Ok(t),
             None if self.allow_insert.is_some() => {
                 let typ = self.allow_insert.unwrap();
                 r.is_decl = true;
                 self.insert_scope(&r.name, typ);
-                Ok(typ)
+                return Ok(typ);
             }
+            _ => (),
+        }
+        match self.lookup_func_scope(&r.name) {
+            Some(t) => Ok(t),
             None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
+        }
+    }
+
+    fn funcrefexpr(&mut self, r: &mut FuncRefExpr) -> Result<Type, TypeError> {
+        let name = self.system.mangle(&r.name, &r.sig);
+        match self.lookup_scope(&name) {
+            Some(t) => Ok(t),
+            None => unreachable!("Could not find {:?} in scope", r),
         }
     }
 
@@ -369,7 +421,7 @@ impl TypeChecker {
         let typ = match f.borrow().name.clone() {
             Some(s) => {
                 let rv = self.system.function_type(s.clone());
-                self.insert_scope(&s, rv);
+                self.insert_func_scope(&s, rv);
                 rv
             }
             None => self
@@ -401,6 +453,7 @@ impl TypeChecker {
     fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
         let functype = self.expr(c.function.as_mut())?;
         let funcloc = c.function.location.clone();
+
         if !self.system.is_function(functype) {
             return Err(self.error("Trying to call value that is not callable".to_string()));
         }
@@ -431,11 +484,37 @@ impl TypeChecker {
                 None => unreachable!(),
             },
         };
-        c.function.derived_type = c.resolved_type;
         rv
     }
 
     fn call_function(
+        &mut self,
+        function: Rc<RefCell<Function>>,
+        functype: Type,
+        args: Vec<Type>,
+        funcloc: Location,
+        c: &mut CallExpr,
+    ) -> Result<Type, TypeError> {
+        let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
+        if let Some(name) = &function.borrow().name {
+            let func_sig = self
+                .system
+                .get_resolved_func_sig(c.function.derived_type.unwrap());
+            self.func_mangle_name_scope_insert(name, func_sig.clone());
+            match &c.function.etype {
+                ExpressionType::RefExpr(r) => {
+                    c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
+                        name: r.name.clone(),
+                        sig: func_sig,
+                    })
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(rv)
+    }
+
+    fn call_function_int(
         &mut self,
         function: Rc<RefCell<Function>>,
         functype: Type,
@@ -470,6 +549,8 @@ impl TypeChecker {
         }
 
         if let Some(t) = self.system.match_signature(functype, &args) {
+            let rftyp = self.system.function_type_resolve(functype, t);
+            c.function.as_mut().derived_type = Some(rftyp);
             return Ok(t);
         }
 
@@ -499,9 +580,28 @@ impl TypeChecker {
                 return Err(s);
             }
         };
-        self.system.patch_signature_return(functype, sig_handle, rv);
+        let func_sig = Signature {
+            inputs: args.clone(),
+            output: rv,
+        };
+        self.system
+            .add_function_signature(functype, func_sig.clone());
         self.closescope();
-        c.resolved_type = Some(self.system.function_type_resolve(functype, sig_handle));
+        let rftyp = self.system.function_type_resolve(functype, sig_handle);
+        c.function.as_mut().derived_type = Some(rftyp);
+        // if let Some(name) = &function.borrow().name {
+        // self.func_mangle_name_scope_insert(name, func_sig.clone());
+        // match &c.function.etype {
+        // ExpressionType::RefExpr(r) => {
+        // c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
+        // name: r.name.clone(),
+        // sig: func_sig,
+        // })
+        // }
+        // _ => unreachable!(),
+        // }
+        // }
+
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
@@ -563,8 +663,15 @@ impl TypeChecker {
         };
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
         swap(&mut self.lambda_args, &mut args);
-        self.system.patch_signature_return(functype, sig_handle, rv);
-        c.resolved_type = Some(self.system.function_type_resolve(functype, sig_handle));
+        self.system.add_function_signature(
+            functype,
+            Signature {
+                inputs: args.clone(),
+                output: rv,
+            },
+        );
+        c.function.as_mut().derived_type =
+            Some(self.system.function_type_resolve(functype, sig_handle));
         Ok(rv)
     }
 }

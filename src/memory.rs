@@ -2,8 +2,8 @@ use crate::value::Value;
 use std::ops::{Index, IndexMut};
 
 pub const HEAP: usize = 0x10000000;
-pub const STACK: usize = 0x1000000;
-// pub const CODE: usize = 0x100000;
+pub const STACK: usize = 0x6000000;
+pub const CODE: usize = 0x100000;
 pub const BUILTIN_CODE: usize = 0x10000;
 
 #[derive(Clone, Debug)]

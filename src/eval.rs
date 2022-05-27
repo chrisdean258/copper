@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::builtins::BuiltinFunction;
 use crate::code_builder::Instruction;
-use crate::memory::Memory;
+use crate::memory::{Memory, BUILTIN_CODE, CODE, STACK};
 use crate::operation::Operation;
 // use crate::typesystem;
 use crate::value::Value;
@@ -16,17 +16,13 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-    pub const STACK_BOTTOM: usize = 0x1000000;
-    pub const CODE: usize = 0x100000;
-    pub const BUILTIN_CODE: usize = 0x10000;
-
     pub fn new() -> Self {
         Self {
             code: Vec::new(),
             memory: Memory::new(),
             builtin_table: BuiltinFunction::get_table(),
-            ip: Self::CODE,
-            bp: Self::STACK_BOTTOM,
+            ip: CODE,
+            bp: STACK,
         }
     }
 
@@ -79,21 +75,19 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        // for (i, instr) in code.iter().enumerate() { eprintln!("0x{:08x}: {}", i + Self::CODE, instr); }
+        // for (i, instr) in code.iter().enumerate() { eprintln!("0x{:08x}: {}", i + CODE, instr); }
         self.code = code;
-        while self.ip < self.code.len() + Self::CODE {
+        while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);
             // eprint!("IP: 0x{:08x}:  ", self.ip);
-            // eprint!("{:30}  ", self.code[self.ip - Self::CODE].to_string());
+            // eprint!("{:30}  ", self.code[self.ip - CODE].to_string());
             // eprint!("BP: 0x{:08x}     ", self.bp);
-            match self.code[self.ip - Self::CODE].op {
+            match self.code[self.ip - CODE].op {
                 Operation::Nop => (),
                 Operation::Crash => {
                     break;
                 }
-                Operation::Push => self
-                    .memory
-                    .push(self.code[self.ip - Self::CODE].value.unwrap()),
+                Operation::Push => self.memory.push(self.code[self.ip - CODE].value.unwrap()),
                 Operation::Pop => {
                     self.memory.pop();
                 }
@@ -163,8 +157,8 @@ impl Evaluator {
                     self.memory[bp - 2] = Value::Ptr(self.ip + 1);
                     self.bp = bp;
                     self.ip = ip;
-                    if ip < Self::CODE {
-                        let builtin_idx = ip - Self::BUILTIN_CODE;
+                    if ip < CODE {
+                        let builtin_idx = ip - BUILTIN_CODE;
                         let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
                         self.memory.truncate_stack(self.bp);
                         self.bp = pop!(Value::Ptr);

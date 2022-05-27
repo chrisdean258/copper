@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::eval::Evaluator;
+use crate::memory;
 use crate::operation::Operation;
 use crate::typesystem::*;
 use crate::value::Value;
@@ -85,7 +85,7 @@ impl CodeBuilder {
         let mut f = self.active_functions.pop().unwrap();
         let rv = self.finished_functions.len();
         self.finished_functions.append(&mut f.code);
-        rv + Evaluator::CODE
+        rv + memory::CODE
     }
 
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, value: Option<Value>) -> usize {
@@ -119,11 +119,11 @@ impl CodeBuilder {
     }
 
     pub fn global_ref(&mut self, number: usize) -> usize {
-        self.push(Value::Ptr(number + Evaluator::STACK_BOTTOM))
+        self.push(Value::Ptr(number + memory::STACK))
     }
 
     pub fn builtin_ref(&mut self, number: usize) -> usize {
-        self.push(Value::Ptr(number + Evaluator::BUILTIN_CODE))
+        self.push(Value::Ptr(number + memory::BUILTIN_CODE))
     }
 
     pub fn code_ref(&mut self, addr: usize) -> usize {
