@@ -157,9 +157,6 @@ impl TypeChecker {
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
         self.location = Some(e.location.clone());
-        if let Some(t) = e.derived_type {
-            return Ok(t);
-        }
         let rv = match &mut e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
@@ -476,6 +473,10 @@ impl TypeChecker {
             return Ok(UNIT);
         }
 
+        if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
+            return Ok(sig.output);
+        }
+
         let rv = match self.type_to_func.get_mut(&functype) {
             Some(func) => {
                 let func = func.clone();
@@ -506,7 +507,6 @@ impl TypeChecker {
         }
         let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
         if let Some(name) = &function.borrow().name {
-            eprintln!("{} type {}", name, rv);
             let func_sig = self
                 .system
                 .get_resolved_func_sig(c.function.derived_type.unwrap());

@@ -407,6 +407,13 @@ impl TypeSystem {
         rv
     }
 
+    pub fn get_resolved_func_sig_can_fail(&self, typ: Type) -> Option<Signature> {
+        match &self.types[typ].te_type {
+            TypeEntryType::ResolvedFunctionType(r) => Some(r.signature.clone()),
+            _ => None,
+        }
+    }
+
     pub fn get_resolved_func_sig(&self, typ: Type) -> Signature {
         match &self.types[typ].te_type {
             TypeEntryType::ResolvedFunctionType(r) => r.signature.clone(),
