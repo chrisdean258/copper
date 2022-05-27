@@ -506,6 +506,7 @@ impl TypeChecker {
 
         if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
             mangle!(c, args, sig.output);
+            eprintln!("call expression: {:?}", c);
             return Ok(sig.output);
         }
 
@@ -522,9 +523,9 @@ impl TypeChecker {
                 None => unreachable!(),
             },
         };
-        if rv != UNKNOWN_RETURN {
-            mangle!(c, args, rv);
-        }
+        // if rv != UNKNOWN_RETURN {
+        mangle!(c, args, rv);
+        // }
         Ok(rv)
     }
 

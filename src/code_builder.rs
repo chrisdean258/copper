@@ -88,6 +88,23 @@ impl CodeBuilder {
         rv + memory::CODE
     }
 
+    pub fn close_function_and_patch(&mut self, patchpoints: &Vec<usize>) -> usize {
+        assert!(self.active_functions.len() > 0);
+        let mut f = self.active_functions.pop().unwrap();
+        let rv = self.finished_functions.len();
+
+        for pp in patchpoints {
+            f.code[*pp] = Instruction {
+                op: Operation::Push,
+                types: Vec::new(),
+                value: Some(Value::Ptr(rv + memory::CODE)),
+            }
+        }
+
+        self.finished_functions.append(&mut f.code);
+        rv + memory::CODE
+    }
+
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, value: Option<Value>) -> usize {
         assert!(op.is_machineop(), "{}", op);
         assert!(self.active_functions.len() > 0);

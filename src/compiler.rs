@@ -15,6 +15,7 @@ enum MemoryLocation {
     CodeLocation(usize),
     GlobalVariable(usize),
     LocalVariable(usize),
+    CurrentFunction,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +29,7 @@ pub struct Compiler {
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
     num_locals: Vec<usize>,
-    // lambda_arg_types: Option<Vec<Type>>,
+    recursive_calls: Vec<usize>,
 }
 
 impl Compiler {
@@ -53,6 +54,7 @@ impl Compiler {
             arg_types: None,
             strings: HashMap::new(),
             num_locals: vec![0, 0],
+            recursive_calls: Vec::new(),
         }
     }
 
@@ -99,6 +101,12 @@ impl Compiler {
         assert!(scope.insert(name.clone(), what).is_none());
     }
 
+    fn replace_scope(&mut self, name: String, what: MemoryLocation) {
+        assert!(self.scopes.len() >= 2);
+        let scope = self.scopes.last_mut().unwrap();
+        assert!(scope.insert(name.clone(), what).is_some());
+    }
+
     fn next_local(&mut self) -> MemoryLocation {
         // Actually local == global so we will write out a global
         *self.num_locals.last_mut().unwrap() += 1;
@@ -134,25 +142,6 @@ impl Compiler {
                 name, self.scopes
             )
         }
-        // let types = self
-        // .types
-        // .as_ref()
-        // .unwrap()
-        // .format_args(self.arg_types.as_ref().unwrap());
-        // let funcname = format!("{}({})", name, types);
-        // if let Some(u) = scope.get(&funcname) {
-        // return *u;
-        // }
-        // if let Some(u) = self.scopes[1].get(&funcname) {
-        // return *u;
-        // }
-        // if let Some(u) = self.scopes[0].get(&funcname) {
-        // return *u;
-        // }
-        // unreachable!(
-        // "Tried to lookup `{}` and `{}` which were not present. {:?}",
-        // name, funcname, self.scopes
-        // );
     }
 
     fn entomb_string(&mut self, string: String) -> usize {
@@ -289,6 +278,7 @@ impl Compiler {
             MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
             MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+            MemoryLocation::CurrentFunction => panic!("UNKNOWN"),
         };
         if !self.need_ref {
             self.code.load();
@@ -301,6 +291,10 @@ impl Compiler {
             match val {
                 MemoryLocation::CodeLocation(a) => {
                     self.code.push(Value::Ptr(a));
+                    return;
+                }
+                MemoryLocation::CurrentFunction => {
+                    self.recursive_calls.push(self.code.push(Value::Null));
                     return;
                 }
                 t => unreachable!("Expected CodeLocation found {:?}", t),
@@ -317,8 +311,14 @@ impl Compiler {
             }
         }
         let func = func.expect(&format!("Could not find a func `{}` in func_scope", r.name));
+
+        self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
+
+        let mut save_bp_list = Vec::new();
+        swap(&mut save_bp_list, &mut self.recursive_calls);
         let addr = self.single_function(&func.borrow(), &r.sig);
-        self.insert_scope(mangled_name, MemoryLocation::CodeLocation(addr));
+        swap(&mut save_bp_list, &mut self.recursive_calls);
+        self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
     }
 
@@ -506,7 +506,7 @@ impl Compiler {
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
-        self.code.close_function()
+        self.code.close_function_and_patch(&self.recursive_calls)
     }
 
     fn lambda(&mut self, l: Rc<RefCell<Lambda>>, sigs: Vec<Signature>) {
