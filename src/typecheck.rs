@@ -157,6 +157,9 @@ impl TypeChecker {
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
         self.location = Some(e.location.clone());
+        if let Some(t) = e.derived_type {
+            return Ok(t);
+        }
         let rv = match &mut e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
@@ -178,7 +181,9 @@ impl TypeChecker {
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
         }?;
-        e.derived_type = Some(rv);
+        if rv != UNKNOWN_RETURN {
+            e.derived_type = Some(rv);
+        }
         Ok(rv)
     }
 
@@ -495,6 +500,10 @@ impl TypeChecker {
         funcloc: Location,
         c: &mut CallExpr,
     ) -> Result<Type, TypeError> {
+        match function.try_borrow_mut() {
+            Ok(_) => (),
+            Err(_) => return Ok(UNKNOWN_RETURN),
+        }
         let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
         if let Some(name) = &function.borrow().name {
             let func_sig = self
@@ -522,12 +531,6 @@ impl TypeChecker {
         funcloc: Location,
         c: &mut CallExpr,
     ) -> Result<Type, TypeError> {
-        // Recursion Gaurd -- if this works we may be able to remove signature backpatching
-        match function.try_borrow_mut() {
-            Ok(_) => (),
-            Err(_) => return Ok(UNKNOWN_RETURN),
-        }
-
         let num_default_needed = function.borrow().argnames.len() - args.len();
 
         if num_default_needed > function.borrow().default_args.len() {
@@ -554,14 +557,6 @@ impl TypeChecker {
             return Ok(t);
         }
 
-        let sig_handle = self.system.add_function_signature(
-            functype,
-            Signature {
-                inputs: args.clone(),
-                output: UNKNOWN_RETURN,
-            },
-        );
-
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
@@ -584,24 +579,12 @@ impl TypeChecker {
             inputs: args.clone(),
             output: rv,
         };
-        self.system
+        let sig_handle = self
+            .system
             .add_function_signature(functype, func_sig.clone());
         self.closescope();
         let rftyp = self.system.function_type_resolve(functype, sig_handle);
         c.function.as_mut().derived_type = Some(rftyp);
-        // if let Some(name) = &function.borrow().name {
-        // self.func_mangle_name_scope_insert(name, func_sig.clone());
-        // match &c.function.etype {
-        // ExpressionType::RefExpr(r) => {
-        // c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
-        // name: r.name.clone(),
-        // sig: func_sig,
-        // })
-        // }
-        // _ => unreachable!(),
-        // }
-        // }
-
         self.openscope();
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
