@@ -157,6 +157,11 @@ impl TypeChecker {
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
         self.location = Some(e.location.clone());
+        if let Some(typ) = e.derived_type {
+            if typ != UNKNOWN_RETURN {
+                return Ok(typ);
+            }
+        }
         let rv = match &mut e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
@@ -178,9 +183,7 @@ impl TypeChecker {
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
         }?;
-        if rv != UNKNOWN_RETURN {
-            e.derived_type = Some(rv);
-        }
+        e.derived_type = Some(rv);
         Ok(rv)
     }
 
@@ -453,6 +456,24 @@ impl TypeChecker {
     }
 
     fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
+        macro_rules! mangle {
+            ($c:ident, $args:ident, $out:expr) => {
+                match &$c.function.as_ref().etype {
+                    ExpressionType::RefExpr(r) => {
+                        if self.lookup_func_scope(&r.name).is_some() {
+                            $c.function.as_mut().etype = ExpressionType::FuncRefExpr(FuncRefExpr {
+                                name: r.name.clone(),
+                                sig: Signature {
+                                    inputs: $args.clone(),
+                                    output: $out,
+                                },
+                            })
+                        }
+                    }
+                    _ => (),
+                }
+            };
+        }
         let functype = self.expr(c.function.as_mut())?;
         let funcloc = c.function.location.clone();
 
@@ -474,23 +495,27 @@ impl TypeChecker {
         }
 
         if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
+            mangle!(c, args, sig.output);
             return Ok(sig.output);
         }
 
         let rv = match self.type_to_func.get_mut(&functype) {
             Some(func) => {
                 let func = func.clone();
-                self.call_function(func, functype, args, funcloc, c)
+                self.call_function(func, functype, args.clone(), funcloc, c)?
             }
             None => match self.type_to_lambda.get_mut(&functype) {
                 Some(lambda) => {
                     let lambda = lambda.clone();
-                    self.call_lambda(lambda, functype, args, funcloc, c)
+                    self.call_lambda(lambda, functype, args.clone(), funcloc, c)?
                 }
                 None => unreachable!(),
             },
         };
-        rv
+        if rv != UNKNOWN_RETURN {
+            mangle!(c, args, rv);
+        }
+        Ok(rv)
     }
 
     fn call_function(

@@ -130,8 +130,8 @@ impl Compiler {
         } else {
             unreachable!(
                 // self.arg_types.is_some(),
-                "Looking up `{}` failed",
-                name
+                "Looking up `{}` failed with scopes = {:?}",
+                name, self.scopes
             )
         }
         // let types = self
@@ -316,7 +316,7 @@ impl Compiler {
                 None => (),
             }
         }
-        let func = func.expect("Could not find a func names in func_scope");
+        let func = func.expect(&format!("Could not find a func `{}` in func_scope", r.name));
         let addr = self.single_function(&func.borrow(), &r.sig);
         self.insert_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
