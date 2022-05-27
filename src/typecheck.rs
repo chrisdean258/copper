@@ -506,6 +506,7 @@ impl TypeChecker {
         }
         let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
         if let Some(name) = &function.borrow().name {
+            eprintln!("{} type {}", name, rv);
             let func_sig = self
                 .system
                 .get_resolved_func_sig(c.function.derived_type.unwrap());
