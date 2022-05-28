@@ -255,9 +255,17 @@ impl Compiler {
     }
 
     fn get_ref(&mut self, e: &Expression) {
+        let save = self.need_ref;
         self.need_ref = true;
         self.expr(e);
+        self.need_ref = save;
+    }
+
+    fn get_no_ref(&mut self, e: &Expression) {
+        let save = self.need_ref;
         self.need_ref = false;
+        self.expr(e);
+        self.need_ref = save;
     }
 
     fn refexpr(&mut self, r: &RefExpr) {
@@ -430,17 +438,44 @@ impl Compiler {
         self.code.push(Value::Str(str_idx));
     }
 
-    fn list(&mut self, _l: &List) {
-        todo!();
+    fn new_list_with_len(&mut self, len: usize) {
         self.code.alloc(3); // list struct
         self.code.dup();
+        self.code.alloc(len);
+        self.code.push(Value::Int(len as i64));
+        self.code.push(Value::Int(len as i64));
+        self.code.store_n(3);
+    }
+
+    fn list(&mut self, l: &List) {
+        self.new_list_with_len(l.exprs.len());
+        self.code.dup();
+        self.code.load();
+        for expr in l.exprs.iter() {
+            self.expr(expr);
+        }
+        self.code.store_n(l.exprs.len());
+    }
+
+    fn index(&mut self, i: &IndexExpr) {
+        self.get_no_ref(i.obj.as_ref());
         self.code.dup();
         self.code.push(Value::PtrOffset(1));
         self.code.emit(Operation::Plus, vec![], None);
-    }
+        self.code.load();
 
-    fn index(&mut self, _i: &IndexExpr) {
-        todo!()
+        assert!(i.args.len() == 1);
+        self.expr(&i.args[0]);
+        self.code.dup();
+        self.code.rotate(3);
+        self.code.emit(Operation::CmpLE, vec![], None);
+        self.code.conditional_fail();
+        self.code.swap();
+        self.code.load();
+        self.code.emit(Operation::Plus, vec![], None);
+        if !self.need_ref {
+            self.code.load();
+        }
     }
 
     fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {

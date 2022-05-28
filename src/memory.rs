@@ -89,6 +89,12 @@ impl Memory {
         STACK + self.stack.len()
     }
 
+    pub fn memcpy(&mut self, dst: usize, src: usize, len: usize) {
+        for i in 0..len {
+            self[dst + i] = self[src + i];
+        }
+    }
+
     pub fn malloc(&mut self, mut size: usize) -> usize {
         if size == 0 {
             return 0;
@@ -117,7 +123,7 @@ impl Memory {
 impl IndexMut<usize> for Memory {
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
         if addr >= HEAP {
-            &mut self.heap[addr / HEAP].1[addr % HEAP]
+            &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
         } else if addr >= STACK && addr - STACK < self.stack.len() {
             &mut self.stack[addr - STACK]
         } else if addr >= BUILTIN_CODE {
@@ -132,7 +138,7 @@ impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
         if addr >= HEAP {
-            &self.heap[addr / HEAP].1[addr % HEAP]
+            &self.heap[addr / HEAP - 1].1[addr % HEAP]
         } else if addr >= STACK {
             &self.stack[addr - STACK]
         } else if addr >= BUILTIN_CODE {

@@ -172,6 +172,11 @@ impl CodeBuilder {
         self.emit(Operation::Store, vec![], None)
     }
 
+    pub fn store_n(&mut self, count: usize) -> usize {
+        self.push(Value::Count(count));
+        self.emit(Operation::StoreN, vec![], None)
+    }
+
     pub fn return_(&mut self) -> usize {
         self.emit(Operation::Return, vec![], None)
     }
@@ -183,6 +188,10 @@ impl CodeBuilder {
 
     pub fn crash(&mut self) -> usize {
         self.emit(Operation::Crash, vec![], None)
+    }
+
+    pub fn conditional_fail(&mut self) -> usize {
+        self.emit(Operation::ConditionalFail, vec![], None)
     }
 
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {

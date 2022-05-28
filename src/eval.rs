@@ -42,6 +42,15 @@ impl Evaluator {
             };
         }
 
+        macro_rules! as_type {
+            ($ex:expr, $typ:path) => {
+                match $ex {
+                    $typ(a) => a,
+                    t => unreachable!("Trying to pop {} found {:?}", stringify!($typ), t),
+                }
+            };
+        }
+
         macro_rules! do_binop {
             ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
                 let a = self.memory.pop();
@@ -87,6 +96,13 @@ impl Evaluator {
                 Operation::Crash => {
                     break;
                 }
+                Operation::ConditionalFail => {
+                    if pop!(Value::Bool) != 0 {
+                        return Err(
+                            "Conditional Failure point hit. Currently only index OOB".into()
+                        );
+                    }
+                }
                 Operation::Push => self.memory.push(self.code[self.ip - CODE].value.unwrap()),
                 Operation::Pop => {
                     self.memory.pop();
@@ -100,6 +116,14 @@ impl Evaluator {
                     let addr = pop!(Value::Ptr);
                     self.memory[addr] = value;
                     self.memory.push(value);
+                }
+                Operation::StoreN => {
+                    let num = pop!(Value::Count);
+                    let dst = as_type!(self.memory[self.memory.stack_top() - num - 1], Value::Ptr);
+                    let src = self.memory.stack_top() - num;
+                    self.memory.memcpy(dst, src, num);
+                    self.memory
+                        .truncate_stack(self.memory.stack_top() - num - 1);
                 }
                 Operation::Alloc => {
                     let val = pop!(Value::Count);
@@ -201,6 +225,7 @@ impl Evaluator {
                 }
                 Operation::CmpGE => {
                     do_comparison!(>=,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -208,6 +233,7 @@ impl Evaluator {
                 }
                 Operation::CmpGT => {
                     do_comparison!(>,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -215,6 +241,7 @@ impl Evaluator {
                 }
                 Operation::CmpLE => {
                     do_comparison!(<=,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -222,6 +249,7 @@ impl Evaluator {
                 }
                 Operation::CmpLT => {
                     do_comparison!(<,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -229,6 +257,7 @@ impl Evaluator {
                 }
                 Operation::CmpEq => {
                     do_comparison!(==,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -237,6 +266,7 @@ impl Evaluator {
                 }
                 Operation::CmpNotEq => {
                     do_comparison!(!=,
+                        Count, Count,
                         Float, Float,
                         Int, Int,
                         Char, Char,
@@ -271,6 +301,8 @@ impl Evaluator {
                         (Value::PtrOffset(aa), Value::Ptr(bb)) => {
                             Value::Ptr((bb as isize + aa) as usize)
                         }
+                        (Value::Int(aa), Value::Ptr(bb)) => Value::Ptr((bb as i64 + aa) as usize),
+                        (Value::Ptr(aa), Value::Int(bb)) => Value::Ptr((bb + aa as i64) as usize),
                         (Value::Int(aa), Value::Int(bb)) => Value::Int(bb + aa),
                         (Value::Char(aa), Value::Char(bb)) => Value::Char(bb + aa),
                         (Value::Float(aa), Value::Float(bb)) => Value::Float(bb + aa),
