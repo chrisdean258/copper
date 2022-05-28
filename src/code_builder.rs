@@ -176,6 +176,11 @@ impl CodeBuilder {
         self.emit(Operation::Return, vec![], None)
     }
 
+    pub fn alloc(&mut self, size: usize) -> usize {
+        self.push(Value::Count(size));
+        self.emit(Operation::Alloc, vec![], None)
+    }
+
     pub fn crash(&mut self) -> usize {
         self.emit(Operation::Crash, vec![], None)
     }

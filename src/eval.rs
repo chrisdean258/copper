@@ -101,6 +101,11 @@ impl Evaluator {
                     self.memory[addr] = value;
                     self.memory.push(value);
                 }
+                Operation::Alloc => {
+                    let val = pop!(Value::Count);
+                    let addr = self.memory.malloc(val);
+                    self.memory.push(Value::Ptr(addr));
+                }
                 Operation::Reserve => {
                     let size = pop!(Value::Count);
                     self.memory.reserve(size);
@@ -263,6 +268,9 @@ impl Evaluator {
                     let a = self.memory.pop();
                     let b = self.memory.pop();
                     let val = match (a, b) {
+                        (Value::PtrOffset(aa), Value::Ptr(bb)) => {
+                            Value::Ptr((bb as isize + aa) as usize)
+                        }
                         (Value::Int(aa), Value::Int(bb)) => Value::Int(bb + aa),
                         (Value::Char(aa), Value::Char(bb)) => Value::Char(bb + aa),
                         (Value::Float(aa), Value::Float(bb)) => Value::Float(bb + aa),

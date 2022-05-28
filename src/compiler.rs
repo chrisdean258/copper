@@ -431,7 +431,12 @@ impl Compiler {
     }
 
     fn list(&mut self, _l: &List) {
-        todo!()
+        todo!();
+        self.code.alloc(3); // list struct
+        self.code.dup();
+        self.code.dup();
+        self.code.push(Value::PtrOffset(1));
+        self.code.emit(Operation::Plus, vec![], None);
     }
 
     fn index(&mut self, _i: &IndexExpr) {

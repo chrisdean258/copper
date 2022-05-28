@@ -1,58 +1,47 @@
 #![allow(dead_code)]
-use std::collections::HashSet;
+use crate::value::Value;
 use std::ops::{Index, IndexMut};
 
-pub struct Allocator<T> {
-    base: usize,
-    memory: Vec<T>,
-    free: HashSet<usize>,
+#[derive(Clone, Debug)]
+pub struct Allocator {
+    block_size: usize,
+    pub memory: Vec<Value>,
+    free: Vec<usize>,
 }
 
-impl<T> Allocator<T> {
-    pub fn new(base: usize) -> Self {
+impl Allocator {
+    pub fn new(block_size: usize) -> Self {
         Self {
-            base,
+            block_size,
             memory: Vec::new(),
-            free: HashSet::new(),
+            free: Vec::new(),
         }
     }
 
-    fn free_slot(&mut self) -> Option<usize> {
-        for element in self.free.iter() {
-            return Some(*element);
-        }
-        None
+    pub fn alloc(&mut self) -> usize {
+        self.free.pop().unwrap_or_else(|| {
+            self.memory
+                .append(&mut vec![Value::Uninitialized; self.block_size]);
+            self.memory.len() - self.block_size
+        })
     }
 
-    pub fn alloc(&mut self, val: T) -> usize {
-        match self.free_slot() {
-            Some(s) => {
-                self.free.remove(&s);
-                self.memory[s] = val;
-                s
-            }
-            None => {
-                self.memory.push(val);
-                self.memory.len() - 1
-            }
-        }
-    }
-
-    pub fn free(&mut self, addr: usize) {
-        self.free.insert(addr);
+    pub fn free(&mut self, idx: usize) {
+        assert!(idx % self.block_size == 0, "Trying to free unaligned block");
+        self.free.push(idx);
     }
 }
 
-impl<T> Index<usize> for Allocator<T> {
-    type Output = T;
+impl Index<usize> for Allocator {
+    type Output = Value;
 
-    fn index(&self, addr: usize) -> &Self::Output {
-        &self.memory[addr - self.base]
+    fn index(&self, idx: usize) -> &Self::Output {
+        &self.memory[idx]
     }
 }
 
-impl<T> IndexMut<usize> for Allocator<T> {
-    fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
-        &mut self.memory[addr - self.base]
+impl IndexMut<usize> for Allocator {
+    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
+        &mut self.memory[idx]
     }
 }

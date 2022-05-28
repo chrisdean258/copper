@@ -236,6 +236,14 @@ impl TypeSystem {
             },
         );
 
+        self.add_signature(
+            Operation::Plus,
+            Signature {
+                inputs: vec![list_type, list_type],
+                output: list_type,
+            },
+        );
+
         return list_type;
     }
 

@@ -1,4 +1,6 @@
+use crate::allocator::Allocator;
 use crate::value::Value;
+
 use std::ops::{Index, IndexMut};
 
 pub const HEAP: usize = 0x10000000;
@@ -9,7 +11,7 @@ pub const BUILTIN_CODE: usize = 0x10000;
 #[derive(Clone, Debug)]
 pub struct Memory {
     pub stack: Vec<Value>,
-    pub heap: Vec<Value>,
+    pub heap: Vec<(usize, Allocator)>,
     pub strings: Vec<String>,
 }
 
@@ -17,7 +19,16 @@ impl Memory {
     pub fn new() -> Self {
         Self {
             stack: Vec::new(),
-            heap: Vec::new(),
+            heap: vec![
+                (HEAP * 1, Allocator::new(1 << 0)),
+                (HEAP * 2, Allocator::new(1 << 3)),
+                (HEAP * 3, Allocator::new(1 << 4)),
+                (HEAP * 4, Allocator::new(1 << 5)),
+                (HEAP * 5, Allocator::new(1 << 6)),
+                (HEAP * 6, Allocator::new(1 << 7)),
+                (HEAP * 7, Allocator::new(1 << 8)),
+                (HEAP * 8, Allocator::new(1 << 9)),
+            ],
             strings: Vec::new(),
         }
     }
@@ -77,12 +88,36 @@ impl Memory {
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }
+
+    pub fn malloc(&mut self, mut size: usize) -> usize {
+        if size == 0 {
+            return 0;
+        } else if size == 1 {
+            return self.heap[0].1.alloc() + self.heap[0].0;
+        }
+        size -= 1;
+        size |= size >> 1;
+        size |= size >> 2;
+        size |= size >> 4;
+        size |= size >> 8;
+        size |= size >> 16;
+        size |= size >> 32;
+        size += 1;
+        if size < 8 {
+            size = 8;
+        }
+        let idx = (size.trailing_zeros() - 2) as usize;
+        if idx >= self.heap.len() {
+            panic!("cannot allocate {} values yet", size);
+        }
+        self.heap[idx].1.alloc() + self.heap[idx].0
+    }
 }
 
 impl IndexMut<usize> for Memory {
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
-        if addr >= HEAP && addr - HEAP < self.heap.len() {
-            &mut self.heap[addr - HEAP]
+        if addr >= HEAP {
+            &mut self.heap[addr / HEAP].1[addr % HEAP]
         } else if addr >= STACK && addr - STACK < self.stack.len() {
             &mut self.stack[addr - STACK]
         } else if addr >= BUILTIN_CODE {
@@ -97,7 +132,7 @@ impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
         if addr >= HEAP {
-            &self.heap[addr - HEAP]
+            &self.heap[addr / HEAP].1[addr % HEAP]
         } else if addr >= STACK {
             &self.stack[addr - STACK]
         } else if addr >= BUILTIN_CODE {
