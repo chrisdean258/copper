@@ -1,4 +1,5 @@
 use crate::eval::Evaluator;
+use crate::memory;
 use crate::typesystem::*;
 use crate::value::Value;
 use std::fs::File;
@@ -7,6 +8,21 @@ use std::mem;
 use std::os::unix::io::FromRawFd;
 
 use std::fmt::{Debug, Formatter};
+
+macro_rules! as_type {
+    ($ex:expr, $typ:path, $fname:expr, $argnum:expr) => {
+        match $ex {
+            $typ(a) => a,
+            t => panic!(
+                "Unexecpeted argument {} to function {}. Expected {} found {:?}",
+                $argnum,
+                $fname,
+                stringify!($typ),
+                t
+            ),
+        }
+    };
+}
 
 #[derive(Clone)]
 pub struct BuiltinFunction {
@@ -34,6 +50,11 @@ impl BuiltinFunction {
                 func: alloc,
                 returns: UNIT, // TODO: define a pointer type
             },
+            BuiltinFunction {
+                name: "len".to_string(),
+                func: len,
+                returns: INT,
+            },
         ]
     }
 }
@@ -60,10 +81,23 @@ fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
 
 fn alloc(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     assert!(count == 1, "alloc requires exactly 1 arg");
-    let size = match eval.memory[first] {
-        Value::Int(i) => i as usize,
-        t => panic!("Unexpected first arg to alloc. Expected Int got {:?}", t),
-    };
-    let rv = eval.memory.malloc(size);
+    let size = as_type!(eval.memory[first], Value::Int, "alloc", 0);
+    let rv = eval.memory.malloc(size as usize);
     Value::Ptr(rv)
+}
+
+fn len(eval: &mut Evaluator, first: usize, count: usize) -> Value {
+    assert!(count == 1, "len requires exactly 1 arg");
+    Value::Int(match eval.memory[first] {
+        Value::Ptr(p) => {
+            assert!(
+                p >= memory::HEAP,
+                "Can only take len of heap allocated pointers, not {}",
+                p
+            );
+            1 << (p / memory::HEAP)
+        }
+        Value::Str(s) => eval.memory.strings[s].len() as i64,
+        t => panic!("Canot type len of {:?}", t),
+    })
 }

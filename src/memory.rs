@@ -21,13 +21,15 @@ impl Memory {
             stack: Vec::new(),
             heap: vec![
                 (HEAP * 1, Allocator::new(1 << 0)),
-                (HEAP * 2, Allocator::new(1 << 3)),
-                (HEAP * 3, Allocator::new(1 << 4)),
-                (HEAP * 4, Allocator::new(1 << 5)),
-                (HEAP * 5, Allocator::new(1 << 6)),
-                (HEAP * 6, Allocator::new(1 << 7)),
-                (HEAP * 7, Allocator::new(1 << 8)),
-                (HEAP * 8, Allocator::new(1 << 9)),
+                (HEAP * 2, Allocator::new(1 << 1)),
+                (HEAP * 3, Allocator::new(1 << 2)),
+                (HEAP * 4, Allocator::new(1 << 3)),
+                (HEAP * 5, Allocator::new(1 << 4)),
+                (HEAP * 6, Allocator::new(1 << 5)),
+                (HEAP * 7, Allocator::new(1 << 6)),
+                (HEAP * 8, Allocator::new(1 << 7)),
+                (HEAP * 9, Allocator::new(1 << 8)),
+                (HEAP * 10, Allocator::new(1 << 9)),
             ],
             strings: Vec::new(),
         }
@@ -98,8 +100,6 @@ impl Memory {
     pub fn malloc(&mut self, mut size: usize) -> usize {
         if size == 0 {
             return 0;
-        } else if size == 1 {
-            return self.heap[0].1.alloc() + self.heap[0].0;
         }
         size -= 1;
         size |= size >> 1;
@@ -112,7 +112,7 @@ impl Memory {
         if size < 8 {
             size = 8;
         }
-        let idx = (size.trailing_zeros() - 2) as usize;
+        let idx = (size.trailing_zeros()) as usize;
         if idx >= self.heap.len() {
             panic!("cannot allocate {} values yet", size);
         }
