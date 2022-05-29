@@ -101,17 +101,7 @@ impl Memory {
         if size == 0 {
             return 0;
         }
-        size -= 1;
-        size |= size >> 1;
-        size |= size >> 2;
-        size |= size >> 4;
-        size |= size >> 8;
-        size |= size >> 16;
-        size |= size >> 32;
-        size += 1;
-        if size < 8 {
-            size = 8;
-        }
+        size = size.checked_next_power_of_two().unwrap_or(63);
         let idx = (size.trailing_zeros()) as usize;
         if idx >= self.heap.len() {
             panic!("cannot allocate {} values yet", size);
