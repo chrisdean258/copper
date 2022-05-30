@@ -20,7 +20,7 @@ pub struct Function {
 impl Function {
     fn new(name: String) -> Self {
         Self {
-            name: name,
+            name,
             code: Vec::new(),
         }
     }
@@ -81,7 +81,7 @@ impl CodeBuilder {
     }
 
     pub fn close_function(&mut self) -> usize {
-        assert!(self.active_functions.len() > 0);
+        assert!(!self.active_functions.is_empty());
         let mut f = self.active_functions.pop().unwrap();
         let rv = self.finished_functions.len();
         self.finished_functions.append(&mut f.code);

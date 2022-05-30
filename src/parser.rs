@@ -54,10 +54,7 @@ pub enum ExpressionType {
 impl Expression {
     pub fn is_lval(&self) -> bool {
         use ExpressionType::*;
-        match self.etype {
-            RefExpr(_) | IndexExpr(_) | DottedLookup(_) => true,
-            _ => false,
-        }
+        matches!(self.etype, RefExpr(_) | IndexExpr(_) | DottedLookup(_))
     }
 
     pub fn typ(&self) -> Type {
@@ -780,7 +777,7 @@ impl ParseTree {
                     expect!(lexer, TokenType::CloseBracket).location;
                     Expression {
                         derived_type: None,
-                        location: location,
+                        location,
                         etype: ExpressionType::IndexExpr(IndexExpr {
                             obj: Box::new(lhs),
                             args,
@@ -916,8 +913,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Vec<Expression>, String> {
-        let mut rv = Vec::new();
-        rv.push(self.parse_expr(lexer)?);
+        let mut rv = vec![self.parse_expr(lexer)?];
         while if_expect!(lexer, TokenType::Comma) {
             rv.push(self.parse_expr(lexer)?);
         }
@@ -1045,7 +1041,7 @@ impl ParseTree {
         Ok(Expression {
             derived_type: None,
             location: loc,
-            etype: ExpressionType::List(List { exprs: exprs }),
+            etype: ExpressionType::List(List { exprs }),
         })
     }
 

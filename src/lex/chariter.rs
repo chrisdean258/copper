@@ -10,18 +10,14 @@ impl<T: Iterator<Item = String>> Iterator for CharIter<T> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.peeked.is_some() {
-            let rv = self.peeked.unwrap();
+        if let Some(rv) = self.peeked {
             self.peeked = None;
             rv
+        } else if let Some(rv) = self.peek() {
+            self.peeked = None;
+            Some(rv)
         } else {
-            if self.peek().is_some() {
-                let rv = self.peeked.unwrap();
-                self.peeked = None;
-                rv
-            } else {
-                None
-            }
+            None
         }
     }
 }
