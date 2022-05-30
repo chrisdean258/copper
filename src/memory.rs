@@ -59,7 +59,7 @@ impl Memory {
     }
 
     pub fn rotate(&mut self, count: usize) {
-        assert!(self.stack.len() >= count && count >= 2);
+        debug_assert!(self.stack.len() >= count && count >= 2);
         let val = *self.stack.last().unwrap();
         let idx = self.stack.len() - count as usize;
         for i in (idx..(self.stack.len() - 1)).rev() {
@@ -69,12 +69,12 @@ impl Memory {
     }
 
     pub fn dup(&mut self) {
-        assert!(!self.stack.is_empty());
+        debug_assert!(!self.stack.is_empty());
         self.stack.push(*self.stack.last().unwrap());
     }
 
     pub fn swap(&mut self) {
-        assert!(self.stack.len() >= 2);
+        debug_assert!(self.stack.len() >= 2);
         let a = self.pop();
         let b = self.pop();
         self.push(a);
@@ -112,10 +112,10 @@ impl Memory {
 
 impl IndexMut<usize> for Memory {
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
-        if addr >= HEAP {
-            &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
-        } else if addr >= STACK && addr - STACK < self.stack.len() {
+        if addr >= STACK && addr - STACK < self.stack.len() {
             &mut self.stack[addr - STACK]
+        } else if addr >= HEAP {
+            &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
         } else if addr >= BUILTIN_CODE {
             panic!("Cannot write builtin code as addr 0x{:x}", addr)
         } else {
@@ -127,10 +127,10 @@ impl IndexMut<usize> for Memory {
 impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
-        if addr >= HEAP {
-            &self.heap[addr / HEAP - 1].1[addr % HEAP]
-        } else if addr >= STACK {
+        if addr >= STACK && addr - STACK < self.stack.len() {
             &self.stack[addr - STACK]
+        } else if addr >= HEAP {
+            &self.heap[addr / HEAP - 1].1[addr % HEAP]
         } else if addr >= BUILTIN_CODE {
             panic!("Cannot read builtin code as addr 0x{:x}", addr)
         } else {

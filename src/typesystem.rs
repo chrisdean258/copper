@@ -221,7 +221,7 @@ impl TypeSystem {
 
     fn new_type_with_num(&mut self, name: String, te_type: TypeEntryType, expected: Type) -> Type {
         let typ = self.new_type(name, te_type);
-        assert_eq!(typ, expected);
+        debug_assert_eq!(typ, expected);
         typ
     }
 
@@ -275,7 +275,7 @@ impl TypeSystem {
     }
 
     pub fn lookup_binop(&self, binop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
-        assert!(binop.is_binop());
+        debug_assert!(binop.is_binop());
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
@@ -288,7 +288,7 @@ impl TypeSystem {
     }
 
     pub fn lookup_assign(&self, aop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
-        assert!(aop.is_assignop());
+        debug_assert!(aop.is_assignop());
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
@@ -304,7 +304,7 @@ impl TypeSystem {
     }
 
     pub fn lookup_preunop(&self, puop: Operation, t: Type) -> Option<Type> {
-        assert!(puop.is_preunop());
+        debug_assert!(puop.is_preunop());
         if t == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
@@ -318,7 +318,7 @@ impl TypeSystem {
     }
 
     pub fn lookup_postunop(&self, puop: Operation, t: Type) -> Option<Type> {
-        assert!(puop.is_postunop());
+        debug_assert!(puop.is_postunop());
         if t == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }

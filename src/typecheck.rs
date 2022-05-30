@@ -58,7 +58,7 @@ impl TypeChecker {
     }
 
     fn errmsg(&self, msg: String) -> String {
-        assert!(self.location.is_some());
+        debug_assert!(self.location.is_some());
         format!("{}: {}", self.location.clone().unwrap(), msg)
     }
 
@@ -137,7 +137,7 @@ impl TypeChecker {
 
     fn closescope(&mut self) -> usize {
         self.func_scopes.pop();
-        assert!(!self.scopes.is_empty());
+        debug_assert!(!self.scopes.is_empty());
         let rv = self.scopes.last().unwrap().borrow().len();
         self.scopes.pop();
         rv
@@ -485,7 +485,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
     }
 
     fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
-        assert!(
+        debug_assert!(
             !self.lambda_args.is_empty(),
             "Trying to derive type of lambda arg in non lambda. This is a bug"
         );

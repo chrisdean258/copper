@@ -27,7 +27,7 @@ impl Allocator {
     }
 
     pub fn free(&mut self, idx: usize) {
-        assert!(idx % self.block_size == 0, "Trying to free unaligned block");
+        debug_assert!(idx % self.block_size == 0, "Trying to free unaligned block");
         self.free.push(idx);
     }
 }

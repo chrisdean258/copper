@@ -89,22 +89,22 @@ impl Compiler {
     }
 
     fn close_scope(&mut self) {
-        assert!(!self.scopes.is_empty());
+        debug_assert!(!self.scopes.is_empty());
         self.num_locals.pop();
         self.scopes.pop();
         self.func_scopes.pop();
     }
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
-        assert!(self.scopes.len() >= 2);
-        let scope = self.scopes.last_mut().unwrap();
-        assert!(scope.insert(name, what).is_none());
+        debug_assert!(self.scopes.len() >= 2);
+        let rv = self.scopes.last_mut().unwrap().insert(name, what);
+        debug_assert!(rv.is_none());
     }
 
     fn replace_scope(&mut self, name: String, what: MemoryLocation) {
-        assert!(self.scopes.len() >= 2);
+        debug_assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last_mut().unwrap();
-        assert!(scope.insert(name, what).is_some());
+        debug_assert!(scope.insert(name, what).is_some());
     }
 
     fn next_local(&mut self) -> MemoryLocation {
@@ -118,7 +118,7 @@ impl Compiler {
     }
 
     fn lookup_scope_local_or_global_can_fail(&mut self, name: &str) -> Option<MemoryLocation> {
-        assert!(self.scopes.len() >= 2);
+        debug_assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last().unwrap();
         if let Some(a) = scope.get(name) {
             return Some(*a);
@@ -472,7 +472,7 @@ impl Compiler {
         self.code.emit(Operation::Plus, vec![], None);
         self.code.load();
 
-        assert!(i.args.len() == 1);
+        debug_assert!(i.args.len() == 1);
         self.expr(&i.args[0]);
         self.code.dup();
         self.code.rotate(3);
@@ -494,24 +494,6 @@ impl Compiler {
                 .unwrap()
                 .insert(name.clone(), f.clone());
             self.code.push(Value::Uninitialized);
-            // for sig in sigs.iter() {
-            // let funcname = format!(
-            // "{}({})",
-            // name,
-            // self.types.as_ref().unwrap().format_args(&sig.inputs)
-            // );
-            // let varloc = self.next_local();
-            // self.insert_scope(name.clone(), varloc);
-            // let addr = self.single_function(&f.borrow(), sig);
-            // match varloc {
-            // MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
-            // MemoryLocation::GlobalVariable(u) => self.code.local_ref(u as isize),
-            // _ => unreachable!(),
-            // };
-            // self.code.push(Value::Ptr(addr));
-            // self.code.store();
-            // break;
-            // }
         } else {
             // I think this is broken but it _might_ work
             for sig in sigs.iter() {
@@ -522,7 +504,7 @@ impl Compiler {
     }
 
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
-        assert!(
+        debug_assert!(
             sig.inputs.len() == f.argnames.len(),
             "{:#?}\n-------------------\n{:#?}",
             f,

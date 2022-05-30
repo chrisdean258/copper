@@ -80,17 +80,17 @@ fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
 }
 
 fn alloc(eval: &mut Evaluator, first: usize, count: usize) -> Value {
-    assert!(count == 1, "alloc requires exactly 1 arg");
+    debug_assert!(count == 1, "alloc requires exactly 1 arg");
     let size = as_type!(eval.memory[first], Value::Int, "alloc", 0);
     let rv = eval.memory.malloc(size as usize);
     Value::Ptr(rv)
 }
 
 fn len(eval: &mut Evaluator, first: usize, count: usize) -> Value {
-    assert!(count == 1, "len requires exactly 1 arg");
+    debug_assert!(count == 1, "len requires exactly 1 arg");
     Value::Int(match eval.memory[first] {
         Value::Ptr(p) => {
-            assert!(
+            debug_assert!(
                 p >= memory::HEAP,
                 "Can only take len of heap allocated pointers, not {}",
                 p

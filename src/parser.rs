@@ -58,7 +58,7 @@ impl Expression {
     }
 
     pub fn typ(&self) -> Type {
-        assert!(self.derived_type.is_some(), "{:?}", self);
+        debug_assert!(self.derived_type.is_some(), "{:?}", self);
         self.derived_type.unwrap()
     }
 }

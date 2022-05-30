@@ -198,7 +198,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     where
         F: FnOnce(&char) -> bool,
     {
-        assert!(func(&self.chars.peek().unwrap()));
+        debug_assert!(func(&self.chars.peek().unwrap()));
         self.chars.next().unwrap()
     }
 
