@@ -66,45 +66,45 @@ pub enum Operation {
 
 impl Operation {
     pub fn is_binop(&self) -> bool {
-        match self {
-            Operation::BoolOr => true,
-            Operation::BoolXor => true,
-            Operation::BoolAnd => true,
-            Operation::BitOr => true,
-            Operation::BitXor => true,
-            Operation::BitAnd => true,
-            Operation::CmpGE => true,
-            Operation::CmpGT => true,
-            Operation::CmpLE => true,
-            Operation::CmpLT => true,
-            Operation::CmpEq => true,
-            Operation::CmpNotEq => true,
-            Operation::BitShiftLeft => true,
-            Operation::BitShiftRight => true,
-            Operation::Minus => true,
-            Operation::Plus => true,
-            Operation::Times => true,
-            Operation::Mod => true,
-            Operation::Div => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Operation::BoolOr
+                | Operation::BoolXor
+                | Operation::BoolAnd
+                | Operation::BitOr
+                | Operation::BitXor
+                | Operation::BitAnd
+                | Operation::CmpGE
+                | Operation::CmpGT
+                | Operation::CmpLE
+                | Operation::CmpLT
+                | Operation::CmpEq
+                | Operation::CmpNotEq
+                | Operation::BitShiftLeft
+                | Operation::BitShiftRight
+                | Operation::Minus
+                | Operation::Plus
+                | Operation::Times
+                | Operation::Mod
+                | Operation::Div
+        )
     }
 
     pub fn is_assignop(&self) -> bool {
-        match self {
-            Operation::Equal => true,
-            Operation::AndEq => true,
-            Operation::XorEq => true,
-            Operation::OrEq => true,
-            Operation::PlusEq => true,
-            Operation::MinusEq => true,
-            Operation::TimesEq => true,
-            Operation::DivEq => true,
-            Operation::ModEq => true,
-            Operation::BitShiftRightEq => true,
-            Operation::BitShiftLeftEq => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Operation::Equal
+                | Operation::AndEq
+                | Operation::XorEq
+                | Operation::OrEq
+                | Operation::PlusEq
+                | Operation::MinusEq
+                | Operation::TimesEq
+                | Operation::DivEq
+                | Operation::ModEq
+                | Operation::BitShiftRightEq
+                | Operation::BitShiftLeftEq
+        )
     }
 
     pub fn underlying_binop(&self) -> Operation {
@@ -124,70 +124,63 @@ impl Operation {
     }
 
     pub fn is_preunop(&self) -> bool {
-        match self {
-            Operation::BoolNot => true,
-            Operation::BitNot => true,
-            Operation::PreInc => true,
-            Operation::PreDec => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Operation::BoolNot | Operation::BitNot | Operation::PreInc | Operation::PreDec
+        )
     }
 
     pub fn is_postunop(&self) -> bool {
-        match self {
-            Operation::PostInc => true,
-            Operation::PostDec => true,
-            _ => false,
-        }
+        matches!(self, Operation::PostInc | Operation::PostDec)
     }
 
     pub fn is_machineop(&self) -> bool {
-        match self {
-            Operation::Nop => true,
-            Operation::Crash => true,
-            Operation::ConditionalFail => true,
-            Operation::Push => true,
-            Operation::Pop => true,
-            Operation::Dup => true,
-            Operation::Store => true,
-            Operation::StoreN => true,
-            Operation::Alloc => true,
-            Operation::Load => true,
-            Operation::Rotate => true,
-            Operation::Swap => true,
-            Operation::Reserve => true,
-            Operation::RefFrame => true,
-            Operation::Jump => true,
-            Operation::JumpRel => true,
-            Operation::JumpIf => true,
-            Operation::JumpRelIf => true,
-            Operation::Call => true,
-            Operation::PrepCall => true,
-            Operation::Return => true,
-            Operation::BoolOr => true,
-            Operation::BoolXor => true,
-            Operation::BoolAnd => true,
-            Operation::BitOr => true,
-            Operation::BitXor => true,
-            Operation::BitAnd => true,
-            Operation::CmpGE => true,
-            Operation::CmpGT => true,
-            Operation::CmpLE => true,
-            Operation::CmpLT => true,
-            Operation::CmpEq => true,
-            Operation::CmpNotEq => true,
-            Operation::BitShiftLeft => true,
-            Operation::BitShiftRight => true,
-            Operation::Minus => true,
-            Operation::Plus => true,
-            Operation::Times => true,
-            Operation::Mod => true,
-            Operation::Div => true,
-            Operation::Equal => true,
-            Operation::BoolNot => true,
-            Operation::BitNot => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Operation::Nop
+                | Operation::Crash
+                | Operation::ConditionalFail
+                | Operation::Push
+                | Operation::Pop
+                | Operation::Dup
+                | Operation::Store
+                | Operation::StoreN
+                | Operation::Alloc
+                | Operation::Load
+                | Operation::Rotate
+                | Operation::Swap
+                | Operation::Reserve
+                | Operation::RefFrame
+                | Operation::Jump
+                | Operation::JumpRel
+                | Operation::JumpIf
+                | Operation::JumpRelIf
+                | Operation::Call
+                | Operation::PrepCall
+                | Operation::Return
+                | Operation::BoolOr
+                | Operation::BoolXor
+                | Operation::BoolAnd
+                | Operation::BitOr
+                | Operation::BitXor
+                | Operation::BitAnd
+                | Operation::CmpGE
+                | Operation::CmpGT
+                | Operation::CmpLE
+                | Operation::CmpLT
+                | Operation::CmpEq
+                | Operation::CmpNotEq
+                | Operation::BitShiftLeft
+                | Operation::BitShiftRight
+                | Operation::Minus
+                | Operation::Plus
+                | Operation::Times
+                | Operation::Mod
+                | Operation::Div
+                | Operation::Equal
+                | Operation::BoolNot
+                | Operation::BitNot
+        )
     }
 }
 

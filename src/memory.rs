@@ -20,7 +20,7 @@ impl Memory {
         Self {
             stack: Vec::new(),
             heap: vec![
-                (HEAP * 1, Allocator::new(1 << 0)),
+                (HEAP, Allocator::new(1 << 0)),
                 (HEAP * 2, Allocator::new(1 << 1)),
                 (HEAP * 3, Allocator::new(1 << 2)),
                 (HEAP * 4, Allocator::new(1 << 3)),
@@ -69,7 +69,7 @@ impl Memory {
     }
 
     pub fn dup(&mut self) {
-        assert!(self.stack.len() >= 1);
+        assert!(!self.stack.is_empty());
         self.stack.push(*self.stack.last().unwrap());
     }
 
