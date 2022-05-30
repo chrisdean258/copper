@@ -343,117 +343,110 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
         loop {
-            break Some(Token {
-                location: self.location(),
-                token_type: match self.chars.peek()? {
-                    '(' => self.eat_ret(OpenParen),
-                    ')' => self.eat_ret(CloseParen),
-                    '{' => self.eat_ret(OpenBrace),
-                    '}' => self.eat_ret(CloseBrace),
-                    '[' => self.eat_ret(OpenBracket),
-                    ']' => self.eat_ret(CloseBracket),
-                    ',' => self.eat_ret(Comma),
-                    '.' => self.eat_ret(Dot),
-                    ';' => self.eat_ret(Semicolon),
-                    'a'..='z' => self.identifier(),
-                    'A'..='Z' => self.identifier(),
-                    '_' => self.identifier(),
-                    '"' => self.str(),
-                    '\'' => self.chr(),
-                    '0'..='9' => self.num(),
-                    '\\' => self.lambda_arg(),
-                    '\n' => {
-                        self.chars.next();
-                        continue;
-                    }
-                    ' ' => {
-                        self.chars.next();
-                        continue;
-                    }
-                    '\t' => {
-                        self.chars.next();
-                        continue;
-                    }
-                    '=' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(CmpEq),
-                        _ => Equal,
-                    },
-                    '|' => match self.eat_peek() {
-                        Some('|') => self.eat_ret(BoolOr),
-                        Some('=') => self.eat_ret(OrEq),
-                        _ => BitOr,
-                    },
-                    '&' => match self.eat_peek() {
-                        Some('&') => self.eat_ret(BoolAnd),
-                        Some('=') => self.eat_ret(AndEq),
-                        _ => BitAnd,
-                    },
-                    '^' => match self.eat_peek() {
-                        Some('^') => self.eat_ret(BoolXor),
-                        Some('=') => self.eat_ret(XorEq),
-                        _ => BitXor,
-                    },
-                    '!' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(CmpNotEq),
-                        _ => BoolNot,
-                    },
-                    '>' => match self.eat_peek() {
-                        Some('>') => match self.eat_peek() {
-                            Some('=') => self.eat_ret(BitShiftRightEq),
-                            _ => BitShiftRight,
-                        },
-                        Some('=') => self.eat_ret(CmpGE),
-                        _ => CmpGT,
-                    },
-                    '<' => match self.eat_peek() {
-                        Some('<') => match self.eat_peek() {
-                            Some('=') => self.eat_ret(BitShiftLeftEq),
-                            _ => BitShiftLeft,
-                        },
-                        Some('=') => self.eat_ret(CmpLE),
-                        _ => CmpLT,
-                    },
-
-                    '+' => match self.eat_peek() {
-                        Some('+') => self.eat_ret(Inc),
-                        Some('=') => self.eat_ret(PlusEq),
-                        _ => Plus,
-                    },
-
-                    '-' => match self.eat_peek() {
-                        Some('-') => self.eat_ret(Dec),
-                        Some('=') => self.eat_ret(MinusEq),
-                        _ => Minus,
-                    },
-
-                    '%' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(ModEq),
-                        _ => Mod,
-                    },
-
-                    '*' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(TimesEq),
-                        _ => Times,
-                    },
-
-                    '/' => match self.eat_peek() {
-                        Some('=') => self.eat_ret(DivEq),
-                        _ => Div,
-                    },
-                    '~' => self.eat_ret(BitNot),
-                    '#' => {
-                        while let Some(c) = self.chars.next() {
-                            match c {
-                                '\n' => break,
-                                _ => (),
-                            }
+            match self.chars.peek()? {
+                c if c.is_ascii_whitespace() => {
+                    self.chars.next();
+                }
+                '#' => {
+                    for c in self.chars.by_ref() {
+                        if c == '\n' {
+                            break;
                         }
-                        continue;
                     }
-
-                    _ => ErrChar(self.chars.next()?),
-                },
-            });
+                    continue;
+                }
+                _ => break,
+            }
         }
+        Some(Token {
+            location: self.location(),
+            token_type: match self.chars.peek()? {
+                '(' => self.eat_ret(OpenParen),
+                ')' => self.eat_ret(CloseParen),
+                '{' => self.eat_ret(OpenBrace),
+                '}' => self.eat_ret(CloseBrace),
+                '[' => self.eat_ret(OpenBracket),
+                ']' => self.eat_ret(CloseBracket),
+                ',' => self.eat_ret(Comma),
+                '.' => self.eat_ret(Dot),
+                ';' => self.eat_ret(Semicolon),
+                'a'..='z' => self.identifier(),
+                'A'..='Z' => self.identifier(),
+                '_' => self.identifier(),
+                '"' => self.str(),
+                '\'' => self.chr(),
+                '0'..='9' => self.num(),
+                '\\' => self.lambda_arg(),
+                '=' => match self.eat_peek() {
+                    Some('=') => self.eat_ret(CmpEq),
+                    _ => Equal,
+                },
+                '|' => match self.eat_peek() {
+                    Some('|') => self.eat_ret(BoolOr),
+                    Some('=') => self.eat_ret(OrEq),
+                    _ => BitOr,
+                },
+                '&' => match self.eat_peek() {
+                    Some('&') => self.eat_ret(BoolAnd),
+                    Some('=') => self.eat_ret(AndEq),
+                    _ => BitAnd,
+                },
+                '^' => match self.eat_peek() {
+                    Some('^') => self.eat_ret(BoolXor),
+                    Some('=') => self.eat_ret(XorEq),
+                    _ => BitXor,
+                },
+                '!' => match self.eat_peek() {
+                    Some('=') => self.eat_ret(CmpNotEq),
+                    _ => BoolNot,
+                },
+                '>' => match self.eat_peek() {
+                    Some('>') => match self.eat_peek() {
+                        Some('=') => self.eat_ret(BitShiftRightEq),
+                        _ => BitShiftRight,
+                    },
+                    Some('=') => self.eat_ret(CmpGE),
+                    _ => CmpGT,
+                },
+                '<' => match self.eat_peek() {
+                    Some('<') => match self.eat_peek() {
+                        Some('=') => self.eat_ret(BitShiftLeftEq),
+                        _ => BitShiftLeft,
+                    },
+                    Some('=') => self.eat_ret(CmpLE),
+                    _ => CmpLT,
+                },
+
+                '+' => match self.eat_peek() {
+                    Some('+') => self.eat_ret(Inc),
+                    Some('=') => self.eat_ret(PlusEq),
+                    _ => Plus,
+                },
+
+                '-' => match self.eat_peek() {
+                    Some('-') => self.eat_ret(Dec),
+                    Some('=') => self.eat_ret(MinusEq),
+                    _ => Minus,
+                },
+
+                '%' => match self.eat_peek() {
+                    Some('=') => self.eat_ret(ModEq),
+                    _ => Mod,
+                },
+
+                '*' => match self.eat_peek() {
+                    Some('=') => self.eat_ret(TimesEq),
+                    _ => Times,
+                },
+
+                '/' => match self.eat_peek() {
+                    Some('=') => self.eat_ret(DivEq),
+                    _ => Div,
+                },
+                '~' => self.eat_ret(BitNot),
+
+                _ => ErrChar(self.chars.next()?),
+            },
+        })
     }
 }
