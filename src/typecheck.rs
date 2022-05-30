@@ -21,6 +21,7 @@ pub struct TypeChecker {
     location: Option<Location>,
     globals: usize,
     allow_raw_func: bool,
+    func_returns: Vec<Option<Type>>,
 }
 
 type TypeError = Vec<String>;
@@ -45,6 +46,7 @@ impl TypeChecker {
             location: None,
             globals: 0,
             allow_raw_func: false,
+            func_returns: Vec::new(),
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
@@ -153,8 +155,42 @@ impl TypeChecker {
             Statement::FromImport(f) => todo!("{:?}", f),
             Statement::Continue(_) => Ok(UNIT),
             Statement::Break(_) => Ok(UNIT),
-            Statement::Return(r) => todo!("{:?}", r),
+            Statement::Return(r) => self.return_(r),
         }
+    }
+
+    fn return_(&mut self, r: &mut Return) -> Result<Type, TypeError> {
+        let rv = match &mut r.body {
+            Some(e) => self.expr(e.as_mut())?,
+            None => UNIT,
+        };
+
+        // This is an Option<Option<Type>>
+        // if outer option is none then we are at global scope
+        // if inner is None we havent derived a type yet
+        match self.func_returns.last() {
+            None if rv == UNIT || rv == INT => (),
+            None => {
+                return Err(self.error(format!(
+                    "Cannot return type {} from non function",
+                    self.system.typename(rv)
+                )))
+            }
+            Some(None) => {
+                let last_idx = self.func_returns.len() - 1;
+                self.func_returns[last_idx] = Some(rv);
+            }
+            Some(Some(v)) if *v == rv => (),
+            Some(Some(v)) => {
+                return Err(self.error(format!(
+                    "Cannot return type {} from function. Return type already encountered is {}",
+                    self.system.typename(rv),
+                    self.system.typename(*v),
+                )))
+            }
+        }
+
+        Ok(rv)
     }
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
@@ -588,13 +624,14 @@ impl TypeChecker {
             args.push(typ);
         }
 
-        if let Some(t) = self.system.match_signature(functype, &args) {
-            let rftyp = self.system.function_type_resolve(functype, t);
-            c.function.as_mut().derived_type = Some(rftyp);
+        //check if we have already memoized a matching signature
+        if let Some(t) = self.system.function_get_resolved(functype, &args) {
+            c.function.as_mut().derived_type = Some(t);
             return Ok(t);
         }
 
         self.openscope();
+        self.func_returns.push(None);
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
@@ -620,6 +657,18 @@ impl TypeChecker {
             .system
             .add_function_signature(functype, func_sig.clone());
         self.closescope();
+        let derived = self.func_returns.pop().unwrap();
+        match derived {
+            None => (),
+            Some(t) if t == rv => (),
+            Some(t) => {
+                return Err(self.error(format!(
+                    "Cannot return type {} from function. Return type already encountered is {}",
+                    self.system.typename(rv),
+                    self.system.typename(t),
+                )))
+            }
+        }
         let rftyp = self.system.function_type_resolve(functype, sig_handle);
         c.function.as_mut().derived_type = Some(rftyp);
         self.openscope();
@@ -668,6 +717,7 @@ impl TypeChecker {
         swap(&mut self.lambda_args, &mut args);
 
         self.openscope();
+        self.func_returns.push(None);
         let rv = match self.expr(lambda.borrow_mut().body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
@@ -682,6 +732,19 @@ impl TypeChecker {
             }
         };
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
+        let derived = self.func_returns.pop().unwrap();
+        match derived {
+            None => (),
+            Some(t) if t == rv => (),
+            Some(t) => {
+                return Err(self.error(format!(
+                    "Cannot return type {} from function. Return type already encountered is {}",
+                    self.system.typename(rv),
+                    self.system.typename(t),
+                )))
+            }
+        }
+
         swap(&mut self.lambda_args, &mut args);
         self.system.add_function_signature(
             functype,

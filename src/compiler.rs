@@ -162,8 +162,18 @@ impl Compiler {
             Statement::FromImport(f) => todo!("{:?}", f),
             Statement::Continue(c) => todo!("{:?}", c),
             Statement::Break(b) => todo!("{:?}", b),
-            Statement::Return(r) => todo!("{:?}", r),
+            Statement::Return(r) => self.return_(r),
         }
+    }
+
+    fn return_(&mut self, r: &Return) {
+        match &r.body {
+            Some(e) => self.expr(e.as_ref()),
+            None => {
+                self.code.push(Value::Uninitialized);
+            }
+        }
+        self.code.return_();
     }
 
     fn expr(&mut self, e: &Expression) {

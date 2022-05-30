@@ -64,14 +64,15 @@ pub struct Signature {
 pub type Type = usize;
 pub const UNIT: Type = 0;
 pub const UNKNOWN_RETURN: Type = 1;
-pub const BUILTIN_FUNCTION: Type = 2;
-pub const NULL: Type = 3;
-pub const PTR: Type = 4;
-pub const BOOL: Type = 5;
-pub const CHAR: Type = 6;
-pub const INT: Type = 7;
-pub const FLOAT: Type = 8;
-pub const STR: Type = 9;
+pub const UNREACHABLE: Type = 2;
+pub const BUILTIN_FUNCTION: Type = 3;
+pub const NULL: Type = 4;
+pub const PTR: Type = 5;
+pub const BOOL: Type = 6;
+pub const CHAR: Type = 7;
+pub const INT: Type = 8;
+pub const FLOAT: Type = 9;
+pub const STR: Type = 10;
 
 impl TypeSystem {
     pub fn new() -> Self {
@@ -92,6 +93,11 @@ impl TypeSystem {
             String::from("UNKNOWN RETURN"),
             TypeEntryType::new_unknown_return(),
             UNKNOWN_RETURN,
+        );
+        self.new_type_with_num(
+            String::from("unreachable"),
+            TypeEntryType::new_unit(),
+            UNREACHABLE,
         );
         self.new_type_with_num(
             String::from("builtin function"),
@@ -335,26 +341,37 @@ impl TypeSystem {
         }
     }
 
-    pub fn match_signature(&self, func: Type, inputs: &Vec<Type>) -> Option<Type> {
-        for arg in inputs {
-            if *arg == UNKNOWN_RETURN {
-                return Some(UNKNOWN_RETURN);
-            }
-        }
+    pub fn function_get_resolved(&self, func: Type, args: &Vec<Type>) -> Option<Type> {
         let ft = match &self.types[func].te_type {
             TypeEntryType::FunctionType(ft) => ft,
             _ => panic!("trying to match a signatures with a non function"),
         };
         for typ in ft.resolved_types.iter() {
             if let TypeEntryType::ResolvedFunctionType(rft) = &self.types[*typ].te_type {
-                if &rft.signature.inputs == inputs {
-                    return Some(rft.signature.output);
+                if &rft.signature.inputs == args {
+                    return Some(*typ);
                 }
             } else {
                 unreachable!()
             }
         }
         None
+    }
+
+    pub fn match_signature(&self, func: Type, inputs: &Vec<Type>) -> Option<Type> {
+        if inputs.iter().any(|&a| a == UNKNOWN_RETURN) {
+            return Some(UNKNOWN_RETURN);
+        }
+        match self.function_get_resolved(func, inputs) {
+            None => None,
+            Some(t) => {
+                if let TypeEntryType::ResolvedFunctionType(rft) = &self.types[t].te_type {
+                    Some(rft.signature.output)
+                } else {
+                    unreachable!()
+                }
+            }
+        }
     }
 
     pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> usize {
