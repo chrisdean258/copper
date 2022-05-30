@@ -1,5 +1,6 @@
 use crate::builtins::BuiltinFunction;
 use crate::location::Location;
+use crate::parser;
 use crate::parser::ParseTree;
 use crate::parser::*;
 use crate::typesystem;
@@ -14,7 +15,7 @@ pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     func_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
-    type_to_func: HashMap<Type, Rc<RefCell<Function>>>,
+    type_to_func: HashMap<Type, Rc<RefCell<parser::Function>>>,
     type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
     allow_insert: Option<Type>,
     lambda_args: Vec<Type>,
@@ -462,7 +463,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         Ok(return_type)
     }
 
-    fn function(&mut self, f: &mut Rc<RefCell<Function>>) -> Result<Type, TypeError> {
+    fn function(&mut self, f: &mut Rc<RefCell<parser::Function>>) -> Result<Type, TypeError> {
         let typ = match f.borrow().name.clone() {
             Some(s) => {
                 let rv = self.system.function_type(s.clone());
@@ -564,7 +565,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
 
     fn call_function(
         &mut self,
-        function: Rc<RefCell<Function>>,
+        function: Rc<RefCell<parser::Function>>,
         functype: Type,
         args: Vec<Type>,
         funcloc: Location,
@@ -595,7 +596,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
 
     fn call_function_int(
         &mut self,
-        function: Rc<RefCell<Function>>,
+        function: Rc<RefCell<parser::Function>>,
         functype: Type,
         mut args: Vec<Type>,
         funcloc: Location,
