@@ -471,7 +471,7 @@ impl ParseTree {
                         }
                     }
                 }
-                _ => return Err(unexpected(&token)),
+                _ => return Err(unexpected(token)),
             }
         }
 
@@ -815,7 +815,7 @@ impl ParseTree {
                 lexer.next();
                 Some(rv)
             }
-            _ if must_be_named => return Err(unexpected(&token)),
+            _ if must_be_named => return Err(unexpected(token)),
             _ => None,
         };
         expect!(lexer, TokenType::OpenParen);
@@ -854,11 +854,11 @@ impl ParseTree {
 
         Ok(Expression {
             derived_type: None,
-            location: loctoken.location.clone(),
+            location: loctoken.location,
             etype: ExpressionType::Function(Rc::new(RefCell::new(Function {
                 argnames: args,
                 body: Box::new(body),
-                name: name.clone(),
+                name,
                 default_args,
                 locals: None,
             }))),
@@ -925,17 +925,17 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, String> {
-        if let Some(token) = lexer.peek().map(|t| t.clone()) {
+        if let Some(token) = lexer.peek().cloned() {
             let mut rv = match &token.token_type {
                 TokenType::Identifier(i) => Ok(Expression {
                     derived_type: None,
-                    location: lexer.next().unwrap().location.clone(),
+                    location: lexer.next().unwrap().location,
                     etype: ExpressionType::RefExpr(RefExpr {
                         name: i.clone(),
                         is_decl: false,
                     }),
                 }),
-                TokenType::LambdaArg(a) if self.max_arg.len() > 0 => {
+                TokenType::LambdaArg(a) if !self.max_arg.is_empty() => {
                     if *a + 1 > *self.max_arg.last().unwrap() {
                         *self.max_arg.last_mut().unwrap() = *a + 1;
                     }
@@ -946,12 +946,12 @@ impl ParseTree {
                         etype: ExpressionType::LambdaArg(LambdaArg { number: *a }),
                     })
                 }
-                TokenType::LambdaArg(_) if self.max_arg.len() == 0 => self.parse_lambda(lexer),
+                TokenType::LambdaArg(_) if self.max_arg.is_empty() => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression {
                     derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Immediate(Immediate {
-                        value: Value::Char(c.clone() as u8),
+                        value: Value::Char(*c as u8),
                     }),
                 }),
                 TokenType::Str(s) => Ok(Expression {
@@ -995,13 +995,8 @@ impl ParseTree {
                 TokenType::If => self.parse_if(lexer),
                 _ => Err(unexpected(&token)),
             }?;
-            loop {
-                match lexer.peek().map(|x| &x.token_type) {
-                    Some(TokenType::Dot) => {
-                        rv = self.parse_dotted_lookup(lexer, rv)?;
-                    }
-                    _ => break,
-                }
+            while let Some(TokenType::Dot) = lexer.peek().map(|x| &x.token_type) {
+                rv = self.parse_dotted_lookup(lexer, rv)?;
             }
             Ok(rv)
         } else {
