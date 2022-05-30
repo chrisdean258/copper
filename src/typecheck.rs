@@ -75,18 +75,17 @@ impl TypeChecker {
         }
         self.globals += self.scopes[1].borrow().len();
         p.globals = Some(self.scopes[1].borrow().len());
-        if results.len() > 0 {
-            Err(results.join("\n"))
-        } else {
+        if results.is_empty() {
             Ok(())
+        } else {
+            Err(results.join("\n"))
         }
     }
 
     fn lookup_scope(&mut self, name: &str) -> Option<Type> {
         for scope in self.scopes.iter().rev() {
-            match scope.borrow().get(name) {
-                Some(t) => return Some(*t),
-                None => (),
+            if let Some(t) = scope.borrow().get(name) {
+                return Some(*t);
             }
         }
         None
@@ -94,9 +93,8 @@ impl TypeChecker {
 
     fn lookup_func_scope(&mut self, name: &str) -> Option<Type> {
         for scope in self.func_scopes.iter().rev() {
-            match scope.borrow().get(name) {
-                Some(t) => return Some(*t),
-                None => (),
+            if let Some(t) = scope.borrow().get(name) {
+                return Some(*t);
             }
         }
         None
@@ -119,12 +117,9 @@ impl TypeChecker {
     fn func_mangle_name_scope_insert(&mut self, name: &str, sig: Signature) {
         let mut idx = None;
         for (i, scope) in self.func_scopes.iter().rev().enumerate() {
-            match scope.borrow().get(name) {
-                Some(_) => {
-                    idx = Some(self.scopes.len() - i - 1);
-                    break;
-                }
-                None => (),
+            if scope.borrow().get(name).is_some() {
+                idx = Some(self.scopes.len() - i - 1);
+                break;
             }
         }
         let idx = idx.expect("If not this is bug");
@@ -141,7 +136,7 @@ impl TypeChecker {
 
     fn closescope(&mut self) -> usize {
         self.func_scopes.pop();
-        assert!(self.scopes.len() > 0);
+        assert!(!self.scopes.is_empty());
         let rv = self.scopes.last().unwrap().borrow().len();
         self.scopes.pop();
         rv
@@ -228,35 +223,35 @@ impl TypeChecker {
     fn binop(&mut self, b: &mut BinOp) -> Result<Type, TypeError> {
         let ltype = self.expr(b.lhs.as_mut())?;
         let rtype = self.expr(b.rhs.as_mut())?;
-        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or(
+        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(|| 
             self.error(format!("Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-                    self.system.typename(ltype), b.op, self.system.typename(rtype))))?;
+self.system.typename(ltype), b.op, self.system.typename(rtype)))
+        )?;
+
         Ok(rv)
     }
 
     fn preunop(&mut self, p: &mut PreUnOp) -> Result<Type, TypeError> {
         let rhstype = self.expr(p.rhs.as_mut())?;
-        let rv = self
-            .system
-            .lookup_preunop(p.op, rhstype)
-            .ok_or(self.error(format!(
+        let rv = self.system.lookup_preunop(p.op, rhstype).ok_or_else(|| {
+            self.error(format!(
                 "Cannot apply unary operation `{}` to `{}`.",
                 p.op,
                 self.system.typename(rhstype)
-            )))?;
+            ))
+        })?;
         Ok(rv)
     }
 
     fn postunop(&mut self, p: &mut PostUnOp) -> Result<Type, TypeError> {
         let lhstype = self.expr(p.lhs.as_mut())?;
-        let rv = self
-            .system
-            .lookup_postunop(p.op, lhstype)
-            .ok_or(self.error(format!(
+        let rv = self.system.lookup_postunop(p.op, lhstype).ok_or_else(|| {
+            self.error(format!(
                 "Cannot apply unary operation `{}` to `{}`.",
                 p.op,
                 self.system.typename(lhstype)
-            )))?;
+            ))
+        })?;
         Ok(rv)
     }
 
@@ -303,12 +298,14 @@ impl TypeChecker {
         self.allow_insert = None;
         self.system
             .lookup_assign(a.op, lhstype, rhstype)
-            .ok_or(self.error(format!(
-                "Cannot assign type `{}` {} `{}`",
-                self.system.typename(lhstype),
-                a.op,
-                self.system.typename(rhstype)
-            )))
+            .ok_or_else(|| {
+                self.error(format!(
+                    "Cannot assign type `{}` {} `{}`",
+                    self.system.typename(lhstype),
+                    a.op,
+                    self.system.typename(rhstype)
+                ))
+            })
     }
 
     fn immediate(&mut self, i: &mut Immediate) -> Result<Type, TypeError> {
@@ -450,9 +447,9 @@ impl TypeChecker {
             Some(t) => t,
         };
         if i.args.len() != 1 {
-            return Err(self.error(format!(
-                "Index expression requires 1 argument of type `int`",
-            )));
+            return Err(
+                self.error("Index expression requires 1 argument of type `int`".to_string())
+            );
         }
         let idx_type = self.expr(&mut i.args[0])?;
         if idx_type != INT {
@@ -488,7 +485,7 @@ impl TypeChecker {
 
     fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
         assert!(
-            self.lambda_args.len() > 0,
+            !self.lambda_args.is_empty(),
             "Trying to derive type of lambda arg in non lambda. This is a bug"
         );
         Ok(self.lambda_args[l.number])
@@ -653,9 +650,7 @@ impl TypeChecker {
             inputs: args.clone(),
             output: rv,
         };
-        let sig_handle = self
-            .system
-            .add_function_signature(functype, func_sig.clone());
+        let sig_handle = self.system.add_function_signature(functype, func_sig);
         self.closescope();
         let derived = self.func_returns.pop().unwrap();
         match derived {
