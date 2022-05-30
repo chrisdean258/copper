@@ -176,14 +176,14 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     pub fn new(label: &str, lines: T) -> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
-            chars: CharIter::new(lines).into_iter(),
+            chars: CharIter::new(lines),
         }
     }
 
     pub fn new_with_lineno(label: &str, lines: T, lineno: usize) -> Lexer<T> {
         Lexer {
             label: Rc::new(label.into()),
-            chars: CharIter::new_with_lineno(lines, lineno).into_iter(),
+            chars: CharIter::new_with_lineno(lines, lineno),
         }
     }
 

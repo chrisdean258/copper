@@ -89,7 +89,7 @@ impl Compiler {
     }
 
     fn close_scope(&mut self) {
-        assert!(self.scopes.len() >= 1);
+        assert!(!self.scopes.is_empty());
         self.num_locals.pop();
         self.scopes.pop();
         self.func_scopes.pop();
@@ -98,13 +98,13 @@ impl Compiler {
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
         assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last_mut().unwrap();
-        assert!(scope.insert(name.clone(), what).is_none());
+        assert!(scope.insert(name, what).is_none());
     }
 
     fn replace_scope(&mut self, name: String, what: MemoryLocation) {
         assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last_mut().unwrap();
-        assert!(scope.insert(name.clone(), what).is_some());
+        assert!(scope.insert(name, what).is_some());
     }
 
     fn next_local(&mut self) -> MemoryLocation {
@@ -320,15 +320,13 @@ impl Compiler {
         }
         let mut func = None;
         for scope in self.func_scopes.iter().rev() {
-            match scope.get(&r.name) {
-                Some(f) => {
-                    func = Some(f.clone());
-                    break;
-                }
-                None => (),
+            if let Some(f) = scope.get(&r.name) {
+                func = Some(f.clone());
+                break;
             }
         }
-        let func = func.expect(&format!("Could not find a func `{}` in func_scope", r.name));
+        let func =
+            func.unwrap_or_else(|| panic!("Could not find a func `{}` in func_scope", r.name));
 
         self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
@@ -386,7 +384,7 @@ impl Compiler {
     fn forexpr(&mut self, _f: &For) {}
 
     fn ifexpr(&mut self, i: &If) {
-        if i.and_bodies.len() > 0 {
+        if !i.and_bodies.is_empty() {
             self.code.push(Value::Uninitialized); // If return value
             self.expr(i.condition.as_ref());
             self.code.dup();
@@ -560,11 +558,12 @@ impl Compiler {
     }
 
     fn lambda(&mut self, l: Rc<RefCell<Lambda>>, sigs: Vec<Signature>) {
-        for sig in sigs.iter() {
-            let addr = self.single_lambda(&l.borrow(), sig);
-            self.code.push(Value::Ptr(addr));
-            break;
-        }
+        let sig = &sigs[0];
+        // for sig in sigs.iter() {
+        let addr = self.single_lambda(&l.borrow(), sig);
+        self.code.push(Value::Ptr(addr));
+        // break;
+        // }
     }
 
     fn single_lambda(&mut self, l: &Lambda, sig: &Signature) -> usize {
