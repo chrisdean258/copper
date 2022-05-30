@@ -18,6 +18,10 @@ use std::fs::File;
 use std::io::{self, BufRead};
 
 fn main() {
+    std::process::exit(real_main() as i32)
+}
+
+fn real_main() -> i64 {
     let args: Vec<String> = env::args().collect();
     let mut typecheck_only = false;
     let mut file_or_cmd: Option<&str> = None;
@@ -39,21 +43,24 @@ fn main() {
     let rv = match file_or_cmd {
         Some(cmd) if is_cmd => eval_cmd(cmd, typecheck_only),
         Some(filename) => eval_file(filename, typecheck_only),
-        None if use_stdin => {
-            match eval_stdin(typecheck_only) {
-                Ok(_) => (),
-                Err(s) => eprintln!("{}", s),
+        None if use_stdin => match eval_stdin(typecheck_only) {
+            Ok(i) => return i,
+            Err(s) => {
+                eprintln!("{}", s);
+                return 1;
             }
-            return;
-        }
+        },
         None => {
-            repl(typecheck_only);
-            return;
+            return repl(typecheck_only);
         }
     };
 
-    if let Err(s) = rv {
-        eprintln!("{}", s);
+    match rv {
+        Err(s) => {
+            eprintln!("{}", s);
+            1
+        }
+        Ok(i) => i,
     }
 }
 
@@ -77,7 +84,7 @@ fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Eva
     Ok((typechecker, compiler, evaluator))
 }
 
-fn repl(typecheck_only: bool) {
+fn repl(typecheck_only: bool) -> i64 {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
     let mut typechecker;
@@ -92,7 +99,7 @@ fn repl(typecheck_only: bool) {
         }
         Err(e) => {
             eprintln!("{}", e);
-            return;
+            return 1;
         }
     }
 
@@ -130,12 +137,13 @@ fn repl(typecheck_only: bool) {
             }
         }
     }
+    0
 }
 
 fn eval_lexer<T: Iterator<Item = String>>(
     lexer: lex::Lexer<T>,
     typecheck_only: bool,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     let mut typechecker = typecheck::TypeChecker::new();
     let mut evaluator = eval::Evaluator::new();
     let mut compiler = compiler::Compiler::new();
@@ -149,7 +157,7 @@ fn eval_lexer<T: Iterator<Item = String>>(
     typechecker.typecheck(&mut tree)?;
 
     if typecheck_only {
-        return Ok(());
+        return Ok(0);
     }
 
     let (s_code, s_strings, s_entry) =
@@ -158,23 +166,24 @@ fn eval_lexer<T: Iterator<Item = String>>(
         compiler.compile("__main__".to_string(), &tree, &typechecker.system);
 
     evaluator.eval(s_code, s_strings, s_entry)?;
-    evaluator.eval(code, strings, entry)?;
-
-    Ok(())
+    Ok(match evaluator.eval(code, strings, entry)? {
+        value::Value::Int(i) => i,
+        _ => 0,
+    })
 }
 
-fn eval_stdin(typecheck_only: bool) -> Result<(), String> {
+fn eval_stdin(typecheck_only: bool) -> Result<i64, String> {
     let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
     eval_lexer(lex::Lexer::new("<stdin>", &mut lines), typecheck_only)
 }
 
-fn eval_file(filename: &str, typecheck_only: bool) -> Result<(), String> {
+fn eval_file(filename: &str, typecheck_only: bool) -> Result<i64, String> {
     let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     eval_lexer(lex::Lexer::new(filename, &mut lines), typecheck_only)
 }
 
-fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
+fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<i64, String> {
     let mut lines = vec![cmd.into()].into_iter();
     let lexer = lex::Lexer::new("<cmdline>", &mut lines);
     eval_lexer(lexer, typecheck_only)

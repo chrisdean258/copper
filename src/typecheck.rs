@@ -652,7 +652,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             output: rv,
         };
         let sig_handle = self.system.add_function_signature(functype, func_sig);
-        self.closescope();
+        function.borrow_mut().locals = Some(self.closescope());
         let derived = self.func_returns.pop().unwrap();
         match derived {
             None => (),
@@ -667,27 +667,30 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         }
         let rftyp = self.system.function_type_resolve(functype, sig_handle);
         c.function.as_mut().derived_type = Some(rftyp);
-        self.openscope();
-        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
-            self.insert_scope(name, *typ);
+
+        if !args.is_empty() {
+            self.openscope();
+            for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
+                self.insert_scope(name, *typ);
+            }
+            match self.expr(function.borrow_mut().body.as_mut()) {
+                Ok(t) if t == rv => t,
+                Ok(t) => {
+                    return Err(vec![
+                        format!(
+                            "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
+                            funcloc, self.system.typename(t), self.system.typename(rv)
+                        ),
+                        self.errmsg("Originating with this function call".to_string())
+                    ]);
+                }
+                Err(mut s) => {
+                    s.push(self.errmsg("Originating with this function call".to_string()));
+                    return Err(s);
+                }
+            };
+            function.borrow_mut().locals = Some(self.closescope());
         }
-        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
-            Ok(t) if t == rv => t,
-            Ok(t) => {
-                return Err(vec![
-                    format!(
-                        "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
-                        funcloc, self.system.typename(t), self.system.typename(rv)
-                    ),
-                    self.errmsg("Originating with this function call".to_string())
-                ]);
-            }
-            Err(mut s) => {
-                s.push(self.errmsg("Originating with this function call".to_string()));
-                return Err(s);
-            }
-        };
-        function.borrow_mut().locals = Some(self.closescope());
         Ok(rv)
     }
 
