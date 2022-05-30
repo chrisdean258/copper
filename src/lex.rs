@@ -209,13 +209,10 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn num(&mut self) -> TokenType {
         use TokenType::{Float, Int};
         let mut chars = Vec::new();
-        loop {
-            match self.chars.peek() {
-                Some(c) => match c {
-                    '0'..='9' => chars.push(self.chars.next().unwrap()),
-                    _ => break,
-                },
-                None => break,
+        while let Some(c) = self.chars.peek() {
+            match c {
+                '0'..='9' => chars.push(self.chars.next().unwrap()),
+                _ => break,
             }
         }
         if self.chars.peek() != Some('.') {
@@ -224,17 +221,14 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
         self.chars.next();
         chars.push('.');
-        loop {
-            match self.chars.peek() {
-                Some(c) => match c {
-                    '0'..='9' => chars.push(self.chars.next().unwrap()),
-                    _ => break,
-                },
-                None => break,
+        while let Some(c) = self.chars.peek() {
+            match c {
+                '0'..='9' => chars.push(self.chars.next().unwrap()),
+                _ => break,
             }
         }
         let s: String = chars.into_iter().collect();
-        return Float(s.parse().unwrap());
+        Float(s.parse().unwrap())
     }
 
     fn identifier(&mut self) -> TokenType {
@@ -293,7 +287,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
             }
         };
         self.expect_char('\'');
-        return Char(c);
+        Char(c)
     }
 
     fn str(&mut self) -> TokenType {
@@ -333,13 +327,13 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
         let mut chars = String::new();
 
-        loop {
-            match self.chars.peek().unwrap() {
+        while let Some(c) = self.chars.peek() {
+            match c {
                 '0'..='9' => chars.push(self.chars.next().unwrap()),
                 _ => break,
             }
         }
-        if chars.len() == 0 {
+        if chars.is_empty() {
             TokenType::Lambda
         } else {
             TokenType::LambdaArg(chars.parse().expect("Expected integer"))
@@ -349,7 +343,6 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn lex_token(&mut self) -> Option<Token> {
         use TokenType::*;
         loop {
-            self.chars.peek();
             break Some(Token {
                 location: self.location(),
                 token_type: match self.chars.peek()? {
