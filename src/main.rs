@@ -52,10 +52,9 @@ fn main() {
         }
     };
 
-    match rv {
-        Err(s) => eprintln!("{}", s),
-        _ => (),
-    };
+    if let Err(s) = rv {
+        eprintln!("{}", s);
+    }
 }
 
 fn find_stdlib() -> String {
@@ -69,9 +68,7 @@ fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
     let mut tree = parser::parse(lexer)?;
 
     let mut typechecker = typecheck::TypeChecker::new();
-    typechecker
-        .typecheck(&mut tree)
-        .map_err(|s| s.to_string())?;
+    typechecker.typecheck(&mut tree)?;
     if !typecheck_only {
         let mut _evaluator = eval::Evaluator::new();
         // _evaluator.eval(code)?;
@@ -128,12 +125,9 @@ fn repl(typecheck_only: bool) {
                         continue;
                     }
                 };
-                match typechecker.typecheck(&mut tree) {
-                    Ok(()) => (),
-                    Err(s) => {
-                        eprintln!("{}", s.to_string());
-                        continue;
-                    }
+                if let Err(s) = typechecker.typecheck(&mut tree) {
+                    eprintln!("{}", s);
+                    continue;
                 };
                 if typecheck_only {
                     continue;
@@ -192,5 +186,5 @@ fn eval_stdin(typecheck_only: bool) -> Result<(), String> {
 fn eval_file(filename: &str, typecheck_only: bool) -> Result<(), String> {
     let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    eval_lexer(lex::Lexer::new(&filename, &mut lines), typecheck_only)
+    eval_lexer(lex::Lexer::new(filename, &mut lines), typecheck_only)
 }

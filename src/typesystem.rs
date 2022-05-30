@@ -226,9 +226,8 @@ impl TypeSystem {
     }
 
     pub fn list_type(&mut self, t: Type) -> Type {
-        match self.types[t].list_type {
-            Some(t) => return t,
-            None => (),
+        if let Some(t) = self.types[t].list_type {
+            return t;
         }
         let new_name = format!("list<{}>", self.typename(t));
         let list_type = self.new_type(new_name, TypeEntryType::Container(t));
@@ -250,7 +249,7 @@ impl TypeSystem {
             },
         );
 
-        return list_type;
+        list_type
     }
 
     pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
@@ -341,14 +340,14 @@ impl TypeSystem {
         }
     }
 
-    pub fn function_get_resolved(&self, func: Type, args: &Vec<Type>) -> Option<Type> {
+    pub fn function_get_resolved(&self, func: Type, args: &[Type]) -> Option<Type> {
         let ft = match &self.types[func].te_type {
             TypeEntryType::Function(ft) => ft,
             _ => panic!("trying to match a signatures with a non function"),
         };
         for typ in ft.resolved_types.iter() {
             if let TypeEntryType::ResolvedFunction(rft) = &self.types[*typ].te_type {
-                if &rft.signature.inputs == args {
+                if rft.signature.inputs == args {
                     return Some(*typ);
                 }
             } else {
@@ -358,7 +357,7 @@ impl TypeSystem {
         None
     }
 
-    pub fn match_signature(&self, func: Type, inputs: &Vec<Type>) -> Option<Type> {
+    pub fn match_signature(&self, func: Type, inputs: &[Type]) -> Option<Type> {
         if inputs.iter().any(|&a| a == UNKNOWN_RETURN) {
             return Some(UNKNOWN_RETURN);
         }
@@ -385,11 +384,10 @@ impl TypeSystem {
     }
 
     pub fn func_type_from_sig(&mut self, sig: &Signature) -> Type {
-        match self.func_type_cache.get(sig) {
-            Some(val) => return *val,
-            None => (),
+        if let Some(val) = self.func_type_cache.get(sig) {
+            return *val;
         }
-        let name = format!("function{}", self.format_signature(&sig));
+        let name = format!("function{}", self.format_signature(sig));
         let rv = self.new_type(
             name,
             TypeEntryType::ResolvedFunction(ResolvedFunction {
@@ -451,9 +449,9 @@ impl TypeSystem {
         format!("({}) -> {}", arg_types, self.typename(sig.output))
     }
 
-    pub fn format_args(&self, args: &Vec<Type>) -> String {
+    pub fn format_args(&self, args: &[Type]) -> String {
         args.iter()
-            .map(|t| self.typename(*t).clone())
+            .map(|t| self.typename(*t))
             .collect::<Vec<String>>()
             .join(", ")
     }
