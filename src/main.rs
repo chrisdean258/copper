@@ -61,21 +61,6 @@ fn find_stdlib() -> String {
     format!("{}/git/copper/stdlib/stdlib.cu", env::var("HOME").unwrap())
 }
 
-fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
-    let mut lines = vec![cmd.into()].into_iter();
-    let lexer = lex::Lexer::new("<cmdline>", &mut lines);
-
-    let mut tree = parser::parse(lexer)?;
-
-    let mut typechecker = typecheck::TypeChecker::new();
-    typechecker.typecheck(&mut tree)?;
-    if !typecheck_only {
-        let mut _evaluator = eval::Evaluator::new();
-        // _evaluator.eval(code)?;
-    }
-    Ok(())
-}
-
 fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Evaluator), String> {
     let mut typechecker = typecheck::TypeChecker::new();
     let mut evaluator = eval::Evaluator::new();
@@ -187,4 +172,10 @@ fn eval_file(filename: &str, typecheck_only: bool) -> Result<(), String> {
     let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
     let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
     eval_lexer(lex::Lexer::new(filename, &mut lines), typecheck_only)
+}
+
+fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<(), String> {
+    let mut lines = vec![cmd.into()].into_iter();
+    let lexer = lex::Lexer::new("<cmdline>", &mut lines);
+    eval_lexer(lexer, typecheck_only)
 }
