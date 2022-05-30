@@ -88,8 +88,8 @@ impl CodeBuilder {
         rv + memory::CODE
     }
 
-    pub fn close_function_and_patch(&mut self, patchpoints: &Vec<usize>) -> usize {
-        assert!(self.active_functions.len() > 0);
+    pub fn close_function_and_patch(&mut self, patchpoints: &[usize]) -> usize {
+        assert!(!self.active_functions.is_empty());
         let mut f = self.active_functions.pop().unwrap();
         let rv = self.finished_functions.len();
 
@@ -107,7 +107,7 @@ impl CodeBuilder {
 
     pub fn emit(&mut self, op: Operation, types: Vec<Type>, value: Option<Value>) -> usize {
         assert!(op.is_machineop(), "{}", op);
-        assert!(self.active_functions.len() > 0);
+        assert!(!self.active_functions.is_empty());
         let code = &mut self.active_functions.last_mut().unwrap().code;
         code.push(Instruction { op, types, value });
         code.len() - 1
@@ -118,7 +118,7 @@ impl CodeBuilder {
     }
 
     pub fn next_function_relative_addr(&self) -> usize {
-        assert!(self.active_functions.len() > 0);
+        assert!(!self.active_functions.is_empty());
         self.active_functions.last().unwrap().code.len()
     }
 
@@ -195,7 +195,7 @@ impl CodeBuilder {
     }
 
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
-        assert!(self.active_functions.len() >= 1);
+        assert!(!self.active_functions.is_empty());
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
             op: Operation::Push,
             types: vec![],
@@ -204,7 +204,7 @@ impl CodeBuilder {
     }
 
     pub fn backpatch_jump_rel(&mut self, jump_addr: usize, to: isize) {
-        assert!(self.active_functions.len() >= 1);
+        assert!(!self.active_functions.is_empty());
         let offset = to - jump_addr as isize;
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
             op: Operation::Push,
