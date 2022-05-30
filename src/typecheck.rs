@@ -23,6 +23,7 @@ pub struct TypeChecker {
     globals: usize,
     allow_raw_func: bool,
     func_returns: Vec<Option<Type>>,
+    need_recheck: bool,
 }
 
 type TypeError = Vec<String>;
@@ -48,6 +49,7 @@ impl TypeChecker {
             globals: 0,
             allow_raw_func: false,
             func_returns: Vec::new(),
+            need_recheck: false,
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
@@ -218,6 +220,9 @@ impl TypeChecker {
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
         }?;
         e.derived_type = Some(rv);
+        if rv == UNKNOWN_RETURN {
+            self.need_recheck = true;
+        }
         Ok(rv)
     }
 
@@ -634,6 +639,8 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             self.insert_scope(name, *typ);
         }
 
+        let save = self.need_recheck;
+        self.need_recheck = false;
         let rv = match self.expr(function.borrow_mut().body.as_mut()) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
@@ -668,7 +675,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         let rftyp = self.system.function_type_resolve(functype, sig_handle);
         c.function.as_mut().derived_type = Some(rftyp);
 
-        if !args.is_empty() {
+        if self.need_recheck {
             self.openscope();
             for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
                 self.insert_scope(name, *typ);
@@ -691,6 +698,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             };
             function.borrow_mut().locals = Some(self.closescope());
         }
+        self.need_recheck = save;
         Ok(rv)
     }
 
