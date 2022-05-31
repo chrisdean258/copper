@@ -33,21 +33,19 @@ impl Evaluator {
         entry: usize,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
-        macro_rules! pop {
-            ($typ:path) => {
-                match self.memory.pop() {
-                    $typ(a) => a,
-                    t => unreachable!("Trying to pop {} found {:?}", stringify!($typ), t),
-                }
-            };
-        }
 
         macro_rules! as_type {
             ($ex:expr, $typ:path) => {
                 match $ex {
                     $typ(a) => a,
-                    t => unreachable!("Trying to pop {} found {:?}", stringify!($typ), t),
+                    t => unreachable!("Trying to interpret {:?} as {}", t, stringify!($typ)),
                 }
+            };
+        }
+
+        macro_rules! pop {
+            ($typ:path) => {
+                as_type!(self.memory.pop(), $typ)
             };
         }
 
@@ -105,7 +103,7 @@ impl Evaluator {
                         );
                     }
                 }
-                Operation::Push => self.memory.push(self.code[self.ip - CODE].value.unwrap()),
+                Operation::Push => self.memory.push(self.code[self.ip - CODE].value),
                 Operation::Pop => {
                     self.memory.pop();
                 }
@@ -315,7 +313,6 @@ impl Evaluator {
                             unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
                         }
                     };
-                    // println!("Got this value from binop plus {:?}", val);
                     self.memory.push(val);
                 }
                 Operation::Times => {
@@ -348,7 +345,7 @@ impl Evaluator {
                 Operation::BitNot => {
                     do_unop!(!, Int, Char);
                 }
-                t => unreachable!("{}", t),
+                t => unreachable!("Trying to interpret {}", t),
             }
             self.ip += 1;
         }

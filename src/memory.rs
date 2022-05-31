@@ -78,7 +78,7 @@ impl Memory {
         self.stack.push(*self.stack.last().unwrap());
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn swap(&mut self) {
         debug_assert!(self.stack.len() >= 2);
         let len = self.stack.len();
@@ -95,7 +95,7 @@ impl Memory {
         STACK + self.stack.len()
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn memcpy(&mut self, dst: usize, src: usize, len: usize) {
         for i in 0..len {
             self[dst + i] = self[src + i];
