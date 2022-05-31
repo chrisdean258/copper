@@ -84,7 +84,9 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        // for (i, instr) in code.iter().enumerate() { eprintln!("0x{:08x}: {}", i + CODE, instr); }
+        // for (i, instr) in code.iter().enumerate() {
+        // eprintln!("0x{:08x}: {}", i + CODE, instr);
+        // }
         self.code = code;
         while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);

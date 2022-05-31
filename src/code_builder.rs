@@ -82,10 +82,7 @@ impl CodeBuilder {
 
     pub fn close_function(&mut self) -> usize {
         debug_assert!(!self.active_functions.is_empty());
-        let mut f = self.active_functions.pop().unwrap();
-        let rv = self.finished_functions.len();
-        self.finished_functions.append(&mut f.code);
-        rv + memory::CODE
+        self.close_function_and_patch(&[])
     }
 
     pub fn close_function_and_patch(&mut self, patchpoints: &[usize]) -> usize {

@@ -45,18 +45,17 @@ impl Memory {
         self.strings.len() - 1
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, val: Value) {
-        // println!("Pushing {:?}", val);
         self.stack.push(val);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn reserve(&mut self, count: usize) {
         self.stack
             .resize(self.stack.len() + count, Value::Uninitialized)
@@ -72,30 +71,30 @@ impl Memory {
         self.stack[idx] = val;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn dup(&mut self) {
         debug_assert!(!self.stack.is_empty());
         self.stack.push(*self.stack.last().unwrap());
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn swap(&mut self) {
         debug_assert!(self.stack.len() >= 2);
         let len = self.stack.len();
         self.stack.swap(len - 1, len - 2);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn truncate_stack(&mut self, ptr: usize) {
         self.stack.truncate(ptr - STACK);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn memcpy(&mut self, dst: usize, src: usize, len: usize) {
         for i in 0..len {
             self[dst + i] = self[src + i];
