@@ -35,7 +35,7 @@ impl Memory {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn add_strings(&mut self, strings: &mut Vec<String>) {
         self.strings.append(strings);
     }
@@ -62,7 +62,8 @@ impl Memory {
     }
 
     pub fn rotate(&mut self, count: usize) {
-        debug_assert!(self.stack.len() >= count && count >= 2);
+        debug_assert!(self.stack.len() >= count);
+        debug_assert!(count >= 2);
         let val = *self.stack.last().unwrap();
         let idx = self.stack.len() - count as usize;
         for i in (idx..(self.stack.len() - 1)).rev() {
