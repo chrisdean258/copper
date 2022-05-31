@@ -30,6 +30,7 @@ pub struct Compiler {
     strings: HashMap<String, usize>,
     num_locals: Vec<usize>,
     recursive_calls: Vec<usize>,
+    breaks: Vec<usize>,
 }
 
 impl Compiler {
@@ -55,6 +56,7 @@ impl Compiler {
             strings: HashMap::new(),
             num_locals: vec![0, 0],
             recursive_calls: Vec::new(),
+            breaks: Vec::new(),
         }
     }
 
@@ -161,7 +163,7 @@ impl Compiler {
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
             Statement::Continue(c) => todo!("{:?}", c),
-            Statement::Break(b) => todo!("{:?}", b),
+            Statement::Break(b) => self.break_(b),
             Statement::Return(r) => self.return_(r),
         }
     }
@@ -174,6 +176,10 @@ impl Compiler {
             }
         }
         self.code.return_();
+    }
+
+    fn break_(&mut self, _b: &Break) {
+        self.breaks.push(self.code.jump_relative(0));
     }
 
     fn expr(&mut self, e: &Expression) {
@@ -365,12 +371,18 @@ impl Compiler {
     fn whileexpr(&mut self, w: &While) {
         let start = self.code.jump_relative(0);
         let body = self.code.next_function_relative_addr();
+        let mut breaks = Vec::new();
+        swap(&mut self.breaks, &mut breaks);
         self.expr(w.body.as_ref());
+        swap(&mut self.breaks, &mut breaks);
         let stop = self.code.next_function_relative_addr();
         self.code.backpatch_jump_rel(start, stop as isize);
         self.expr(w.condition.as_ref());
         self.code.jump_relative_if(body as isize);
-        self.code.push(Value::Uninitialized);
+        let end = self.code.push(Value::Uninitialized);
+        for addr in breaks {
+            self.code.backpatch_jump_rel(addr, end as isize);
+        }
     }
 
     fn forexpr(&mut self, _f: &For) {}

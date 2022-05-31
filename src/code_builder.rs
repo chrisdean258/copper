@@ -56,7 +56,10 @@ impl Display for Instruction {
         // .join(", ")
         // ))?;
 
-        f.write_fmt(format_args!(" ({})", self.value))
+        match self.value {
+            Value::Uninitialized => Ok(()),
+            _ => f.write_fmt(format_args!(" ({})", self.value)),
+        }
     }
 }
 
