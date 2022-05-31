@@ -31,6 +31,7 @@ pub struct Compiler {
     num_locals: Vec<usize>,
     recursive_calls: Vec<usize>,
     breaks: Vec<usize>,
+    continues: Vec<usize>,
 }
 
 impl Compiler {
@@ -57,6 +58,7 @@ impl Compiler {
             num_locals: vec![0, 0],
             recursive_calls: Vec::new(),
             breaks: Vec::new(),
+            continues: Vec::new(),
         }
     }
 
@@ -162,7 +164,7 @@ impl Compiler {
             Statement::ClassDecl(c) => todo!("{:?}", c),
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
-            Statement::Continue(c) => todo!("{:?}", c),
+            Statement::Continue(c) => self.continue_(c),
             Statement::Break(b) => self.break_(b),
             Statement::Return(r) => self.return_(r),
         }
@@ -180,6 +182,10 @@ impl Compiler {
 
     fn break_(&mut self, _b: &Break) {
         self.breaks.push(self.code.jump_relative(0));
+    }
+
+    fn continue_(&mut self, _c: &Continue) {
+        self.continues.push(self.code.jump_relative(0));
     }
 
     fn expr(&mut self, e: &Expression) {
@@ -372,9 +378,12 @@ impl Compiler {
         let start = self.code.jump_relative(0);
         let body = self.code.next_function_relative_addr();
         let mut breaks = Vec::new();
+        let mut continues = Vec::new();
         swap(&mut self.breaks, &mut breaks);
+        swap(&mut self.continues, &mut continues);
         self.expr(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
+        swap(&mut self.continues, &mut continues);
         let stop = self.code.next_function_relative_addr();
         self.code.backpatch_jump_rel(start, stop as isize);
         self.expr(w.condition.as_ref());
@@ -382,6 +391,9 @@ impl Compiler {
         let end = self.code.push(Value::Uninitialized);
         for addr in breaks {
             self.code.backpatch_jump_rel(addr, end as isize);
+        }
+        for addr in continues {
+            self.code.backpatch_jump_rel(addr, stop as isize);
         }
     }
 
