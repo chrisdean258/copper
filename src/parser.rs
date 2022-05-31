@@ -56,11 +56,6 @@ impl Expression {
         use ExpressionType::*;
         matches!(self.etype, RefExpr(_) | IndexExpr(_) | DottedLookup(_))
     }
-
-    pub fn typ(&self) -> Type {
-        debug_assert!(self.derived_type.is_some(), "{:?}", self);
-        self.derived_type.unwrap()
-    }
 }
 
 #[derive(Debug, Clone)]

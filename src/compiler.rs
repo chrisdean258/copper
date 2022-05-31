@@ -187,8 +187,8 @@ impl Compiler {
             ExpressionType::Immediate(i) => self.immediate(i),
             ExpressionType::BlockExpr(b) => self.block(b),
             ExpressionType::BinOp(b) => self.binop(b),
-            ExpressionType::PreUnOp(p) => self.preunop(p, e.derived_type.unwrap()),
-            ExpressionType::PostUnOp(p) => self.postunop(p, e.derived_type.unwrap()),
+            ExpressionType::PreUnOp(p) => self.preunop(p),
+            ExpressionType::PostUnOp(p) => self.postunop(p),
             ExpressionType::AssignExpr(a) => self.assignment(a),
             ExpressionType::Function(f) => self.function(
                 f.clone(),
@@ -218,7 +218,7 @@ impl Compiler {
         self.code.emit_code(b.op);
     }
 
-    fn preunop(&mut self, p: &PreUnOp, typ: Type) {
+    fn preunop(&mut self, p: &PreUnOp) {
         match p.op {
             Operation::PreInc => {
                 self.get_ref(p.rhs.as_ref());
@@ -244,7 +244,7 @@ impl Compiler {
         }
     }
 
-    fn postunop(&mut self, p: &PostUnOp, typ: Type) {
+    fn postunop(&mut self, p: &PostUnOp) {
         self.get_ref(p.lhs.as_ref());
         self.code.dup();
         self.code.load();
