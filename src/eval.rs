@@ -256,22 +256,58 @@ impl Evaluator {
                     );
                 }
                 MachineOperation::CmpEq => {
-                    do_comparison!(==,
-                        Count, Count,
-                        Float, Float,
-                        Int, Int,
-                        Char, Char,
-                        Bool, Bool,
-                    );
+                    let a = self.memory.pop();
+                    let b = self.memory.pop();
+                    self.memory.push(match (a, b) {
+                        (Value::Count(aa), Value::Count(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
+                        (Value::Float(aa), Value::Float(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
+                        (Value::Int(aa), Value::Int(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
+                        (Value::Char(aa), Value::Char(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
+                        (Value::Bool(aa), Value::Bool(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
+                        (Value::Null, Value::Null) => Value::Bool(1),
+                        (Value::Null, _) => Value::Bool(0),
+                        (_, Value::Null) => Value::Bool(0),
+                        _ => {
+                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                        }
+                    });
                 }
                 MachineOperation::CmpNotEq => {
-                    do_comparison!(!=,
-                        Count, Count,
-                        Float, Float,
-                        Int, Int,
-                        Char, Char,
-                        Bool, Bool,
-                    );
+                    let a = self.memory.pop();
+                    let b = self.memory.pop();
+                    self.memory.push(match (a, b) {
+                        (Value::Count(aa), Value::Count(bb)) => {
+                            Value::Bool(if bb != aa { 1 } else { 0 })
+                        }
+                        (Value::Float(aa), Value::Float(bb)) => {
+                            Value::Bool(if bb != aa { 1 } else { 0 })
+                        }
+                        (Value::Int(aa), Value::Int(bb)) => {
+                            Value::Bool(if bb != aa { 1 } else { 0 })
+                        }
+                        (Value::Char(aa), Value::Char(bb)) => {
+                            Value::Bool(if bb != aa { 1 } else { 0 })
+                        }
+                        (Value::Bool(aa), Value::Bool(bb)) => {
+                            Value::Bool(if bb != aa { 1 } else { 0 })
+                        }
+                        (Value::Null, Value::Null) => Value::Bool(0),
+                        (Value::Null, _) => Value::Bool(1),
+                        (_, Value::Null) => Value::Bool(1),
+                        _ => {
+                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                        }
+                    });
                 }
                 MachineOperation::BitShiftLeft => {
                     do_binop!(<<,

@@ -250,7 +250,9 @@ impl Compiler {
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
-                self.code.emit_code(p.op.as_machine_op());
+                if p.op != Operation::Deref {
+                    self.code.emit_code(p.op.as_machine_op());
+                }
             }
             _ => unreachable!(),
         }

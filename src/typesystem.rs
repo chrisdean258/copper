@@ -37,6 +37,7 @@ pub struct TypeEntry {
     name: String,
     te_type: TypeEntryType,
     list_type: Option<Type>,
+    option_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +191,8 @@ impl TypeSystem {
             CHAR => CHAR,
             INT => INT,
         );
+
+        self.ensure_op(Operation::Deref);
     }
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -211,6 +214,7 @@ impl TypeSystem {
     fn new_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
         self.types.push(TypeEntry {
             list_type: None,
+            option_type: None,
             name: name.clone(),
             te_type,
         });
@@ -252,6 +256,81 @@ impl TypeSystem {
         list_type
     }
 
+    pub fn option_type(&mut self, t: Type) -> Type {
+        if let Some(t) = self.types[t].option_type {
+            return t;
+        }
+        let new_name = format!("option<{}>", self.typename(t));
+        let option_type = self.new_type(new_name, TypeEntryType::Container(t));
+        self.types[t].option_type = Some(option_type);
+
+        self.add_signature(
+            Operation::Equal,
+            Signature {
+                inputs: vec![option_type, option_type],
+                output: option_type,
+            },
+        );
+
+        self.add_signature(
+            Operation::Equal,
+            Signature {
+                inputs: vec![option_type, NULL],
+                output: option_type,
+            },
+        );
+
+        self.add_signature(
+            Operation::Equal,
+            Signature {
+                inputs: vec![option_type, t],
+                output: option_type,
+            },
+        );
+
+        self.add_signature(
+            Operation::CmpEq,
+            Signature {
+                inputs: vec![NULL, option_type],
+                output: BOOL,
+            },
+        );
+
+        self.add_signature(
+            Operation::CmpEq,
+            Signature {
+                inputs: vec![option_type, NULL],
+                output: BOOL,
+            },
+        );
+
+        self.add_signature(
+            Operation::CmpNotEq,
+            Signature {
+                inputs: vec![NULL, option_type],
+                output: BOOL,
+            },
+        );
+
+        self.add_signature(
+            Operation::CmpNotEq,
+            Signature {
+                inputs: vec![option_type, NULL],
+                output: BOOL,
+            },
+        );
+
+        self.add_signature(
+            Operation::Deref,
+            Signature {
+                inputs: vec![option_type],
+                output: t,
+            },
+        );
+
+        option_type
+    }
+
     pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
         match self.types[t].te_type {
             TypeEntryType::Container(t) => Some(t),
@@ -280,7 +359,7 @@ impl TypeSystem {
             return Some(UNKNOWN_RETURN);
         }
         for sig in self.operations.get(&binop).unwrap().signatures.iter() {
-            if sig.inputs.len() == 2 && sig.inputs[0] == lhs && sig.inputs[1] == rhs {
+            if sig.inputs == &[lhs, rhs] {
                 return Some(sig.output);
             }
         }
@@ -310,7 +389,7 @@ impl TypeSystem {
         }
 
         for sig in self.operations.get(&puop).unwrap().signatures.iter() {
-            if sig.inputs.len() == 1 && sig.inputs[0] == t {
+            if sig.inputs == &[t] {
                 return Some(sig.output);
             }
         }

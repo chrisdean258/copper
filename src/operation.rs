@@ -40,6 +40,7 @@ pub enum Operation {
     PreDec,
     PostInc,
     PostDec,
+    Deref,
 }
 
 #[allow(dead_code)]
@@ -150,7 +151,11 @@ impl Operation {
     pub fn is_preunop(&self) -> bool {
         matches!(
             self,
-            Operation::BoolNot | Operation::BitNot | Operation::PreInc | Operation::PreDec
+            Operation::BoolNot
+                | Operation::BitNot
+                | Operation::PreInc
+                | Operation::PreDec
+                | Operation::Deref
         )
     }
 
@@ -163,7 +168,7 @@ impl Operation {
             ($($token:tt),+ $(,)?) => {
                 match self {
                     $(Operation::$token => MachineOperation::$token),+,
-                    o => unreachable!("Trying to convert {:?} to a binop", o),
+                    o => unreachable!("Trying to convert {:?} to a machine op", o),
                 }
             };
         }
@@ -234,6 +239,7 @@ impl Display for Operation {
             Operation::PreDec => "--",
             Operation::PostInc => "++",
             Operation::PostDec => "--",
+            Operation::Deref => "*",
         })
     }
 }

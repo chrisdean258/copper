@@ -390,6 +390,8 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         for body in i.and_bodies.iter_mut() {
             match self.ifexpr_int(&mut body.0, true) {
                 Ok(t) if t == rv => (),
+                Ok(NULL) => rv = self.system.option_type(rv),
+                Ok(t) if rv == NULL => rv = self.system.option_type(t),
                 Ok(t) if t == UNKNOWN_RETURN => (),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
@@ -400,7 +402,9 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         match &mut i.else_body {
             Some(b) => match self.expr(b.as_mut()) {
                 Ok(t) if t == rv => (),
-                Ok(t) if t == UNKNOWN_RETURN => (),
+                Ok(UNKNOWN_RETURN) => (),
+                Ok(NULL) => rv = self.system.option_type(rv),
+                Ok(t) if rv == NULL => rv = self.system.option_type(t),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
                 Err(mut s) => errors.append(&mut s),

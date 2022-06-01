@@ -691,7 +691,7 @@ impl ParseTree {
                 TokenType::BitNot => Operation::BitNot,
                 TokenType::Minus => Operation::UnaryMinus,
                 TokenType::Plus => Operation::UnaryPlus,
-                TokenType::Times => Operation::Times,
+                TokenType::Times => Operation::Deref,
                 TokenType::Inc => {
                     needs_ref = true;
                     Operation::PreInc
