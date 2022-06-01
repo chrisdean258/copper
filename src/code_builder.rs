@@ -135,8 +135,17 @@ impl CodeBuilder {
     }
 
     pub fn reserve(&mut self, size: usize) -> usize {
-        self.push(Value::Count(size));
-        self.emit_code(MachineOperation::Reserve)
+        if size == 0 {
+            self.active_functions.last().unwrap().code.len() - 1
+        } else if size == 1 {
+            self.push(Value::Uninitialized)
+        } else if size == 2 {
+            self.push(Value::Uninitialized);
+            self.push(Value::Uninitialized)
+        } else {
+            self.push(Value::Count(size));
+            self.emit_code(MachineOperation::Reserve)
+        }
     }
 
     pub fn push(&mut self, value: Value) -> usize {

@@ -35,7 +35,7 @@ impl Memory {
         }
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn add_strings(&mut self, strings: &mut Vec<String>) {
         self.strings.append(strings);
     }
@@ -72,7 +72,7 @@ impl Memory {
         self.stack[idx] = val;
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn dup(&mut self) {
         debug_assert!(!self.stack.is_empty());
         self.stack.push(*self.stack.last().unwrap());
@@ -85,12 +85,12 @@ impl Memory {
         self.stack.swap(len - 1, len - 2);
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn truncate_stack(&mut self, ptr: usize) {
         self.stack.truncate(ptr - STACK);
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }
