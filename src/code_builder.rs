@@ -1,6 +1,5 @@
-#![allow(dead_code)]
 use crate::memory;
-use crate::operation::Operation;
+use crate::operation::MachineOperation;
 // use crate::typesystem::*;
 use crate::value::Value;
 use std::fmt::{Display, Formatter};
@@ -38,7 +37,7 @@ impl Display for Function {
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
-    pub op: Operation,
+    pub op: MachineOperation,
     // pub types: Vec<Type>,
     pub value: Value,
 }
@@ -88,7 +87,7 @@ impl CodeBuilder {
 
         for pp in patchpoints {
             f.code[*pp] = Instruction {
-                op: Operation::Push,
+                op: MachineOperation::Push,
                 // types: Vec::new(),
                 value: Value::Ptr(rv + memory::CODE),
             }
@@ -98,15 +97,14 @@ impl CodeBuilder {
         rv + memory::CODE
     }
 
-    pub fn emit(&mut self, op: Operation, value: Value) -> usize {
-        debug_assert!(op.is_machineop(), "{}", op);
+    pub fn emit(&mut self, op: MachineOperation, value: Value) -> usize {
         debug_assert!(!self.active_functions.is_empty());
         let code = &mut self.active_functions.last_mut().unwrap().code;
         code.push(Instruction { op, value });
         code.len() - 1
     }
 
-    pub fn emit_code(&mut self, op: Operation) -> usize {
+    pub fn emit_code(&mut self, op: MachineOperation) -> usize {
         self.emit(op, Value::Uninitialized)
     }
 
@@ -119,17 +117,13 @@ impl CodeBuilder {
         self.active_functions.last().unwrap().code.len()
     }
 
-    pub fn prep_function_call(&mut self) -> usize {
-        self.emit_code(Operation::PrepCall)
-    }
-
     pub fn call(&mut self) -> usize {
-        self.emit_code(Operation::Call)
+        self.emit_code(MachineOperation::Call)
     }
 
     pub fn local_ref(&mut self, number: isize) -> usize {
         self.push(Value::PtrOffset(number));
-        self.emit_code(Operation::RefFrame)
+        self.emit_code(MachineOperation::RefFrame)
     }
 
     pub fn global_ref(&mut self, number: usize) -> usize {
@@ -140,61 +134,58 @@ impl CodeBuilder {
         self.push(Value::Ptr(number + memory::BUILTIN_CODE))
     }
 
-    pub fn code_ref(&mut self, addr: usize) -> usize {
-        self.push(Value::Ptr(addr))
-    }
-
     pub fn reserve(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
-        self.emit_code(Operation::Reserve)
+        self.emit_code(MachineOperation::Reserve)
     }
 
     pub fn push(&mut self, value: Value) -> usize {
-        self.emit(Operation::Push, value)
+        self.emit(MachineOperation::Push, value)
     }
 
     pub fn pop(&mut self) -> usize {
-        self.emit_code(Operation::Pop)
+        self.emit_code(MachineOperation::Pop)
     }
 
     pub fn dup(&mut self) -> usize {
-        self.emit_code(Operation::Dup)
+        self.emit_code(MachineOperation::Dup)
     }
 
     pub fn load(&mut self) -> usize {
-        self.emit_code(Operation::Load)
+        self.emit_code(MachineOperation::Load)
     }
 
     pub fn store(&mut self) -> usize {
-        self.emit_code(Operation::Store)
+        self.emit_code(MachineOperation::Store)
     }
 
     pub fn store_n(&mut self, count: usize) -> usize {
         self.push(Value::Count(count));
-        self.emit_code(Operation::StoreN)
+        self.emit_code(MachineOperation::StoreN)
     }
 
     pub fn return_(&mut self) -> usize {
-        self.emit_code(Operation::Return)
+        self.emit_code(MachineOperation::Return)
     }
 
     pub fn alloc(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
-        self.emit_code(Operation::Alloc)
+        self.emit_code(MachineOperation::Alloc)
     }
 
-    pub fn crash(&mut self) -> usize {
-        self.emit_code(Operation::Crash)
+    pub fn _crash(&mut self) -> usize {
+        self.emit_code(MachineOperation::Crash)
     }
 
     pub fn conditional_fail(&mut self) -> usize {
-        self.emit_code(Operation::ConditionalFail)
+        self.emit_code(MachineOperation::ConditionalFail)
     }
 
+    #[allow(dead_code)]
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
         debug_assert!(!self.active_functions.is_empty());
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
-            op: Operation::Push,
+            op: MachineOperation::Push,
             // types: vec![],
             value: Value::Ptr(to),
         };
@@ -204,44 +195,47 @@ impl CodeBuilder {
         debug_assert!(!self.active_functions.is_empty());
         let offset = to - jump_addr as isize;
         self.active_functions.last_mut().unwrap().code[jump_addr - 1] = Instruction {
-            op: Operation::Push,
+            op: MachineOperation::Push,
             // types: vec![],
             value: Value::PtrOffset(offset),
         };
     }
 
+    #[allow(dead_code)]
     pub fn jump(&mut self) -> usize {
-        self.emit_code(Operation::Jump)
+        self.emit_code(MachineOperation::Jump)
     }
 
+    #[allow(dead_code)]
     pub fn jump_to(&mut self, location: usize) -> usize {
         self.push(Value::Ptr(location));
-        self.emit_code(Operation::Jump)
+        self.emit_code(MachineOperation::Jump)
     }
 
+    #[allow(dead_code)]
     pub fn jumpif(&mut self, location: usize) -> usize {
         self.push(Value::Ptr(location));
-        self.emit_code(Operation::JumpIf)
+        self.emit_code(MachineOperation::JumpIf)
     }
 
     pub fn jump_relative_if(&mut self, location: isize) -> usize {
         let offset = location - self.next_function_relative_addr() as isize - 1;
         self.push(Value::PtrOffset(offset));
-        self.emit_code(Operation::JumpRelIf)
+        self.emit_code(MachineOperation::JumpRelIf)
     }
 
     pub fn jump_relative(&mut self, location: isize) -> usize {
         let offset = location - self.next_function_relative_addr() as isize;
         self.push(Value::PtrOffset(offset));
-        self.emit_code(Operation::JumpRel)
+        self.emit_code(MachineOperation::JumpRel)
     }
 
     pub fn rotate(&mut self, how_many: usize) -> usize {
         self.push(Value::Count(how_many));
-        self.emit_code(Operation::Rotate)
+        self.emit_code(MachineOperation::Rotate)
     }
 
     pub fn swap(&mut self) -> usize {
-        self.emit_code(Operation::Swap)
+        self.emit_code(MachineOperation::Swap)
     }
 }

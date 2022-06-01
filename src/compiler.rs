@@ -1,6 +1,6 @@
 use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
-use crate::operation::Operation;
+use crate::operation::{MachineOperation, Operation};
 use crate::parser::*;
 use crate::typesystem::{Signature, Type, TypeSystem};
 use crate::value::Value;
@@ -158,7 +158,7 @@ impl Compiler {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit_code(Operation::Pop);
+                    self.code.emit_code(MachineOperation::Pop);
                 }
             }
             Statement::ClassDecl(c) => todo!("{:?}", c),
@@ -227,7 +227,7 @@ impl Compiler {
     fn binop(&mut self, b: &BinOp) {
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
-        self.code.emit_code(b.op);
+        self.code.emit_code(b.op.as_machine_op());
     }
 
     fn preunop(&mut self, p: &PreUnOp) {
@@ -237,7 +237,7 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit_code(Operation::Plus);
+                self.code.emit_code(MachineOperation::Plus);
                 self.code.store();
             }
             Operation::PreDec => {
@@ -245,12 +245,12 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit_code(Operation::Minus);
+                self.code.emit_code(MachineOperation::Minus);
                 self.code.store();
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
-                self.code.emit_code(p.op);
+                self.code.emit_code(p.op.as_machine_op());
             }
             _ => unreachable!(),
         }
@@ -264,8 +264,8 @@ impl Compiler {
         self.code.rotate(3);
         self.code.push(Value::Int(1));
         self.code.emit_code(match p.op {
-            Operation::PostInc => Operation::Plus,
-            Operation::PostDec => Operation::Minus,
+            Operation::PostInc => MachineOperation::Plus,
+            Operation::PostDec => MachineOperation::Minus,
             _ => unreachable!(),
         });
         self.code.store();
@@ -352,7 +352,7 @@ impl Compiler {
             self.code.dup();
             self.code.load();
             self.expr(a.rhs.as_ref());
-            self.code.emit_code(a.op.underlying_binop());
+            self.code.emit_code(a.op.underlying_binop().as_machine_op());
         } else {
             self.expr(a.rhs.as_ref());
         }
@@ -404,7 +404,7 @@ impl Compiler {
             self.code.push(Value::Uninitialized); // If return value
             self.expr(i.condition.as_ref());
             self.code.dup();
-            self.code.emit_code(Operation::BoolNot);
+            self.code.emit_code(MachineOperation::BoolNot);
             let mut next_branch = self.code.jump_relative_if(0);
             self.expr(i.body.as_ref());
             self.code.rotate(3);
@@ -417,9 +417,9 @@ impl Compiler {
                 self.expr(body.condition.as_ref());
                 self.code.dup();
                 self.code.rotate(3);
-                self.code.emit_code(Operation::BoolOr);
+                self.code.emit_code(MachineOperation::BoolOr);
                 self.code.swap();
-                self.code.emit_code(Operation::BoolNot);
+                self.code.emit_code(MachineOperation::BoolNot);
                 next_branch = self.code.jump_relative_if(0);
                 self.expr(body.body.as_ref());
                 self.code.rotate(3);
@@ -448,7 +448,7 @@ impl Compiler {
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             } else {
-                self.code.emit_code(Operation::BoolNot);
+                self.code.emit_code(MachineOperation::BoolNot);
                 let jump_to_end = self.code.jump_relative_if(0);
                 self.expr(i.body.as_ref());
                 let end = self.code.next_function_relative_addr();
@@ -485,18 +485,18 @@ impl Compiler {
         self.get_no_ref(i.obj.as_ref());
         self.code.dup();
         self.code.push(Value::PtrOffset(1));
-        self.code.emit_code(Operation::Plus);
+        self.code.emit_code(MachineOperation::Plus);
         self.code.load();
 
         debug_assert!(i.args.len() == 1);
         self.expr(&i.args[0]);
         self.code.dup();
         self.code.rotate(3);
-        self.code.emit_code(Operation::CmpLE);
+        self.code.emit_code(MachineOperation::CmpLE);
         self.code.conditional_fail();
         self.code.swap();
         self.code.load();
-        self.code.emit_code(Operation::Plus);
+        self.code.emit_code(MachineOperation::Plus);
         if !self.need_ref {
             self.code.load();
         }
