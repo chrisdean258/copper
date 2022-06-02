@@ -192,7 +192,7 @@ impl TypeSystem {
             INT => INT,
         );
 
-        self.ensure_op(Operation::Deref);
+        self.ensure_op(Operation::Load);
     }
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -321,7 +321,7 @@ impl TypeSystem {
         );
 
         self.add_signature(
-            Operation::Deref,
+            Operation::Load,
             Signature {
                 inputs: vec![option_type],
                 output: t,
@@ -331,7 +331,7 @@ impl TypeSystem {
         option_type
     }
 
-    pub fn underlying_type(&mut self, t: Type) -> Option<Type> {
+    pub fn underlying_type(&self, t: Type) -> Option<Type> {
         match self.types[t].te_type {
             TypeEntryType::Container(t) => Some(t),
             _ => None,
@@ -359,7 +359,7 @@ impl TypeSystem {
             return Some(UNKNOWN_RETURN);
         }
         for sig in self.operations.get(&binop).unwrap().signatures.iter() {
-            if sig.inputs == &[lhs, rhs] {
+            if sig.inputs == [lhs, rhs] {
                 return Some(sig.output);
             }
         }
@@ -389,7 +389,7 @@ impl TypeSystem {
         }
 
         for sig in self.operations.get(&puop).unwrap().signatures.iter() {
-            if sig.inputs == &[t] {
+            if sig.inputs == [t] {
                 return Some(sig.output);
             }
         }
@@ -416,6 +416,18 @@ impl TypeSystem {
             TypeEntryType::ResolvedFunction(_) => true,
             _ if func == BUILTIN_FUNCTION => true,
             _ => false,
+        }
+    }
+
+    pub fn is_option(&self, opt: Type) -> bool {
+        if let Some(typ) = self.underlying_type(opt) {
+            if let Some(ty) = self.types[typ].option_type {
+                ty == opt
+            } else {
+                false
+            }
+        } else {
+            false
         }
     }
 

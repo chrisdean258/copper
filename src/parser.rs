@@ -106,6 +106,7 @@ pub struct If {
     pub body: Box<Expression>,
     pub and_bodies: Vec<(If, Location)>,
     pub else_body: Option<Box<Expression>>,
+    pub makes_option: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -586,6 +587,7 @@ impl ParseTree {
                 body,
                 and_bodies: Vec::new(),
                 else_body: None,
+                makes_option: false,
             },
             location,
         ))
@@ -691,7 +693,7 @@ impl ParseTree {
                 TokenType::BitNot => Operation::BitNot,
                 TokenType::Minus => Operation::UnaryMinus,
                 TokenType::Plus => Operation::UnaryPlus,
-                TokenType::Times => Operation::Deref,
+                TokenType::Times => Operation::Load,
                 TokenType::Inc => {
                     needs_ref = true;
                     Operation::PreInc

@@ -108,7 +108,8 @@ impl Compiler {
     fn replace_scope(&mut self, name: String, what: MemoryLocation) {
         debug_assert!(self.scopes.len() >= 2);
         let scope = self.scopes.last_mut().unwrap();
-        debug_assert!(scope.insert(name, what).is_some());
+        let rv = scope.insert(name, what);
+        debug_assert!(rv.is_some());
     }
 
     fn next_local(&mut self) -> MemoryLocation {
@@ -225,6 +226,9 @@ impl Compiler {
     }
 
     fn binop(&mut self, b: &BinOp) {
+        // let types = self.types.as_ref().unwrap();
+        // let lhs_is_opt = types.is_option(b.lhs.derived_type.unwrap());
+        // let rhs_is_opt = types.is_option(b.rhs.derived_type.unwrap());
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
         self.code.emit_code(b.op.as_machine_op());
@@ -250,9 +254,7 @@ impl Compiler {
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
-                if p.op != Operation::Deref {
-                    self.code.emit_code(p.op.as_machine_op());
-                }
+                self.code.emit_code(p.op.as_machine_op());
             }
             _ => unreachable!(),
         }
@@ -456,6 +458,21 @@ impl Compiler {
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             }
+        }
+        if i.makes_option {
+            self.code.dup();
+            self.code.push(Value::Null);
+            self.code.emit_code(MachineOperation::CmpEq);
+            let bp = self.code.jump_relative_if(0);
+            self.code.alloc(1);
+            self.code.dup();
+            self.code.swap();
+            self.code.rotate(3);
+            self.code.swap();
+            self.code.store();
+            self.code.pop();
+            self.code
+                .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
         }
     }
 

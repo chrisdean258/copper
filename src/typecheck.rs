@@ -370,6 +370,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
     fn ifexpr_int(&mut self, i: &mut If, is_and_if: bool) -> Result<Type, TypeError> {
         let mut errors: TypeError = Vec::new();
         let mut rv = UNIT;
+        let mut make_option = false;
         let mut return_unit = false;
         match self.expr(i.condition.as_mut()) {
             Ok(t) if t == BOOL => (),
@@ -390,8 +391,11 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         for body in i.and_bodies.iter_mut() {
             match self.ifexpr_int(&mut body.0, true) {
                 Ok(t) if t == rv => (),
-                Ok(NULL) => rv = self.system.option_type(rv),
-                Ok(t) if rv == NULL => rv = self.system.option_type(t),
+                Ok(NULL) => make_option = true,
+                Ok(t) if rv == NULL => {
+                    rv = t;
+                    make_option = true;
+                }
                 Ok(t) if t == UNKNOWN_RETURN => (),
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
@@ -403,8 +407,11 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             Some(b) => match self.expr(b.as_mut()) {
                 Ok(t) if t == rv => (),
                 Ok(UNKNOWN_RETURN) => (),
-                Ok(NULL) => rv = self.system.option_type(rv),
-                Ok(t) if rv == NULL => rv = self.system.option_type(t),
+                Ok(NULL) => make_option = true,
+                Ok(t) if rv == NULL => {
+                    rv = t;
+                    make_option = true;
+                }
                 Ok(t) if rv == UNKNOWN_RETURN => rv = t,
                 Ok(_) => return_unit = true,
                 Err(mut s) => errors.append(&mut s),
@@ -414,10 +421,13 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
 
         check_err!(errors);
         if return_unit {
-            Ok(UNIT)
-        } else {
-            Ok(rv)
+            return Ok(UNIT);
         }
+        if make_option {
+            rv = self.system.option_type(rv);
+            i.makes_option = true;
+        }
+        Ok(rv)
     }
 
     fn list(&mut self, l: &mut List) -> Result<Type, TypeError> {
