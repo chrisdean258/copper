@@ -192,7 +192,7 @@ impl TypeSystem {
             INT => INT,
         );
 
-        self.ensure_op(Operation::Load);
+        self.ensure_op(Operation::Deref);
     }
 
     pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
@@ -291,15 +291,7 @@ impl TypeSystem {
         self.add_signature(
             Operation::CmpEq,
             Signature {
-                inputs: vec![NULL, option_type],
-                output: BOOL,
-            },
-        );
-
-        self.add_signature(
-            Operation::CmpEq,
-            Signature {
-                inputs: vec![option_type, NULL],
+                inputs: vec![option_type, option_type],
                 output: BOOL,
             },
         );
@@ -307,21 +299,37 @@ impl TypeSystem {
         self.add_signature(
             Operation::CmpNotEq,
             Signature {
-                inputs: vec![NULL, option_type],
+                inputs: vec![option_type, option_type],
                 output: BOOL,
             },
         );
 
-        self.add_signature(
-            Operation::CmpNotEq,
-            Signature {
-                inputs: vec![option_type, NULL],
-                output: BOOL,
-            },
-        );
+        // self.add_signature(
+        // Operation::CmpEq,
+        // Signature {
+        // inputs: vec![option_type, NULL],
+        // output: BOOL,
+        // },
+        // );
+
+        // self.add_signature(
+        // Operation::CmpNotEq,
+        // Signature {
+        // inputs: vec![NULL, option_type],
+        // output: BOOL,
+        // },
+        // );
+
+        // self.add_signature(
+        // Operation::CmpNotEq,
+        // Signature {
+        // inputs: vec![option_type, NULL],
+        // output: BOOL,
+        // },
+        // );
 
         self.add_signature(
-            Operation::Load,
+            Operation::Deref,
             Signature {
                 inputs: vec![option_type],
                 output: t,

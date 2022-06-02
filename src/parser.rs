@@ -49,6 +49,7 @@ pub enum ExpressionType {
     DottedLookup(DottedLookup),
     LambdaArg(LambdaArg),
     FuncRefExpr(FuncRefExpr),
+    Null,
 }
 
 impl Expression {
@@ -106,7 +107,7 @@ pub struct If {
     pub body: Box<Expression>,
     pub and_bodies: Vec<(If, Location)>,
     pub else_body: Option<Box<Expression>>,
-    pub makes_option: bool,
+    pub makes_option: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -587,7 +588,7 @@ impl ParseTree {
                 body,
                 and_bodies: Vec::new(),
                 else_body: None,
-                makes_option: false,
+                makes_option: None,
             },
             location,
         ))
@@ -693,7 +694,7 @@ impl ParseTree {
                 TokenType::BitNot => Operation::BitNot,
                 TokenType::Minus => Operation::UnaryMinus,
                 TokenType::Plus => Operation::UnaryPlus,
-                TokenType::Times => Operation::Load,
+                TokenType::Times => Operation::Deref,
                 TokenType::Inc => {
                     needs_ref = true;
                     Operation::PreInc
@@ -980,7 +981,7 @@ impl ParseTree {
                 TokenType::Null => Ok(Expression {
                     derived_type: None,
                     location: lexer.next().unwrap().location,
-                    etype: ExpressionType::Immediate(Immediate { value: Value::Null }),
+                    etype: ExpressionType::Null,
                 }),
                 TokenType::OpenParen => self.parse_paren(lexer),
                 TokenType::OpenBrace => self.parse_block(lexer),

@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 pub enum Value {
     Uninitialized,
     Null,
+    None(usize),
     Bool(u8),
     Char(u8),
     Int(i64),
@@ -19,6 +20,7 @@ impl Display for Value {
         match self {
             Value::Uninitialized => f.write_str("uninit"),
             Value::Null => f.write_str("null"),
+            Value::None(_) => f.write_str("null"),
             Value::Bool(b) => f.write_str(if *b == 0 { "false" } else { "true" }),
             Value::Char(c) => f.write_fmt(format_args!("{}", *c as char)),
             Value::Int(i) => f.write_fmt(format_args!("{}", i)),
@@ -42,6 +44,7 @@ impl Debug for Value {
         match self {
             Value::Uninitialized => f.write_str("Uninit"),
             Value::Null => f.write_str("Null"),
+            Value::None(t) => f.write_fmt(format_args!("None({})", t)),
             Value::Bool(b) => f.write_fmt(format_args!(
                 "Bool({} = {})",
                 if *b == 0 { "false" } else { "true" },

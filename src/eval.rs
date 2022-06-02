@@ -89,7 +89,7 @@ impl Evaluator {
         while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);
             // eprint!("IP: 0x{:08x}:  ", self.ip);
-            // eprint!("{:30}  ", self.code[self.ip - CODE].to_string());
+            // eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
             // eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - CODE].op {
                 MachineOperation::Nop => (),
@@ -275,10 +275,17 @@ impl Evaluator {
                             Value::Bool(if bb == aa { 1 } else { 0 })
                         }
                         (Value::Null, Value::Null) => Value::Bool(1),
+                        (Value::Null, Value::None(_)) => Value::Bool(1),
+                        (Value::None(_), Value::Null) => Value::Bool(1),
+                        (Value::None(aa), Value::None(bb)) => {
+                            Value::Bool(if bb == aa { 1 } else { 0 })
+                        }
                         (Value::Null, _) => Value::Bool(0),
                         (_, Value::Null) => Value::Bool(0),
+                        (Value::None(_), _) => Value::Bool(0),
+                        (_, Value::None(_)) => Value::Bool(0),
                         _ => {
-                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                            unreachable!("Trying to apply binop {:?} == {:?}", a, b)
                         }
                     });
                 }
@@ -302,10 +309,17 @@ impl Evaluator {
                             Value::Bool(if bb != aa { 1 } else { 0 })
                         }
                         (Value::Null, Value::Null) => Value::Bool(0),
+                        (Value::Null, Value::None(_)) => Value::Bool(0),
+                        (Value::None(_), Value::Null) => Value::Bool(0),
+                        (Value::None(aa), Value::None(bb)) => {
+                            Value::Bool(if bb == aa { 0 } else { 1 })
+                        }
                         (Value::Null, _) => Value::Bool(1),
                         (_, Value::Null) => Value::Bool(1),
+                        (Value::None(_), _) => Value::Bool(1),
+                        (_, Value::None(_)) => Value::Bool(1),
                         _ => {
-                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                            unreachable!("Trying to apply binop {:?} != {:?}", a, b)
                         }
                     });
                 }

@@ -218,6 +218,7 @@ impl TypeChecker {
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+            ExpressionType::Null => self.null(),
         }?;
         e.derived_type = Some(rv);
         if rv == UNKNOWN_RETURN {
@@ -226,9 +227,21 @@ impl TypeChecker {
         Ok(rv)
     }
 
+    fn null(&mut self) -> Result<Type, TypeError> {
+        Ok(NULL)
+    }
+
     fn binop(&mut self, b: &mut BinOp) -> Result<Type, TypeError> {
-        let ltype = self.expr(b.lhs.as_mut())?;
-        let rtype = self.expr(b.rhs.as_mut())?;
+        let mut ltype = self.expr(b.lhs.as_mut())?;
+        let mut rtype = self.expr(b.rhs.as_mut())?;
+        if self.system.is_option(ltype) && rtype == NULL {
+            b.rhs.as_mut().derived_type = Some(ltype);
+            rtype = ltype;
+        }
+        if self.system.is_option(rtype) && ltype == NULL {
+            b.lhs.as_mut().derived_type = Some(rtype);
+            ltype = rtype;
+        }
         let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(|| 
             self.error(format!("Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
 self.system.typename(ltype), b.op, self.system.typename(rtype)))
@@ -425,7 +438,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         }
         if make_option {
             rv = self.system.option_type(rv);
-            i.makes_option = true;
+            i.makes_option = Some(rv);
         }
         Ok(rv)
     }

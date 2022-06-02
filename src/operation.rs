@@ -40,7 +40,7 @@ pub enum Operation {
     PreDec,
     PostInc,
     PostDec,
-    Load,
+    Deref,
 }
 
 #[allow(dead_code)]
@@ -155,7 +155,7 @@ impl Operation {
                 | Operation::BitNot
                 | Operation::PreInc
                 | Operation::PreDec
-                | Operation::Load
+                | Operation::Deref
         )
     }
 
@@ -194,7 +194,6 @@ impl Operation {
             Div,
             BoolNot,
             BitNot,
-            Load,
         }
     }
 }
@@ -240,7 +239,7 @@ impl Display for Operation {
             Operation::PreDec => "--",
             Operation::PostInc => "++",
             Operation::PostDec => "--",
-            Operation::Load => "*",
+            Operation::Deref => "*",
         })
     }
 }

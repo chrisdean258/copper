@@ -2,7 +2,7 @@ use crate::builtins::BuiltinFunction;
 use crate::code_builder::{CodeBuilder, Instruction};
 use crate::operation::{MachineOperation, Operation};
 use crate::parser::*;
-use crate::typesystem::{Signature, Type, TypeSystem};
+use crate::typesystem::{Signature, Type, TypeSystem, NULL};
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -32,6 +32,7 @@ pub struct Compiler {
     recursive_calls: Vec<usize>,
     breaks: Vec<usize>,
     continues: Vec<usize>,
+    current_null: Option<usize>,
 }
 
 impl Compiler {
@@ -59,6 +60,7 @@ impl Compiler {
             recursive_calls: Vec::new(),
             breaks: Vec::new(),
             continues: Vec::new(),
+            current_null: None,
         }
     }
 
@@ -222,6 +224,7 @@ impl Compiler {
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
+            ExpressionType::Null => self.null(e.derived_type.unwrap()),
         }
     }
 
@@ -254,9 +257,28 @@ impl Compiler {
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
-                self.code.emit_code(p.op.as_machine_op());
+                if p.op != Operation::Deref {
+                    self.code.emit_code(p.op.as_machine_op());
+                }
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn null(&mut self, typ: Type) {
+        if let Some(t) = self.current_null {
+            if typ == t || typ == NULL {
+                self.code.push(Value::None(t));
+            } else {
+                let types = self.types.as_ref().unwrap();
+                panic!(
+                    "Mismatched null types {} and {}",
+                    types.typename(t),
+                    types.typename(typ)
+                );
+            }
+        } else {
+            self.code.push(Value::None(typ));
         }
     }
 
@@ -459,20 +481,16 @@ impl Compiler {
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             }
         }
-        if i.makes_option {
-            self.code.dup();
-            self.code.push(Value::Null);
-            self.code.emit_code(MachineOperation::CmpEq);
-            let bp = self.code.jump_relative_if(0);
-            self.code.alloc(1);
-            self.code.dup();
-            self.code.swap();
-            self.code.rotate(3);
-            self.code.swap();
-            self.code.store();
-            self.code.pop();
-            self.code
-                .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
+        if let Some(t) = i.makes_option {
+            self.current_null = Some(t);
+            // self.code.dup();
+            // self.code.push(Value::Null);
+            // self.code.emit_code(MachineOperation::CmpNotEq);
+            // let bp = self.code.jump_relative_if(0);
+            // self.code.pop();
+            // self.code.push(Value::None(t));
+            // self.code
+            // .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
         }
     }
 
