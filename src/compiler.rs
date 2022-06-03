@@ -230,8 +230,12 @@ impl Compiler {
 
     fn binop(&mut self, b: &BinOp) {
         // let types = self.types.as_ref().unwrap();
-        // let lhs_is_opt = types.is_option(b.lhs.derived_type.unwrap());
-        // let rhs_is_opt = types.is_option(b.rhs.derived_type.unwrap());
+        // if types.is_option(b.lhs.derived_type.unwrap()) {
+        // self.current_null = b.lhs.derived_type;
+        // }
+        // if types.is_option(b.rhs.derived_type.unwrap()) {
+        // self.current_null = b.rhs.derived_type;
+        // }
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
         self.code.emit_code(b.op.as_machine_op());
@@ -380,7 +384,13 @@ impl Compiler {
             self.expr(a.rhs.as_ref());
             self.code.emit_code(a.op.underlying_binop().as_machine_op());
         } else {
+            let types = self.types.as_ref().unwrap();
+            let save = self.current_null;
+            if types.is_option(a.lhs.derived_type.unwrap()) {
+                self.current_null = a.lhs.derived_type;
+            }
             self.expr(a.rhs.as_ref());
+            self.current_null = save;
         }
         self.code.store();
     }
@@ -426,6 +436,10 @@ impl Compiler {
     fn forexpr(&mut self, _f: &For) {}
 
     fn ifexpr(&mut self, i: &If) {
+        let save = self.current_null;
+        if let Some(t) = i.makes_option {
+            self.current_null = Some(t);
+        }
         if !i.and_bodies.is_empty() {
             self.code.push(Value::Uninitialized); // If return value
             self.expr(i.condition.as_ref());
@@ -481,17 +495,16 @@ impl Compiler {
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             }
         }
-        if let Some(t) = i.makes_option {
-            self.current_null = Some(t);
-            // self.code.dup();
-            // self.code.push(Value::Null);
-            // self.code.emit_code(MachineOperation::CmpNotEq);
-            // let bp = self.code.jump_relative_if(0);
-            // self.code.pop();
-            // self.code.push(Value::None(t));
-            // self.code
-            // .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
-        }
+        self.current_null = save;
+        // self.code.dup();
+        // self.code.push(Value::Null);
+        // self.code.emit_code(MachineOperation::CmpNotEq);
+        // let bp = self.code.jump_relative_if(0);
+        // self.code.pop();
+        // self.code.push(Value::None(t));
+        // self.code
+        // .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
+        // }
     }
 
     fn string(&mut self, s: &Str) {

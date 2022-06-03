@@ -274,14 +274,14 @@ impl Evaluator {
                         (Value::Bool(aa), Value::Bool(bb)) => {
                             Value::Bool(if bb == aa { 1 } else { 0 })
                         }
-                        (Value::Null, Value::Null) => Value::Bool(1),
-                        (Value::Null, Value::None(_)) => Value::Bool(1),
-                        (Value::None(_), Value::Null) => Value::Bool(1),
+                        // (Value::Null, Value::Null) => Value::Bool(1),
+                        // (Value::Null, Value::None(_)) => Value::Bool(1),
+                        // (Value::None(_), Value::Null) => Value::Bool(1),
                         (Value::None(aa), Value::None(bb)) => {
                             Value::Bool(if bb == aa { 1 } else { 0 })
                         }
-                        (Value::Null, _) => Value::Bool(0),
-                        (_, Value::Null) => Value::Bool(0),
+                        // (Value::Null, _) => Value::Bool(0),
+                        // (_, Value::Null) => Value::Bool(0),
                         (Value::None(_), _) => Value::Bool(0),
                         (_, Value::None(_)) => Value::Bool(0),
                         _ => {
@@ -308,14 +308,14 @@ impl Evaluator {
                         (Value::Bool(aa), Value::Bool(bb)) => {
                             Value::Bool(if bb != aa { 1 } else { 0 })
                         }
-                        (Value::Null, Value::Null) => Value::Bool(0),
-                        (Value::Null, Value::None(_)) => Value::Bool(0),
-                        (Value::None(_), Value::Null) => Value::Bool(0),
+                        // (Value::Null, Value::Null) => Value::Bool(0),
+                        // (Value::Null, Value::None(_)) => Value::Bool(0),
+                        // (Value::None(_), Value::Null) => Value::Bool(0),
                         (Value::None(aa), Value::None(bb)) => {
                             Value::Bool(if bb == aa { 0 } else { 1 })
                         }
-                        (Value::Null, _) => Value::Bool(1),
-                        (_, Value::Null) => Value::Bool(1),
+                        // (Value::Null, _) => Value::Bool(1),
+                        // (_, Value::Null) => Value::Bool(1),
                         (Value::None(_), _) => Value::Bool(1),
                         (_, Value::None(_)) => Value::Bool(1),
                         _ => {
