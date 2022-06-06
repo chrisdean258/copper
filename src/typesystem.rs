@@ -14,22 +14,10 @@ pub struct TypeSystem {
 pub enum TypeEntryType {
     Unit,
     UnknownReturn,
-    BasicType,
+    Basic,
     Container(Type),
     Function(Function),
     ResolvedFunction(ResolvedFunction),
-}
-
-impl TypeEntryType {
-    fn new_basic() -> TypeEntryType {
-        TypeEntryType::BasicType
-    }
-    fn new_unit() -> TypeEntryType {
-        TypeEntryType::Unit
-    }
-    fn new_unknown_return() -> TypeEntryType {
-        TypeEntryType::UnknownReturn
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -90,30 +78,30 @@ impl TypeSystem {
     }
 
     fn add_default_types(&mut self) {
-        self.new_type_with_num(String::from("unit"), TypeEntryType::new_unit(), UNIT);
+        self.new_type_with_num(String::from("unit"), TypeEntryType::Unit, UNIT);
         self.new_type_with_num(
             String::from("UNKNOWN RETURN"),
-            TypeEntryType::new_unknown_return(),
+            TypeEntryType::UnknownReturn,
             UNKNOWN_RETURN,
         );
-        self.new_type_with_num(String::from("anytype"), TypeEntryType::new_unit(), ANY);
+        self.new_type_with_num(String::from("anytype"), TypeEntryType::Unit, ANY);
         self.new_type_with_num(
             String::from("unreachable"),
-            TypeEntryType::new_unit(),
+            TypeEntryType::Unit,
             UNREACHABLE,
         );
         self.new_type_with_num(
             String::from("builtin function"),
-            TypeEntryType::new_basic(),
+            TypeEntryType::Basic,
             BUILTIN_FUNCTION,
         );
-        self.new_type_with_num(String::from("null"), TypeEntryType::new_basic(), NULL);
-        self.new_type_with_num(String::from("ptr"), TypeEntryType::new_basic(), PTR);
-        self.new_type_with_num(String::from("bool"), TypeEntryType::new_basic(), BOOL);
-        self.new_type_with_num(String::from("char"), TypeEntryType::new_basic(), CHAR);
-        self.new_type_with_num(String::from("int"), TypeEntryType::new_basic(), INT);
-        self.new_type_with_num(String::from("float"), TypeEntryType::new_basic(), FLOAT);
-        self.new_type_with_num(String::from("str"), TypeEntryType::new_basic(), STR);
+        self.new_type_with_num(String::from("null"), TypeEntryType::Basic, NULL);
+        self.new_type_with_num(String::from("ptr"), TypeEntryType::Basic, PTR);
+        self.new_type_with_num(String::from("bool"), TypeEntryType::Basic, BOOL);
+        self.new_type_with_num(String::from("char"), TypeEntryType::Basic, CHAR);
+        self.new_type_with_num(String::from("int"), TypeEntryType::Basic, INT);
+        self.new_type_with_num(String::from("float"), TypeEntryType::Basic, FLOAT);
+        self.new_type_with_num(String::from("str"), TypeEntryType::Basic, STR);
     }
 
     fn add_default_ops(&mut self) {
