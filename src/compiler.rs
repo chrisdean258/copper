@@ -224,6 +224,7 @@ impl Compiler {
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
+            ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(e.derived_type.unwrap()),
         }
     }
@@ -267,6 +268,10 @@ impl Compiler {
             }
             _ => unreachable!(),
         }
+    }
+
+    fn repeated_arg(&mut self) {
+        todo!()
     }
 
     fn null(&mut self, typ: Type) {
@@ -571,7 +576,7 @@ impl Compiler {
 
     fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
         debug_assert!(
-            sig.inputs.len() == f.argnames.len(),
+            sig.repeated_inputs.is_some() || sig.inputs.len() == f.argnames.len(),
             "{:#?}\n-------------------\n{:#?}",
             f,
             sig

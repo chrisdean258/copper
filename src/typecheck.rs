@@ -1,5 +1,6 @@
 use crate::builtins::BuiltinFunction;
 use crate::location::Location;
+// use crate::operation::Operation;
 use crate::parser;
 use crate::parser::ParseTree;
 use crate::parser::*;
@@ -24,6 +25,7 @@ pub struct TypeChecker {
     allow_raw_func: bool,
     func_returns: Vec<Option<Type>>,
     need_recheck: bool,
+    repeated_arg: Option<(String, Type)>,
 }
 
 type TypeError = Vec<String>;
@@ -50,6 +52,7 @@ impl TypeChecker {
             allow_raw_func: false,
             func_returns: Vec::new(),
             need_recheck: false,
+            repeated_arg: None,
         };
         rv.openscope();
         for f in BuiltinFunction::get_table() {
@@ -218,6 +221,7 @@ impl TypeChecker {
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+            ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
         }?;
         e.derived_type = Some(rv);
@@ -229,6 +233,10 @@ impl TypeChecker {
 
     fn null(&mut self) -> Result<Type, TypeError> {
         Ok(NULL)
+    }
+
+    fn repeated_arg(&mut self) -> Result<Type, TypeError> {
+        Ok(self.repeated_arg.clone().unwrap().1)
     }
 
     fn binop(&mut self, b: &mut BinOp) -> Result<Type, TypeError> {
@@ -244,7 +252,10 @@ impl TypeChecker {
         }
         let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(|| 
             self.error(format!("Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-self.system.typename(ltype), b.op, self.system.typename(rtype)))
+                               self.system.typename(ltype),
+                               b.op,
+                               self.system.typename(rtype)
+               ))
         )?;
 
         Ok(rv)
@@ -657,7 +668,11 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         funcloc: Location,
         c: &mut CallExpr,
     ) -> Result<Type, TypeError> {
-        let num_default_needed = function.borrow().argnames.len() - args.len();
+        let num_default_needed = if function.borrow().repeated.is_some() {
+            0
+        } else {
+            function.borrow().argnames.len() - args.len()
+        };
 
         if num_default_needed > function.borrow().default_args.len() {
             return Err(self.error(format!(
@@ -685,6 +700,14 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
 
         self.openscope();
         self.func_returns.push(None);
+        let save_repeated = self.repeated_arg.clone();
+        if let Some(name) = function.borrow().repeated.clone() {
+            if args.len() > function.borrow().argnames.len() {
+                self.repeated_arg = Some((name, *args.last().unwrap()));
+            } else {
+                self.repeated_arg = Some((name, 0));
+            }
+        }
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
@@ -704,13 +727,22 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
                 return Err(s);
             }
         };
-        let func_sig = Signature {
-            inputs: args.clone(),
-            output: rv,
-            repeated_inputs: None,
+        let func_sig = if function.borrow().repeated.is_none() {
+            Signature {
+                inputs: args.clone(),
+                output: rv,
+                repeated_inputs: None,
+            }
+        } else {
+            Signature {
+                inputs: args[..function.borrow().argnames.len()].to_vec(),
+                output: rv,
+                repeated_inputs: Some(*args.last().unwrap()),
+            }
         };
         let sig_handle = self.system.add_function_signature(functype, func_sig);
         function.borrow_mut().locals = Some(self.closescope());
+        self.repeated_arg = save_repeated;
         let derived = self.func_returns.pop().unwrap();
         match derived {
             None => (),

@@ -7,6 +7,7 @@ use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::iter::Peekable;
+use std::mem::swap;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,7 @@ pub enum ExpressionType {
     DottedLookup(DottedLookup),
     LambdaArg(LambdaArg),
     FuncRefExpr(FuncRefExpr),
+    RepeatedArg,
     Null,
 }
 
@@ -64,6 +66,7 @@ pub struct ParseTree {
     pub statements: Vec<Statement>,
     max_arg: Vec<usize>,
     loop_count: usize,
+    repeated_arg: Option<String>,
     pub globals: Option<usize>,
 }
 
@@ -165,6 +168,11 @@ pub struct AssignExpr {
 }
 
 #[derive(Debug, Clone)]
+pub struct Deref {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct PreUnOp {
     pub op: Operation,
     pub rhs: Box<Expression>,
@@ -179,6 +187,7 @@ pub struct PostUnOp {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub argnames: Vec<String>,
+    pub repeated: Option<String>,
     pub body: Box<Expression>,
     pub name: Option<String>,
     pub default_args: Vec<Expression>,
@@ -319,6 +328,7 @@ impl ParseTree {
             statements: Vec::new(),
             max_arg: Vec::new(),
             loop_count: 0,
+            repeated_arg: None,
             globals: None,
         }
     }
@@ -713,6 +723,15 @@ impl ParseTree {
                     _ => return Err(unexpected(&token)),
                 };
             }
+            if let ExpressionType::RefExpr(r) = &rhs.etype {
+                if Some(&r.name) == self.repeated_arg.as_ref() && optype == Operation::Deref {
+                    return Ok(Expression {
+                        derived_type: None,
+                        location: token.location,
+                        etype: ExpressionType::RepeatedArg,
+                    });
+                }
+            }
             Ok(Expression {
                 derived_type: None,
                 location: token.location,
@@ -818,12 +837,22 @@ impl ParseTree {
         };
         expect!(lexer, TokenType::OpenParen);
         let mut args = Vec::new();
+        let mut repeated = None;
         let mut default_args = Vec::new();
         let mut needs_default = false;
+        let mut last = 0;
         loop {
             let token = lexer.next().ok_or("Unexpected EOF")?;
             match &token.token_type {
-                TokenType::Identifier(s) => args.push(s.clone()),
+                TokenType::Identifier(s) if last == 0 => args.push(s.clone()),
+                TokenType::Identifier(s) if last == 1 => {
+                    last = 2;
+                    repeated = Some(s.clone());
+                }
+                TokenType::Times => {
+                    last = 1;
+                    continue;
+                }
                 TokenType::CloseParen => break,
                 _ => return Err(unexpected(&token)),
             }
@@ -848,13 +877,16 @@ impl ParseTree {
                 _ => return Err(unexpected(&token)),
             }
         }
+        swap(&mut self.repeated_arg, &mut repeated);
         let body = self.parse_expr(lexer)?;
+        swap(&mut self.repeated_arg, &mut repeated);
 
         Ok(Expression {
             derived_type: None,
             location: loctoken.location,
             etype: ExpressionType::Function(Rc::new(RefCell::new(Function {
                 argnames: args,
+                repeated,
                 body: Box::new(body),
                 name,
                 default_args,

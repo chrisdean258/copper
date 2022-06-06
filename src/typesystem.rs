@@ -584,6 +584,6 @@ impl TypeSystem {
     }
 
     pub fn mangle(&self, name: &str, sig: &Signature) -> String {
-        format!("{}({})", name, self.format_args(&sig.inputs))
+        format!("{}({})", name, self.format_args_from_sig(sig))
     }
 }
