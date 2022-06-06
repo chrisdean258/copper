@@ -65,15 +65,16 @@ pub struct Signature {
 pub type Type = usize;
 pub const UNIT: Type = 0;
 pub const UNKNOWN_RETURN: Type = 1;
-pub const UNREACHABLE: Type = 2;
-pub const BUILTIN_FUNCTION: Type = 3;
-pub const NULL: Type = 4;
-pub const PTR: Type = 5;
-pub const BOOL: Type = 6;
-pub const CHAR: Type = 7;
-pub const INT: Type = 8;
-pub const FLOAT: Type = 9;
-pub const STR: Type = 10;
+pub const ANY: Type = 2;
+pub const UNREACHABLE: Type = 3;
+pub const BUILTIN_FUNCTION: Type = 4;
+pub const NULL: Type = 5;
+pub const PTR: Type = 6;
+pub const BOOL: Type = 7;
+pub const CHAR: Type = 8;
+pub const INT: Type = 9;
+pub const FLOAT: Type = 10;
+pub const STR: Type = 11;
 
 impl TypeSystem {
     pub fn new() -> Self {
@@ -95,6 +96,7 @@ impl TypeSystem {
             TypeEntryType::new_unknown_return(),
             UNKNOWN_RETURN,
         );
+        self.new_type_with_num(String::from("anytype"), TypeEntryType::new_unit(), ANY);
         self.new_type_with_num(
             String::from("unreachable"),
             TypeEntryType::new_unit(),
