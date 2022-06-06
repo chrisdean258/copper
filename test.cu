@@ -1,3 +1,3 @@
-fn real_print(*args) write(1, *args, '\n')
+fn real_print(a, *args) write(1, *args, '\n')
 
-real_print("Hello", ", ", "World!");
+real_print(1, "Hello", ", ", "World!");

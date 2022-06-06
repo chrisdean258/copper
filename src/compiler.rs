@@ -33,6 +33,7 @@ pub struct Compiler {
     breaks: Vec<usize>,
     continues: Vec<usize>,
     current_null: Option<usize>,
+    extra_args: usize,
 }
 
 impl Compiler {
@@ -61,6 +62,7 @@ impl Compiler {
             breaks: Vec::new(),
             continues: Vec::new(),
             current_null: None,
+            extra_args: 0,
         }
     }
 
@@ -230,13 +232,6 @@ impl Compiler {
     }
 
     fn binop(&mut self, b: &BinOp) {
-        // let types = self.types.as_ref().unwrap();
-        // if types.is_option(b.lhs.derived_type.unwrap()) {
-        // self.current_null = b.lhs.derived_type;
-        // }
-        // if types.is_option(b.rhs.derived_type.unwrap()) {
-        // self.current_null = b.rhs.derived_type;
-        // }
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
         self.code.emit_code(b.op.as_machine_op());
@@ -271,7 +266,16 @@ impl Compiler {
     }
 
     fn repeated_arg(&mut self) {
-        todo!()
+        let num_repeated = self.arg_types.as_ref().unwrap().len() - self.num_args;
+        // eprintln!( "num_args: {:?}\nnum_repeated: {:?}\narg_types: {:?}\nnum_locals: {:?}", self.num_args, self.num_repeated, self.arg_types, self.num_locals,);
+        if num_repeated == 0 {
+            return;
+        }
+        // first_arg
+        // eprintln!( "repeated arg! {}", self.code .local_ref(self.num_args as isize - num_repeated as isize));
+        self.code.local_ref(self.num_args as isize);
+        self.code.load_n(num_repeated);
+        self.extra_args = num_repeated - 1;
     }
 
     fn null(&mut self, typ: Type) {
@@ -501,15 +505,6 @@ impl Compiler {
             }
         }
         self.current_null = save;
-        // self.code.dup();
-        // self.code.push(Value::Null);
-        // self.code.emit_code(MachineOperation::CmpNotEq);
-        // let bp = self.code.jump_relative_if(0);
-        // self.code.pop();
-        // self.code.push(Value::None(t));
-        // self.code
-        // .backpatch_jump_rel(bp, self.code.next_function_relative_addr() as isize);
-        // }
     }
 
     fn string(&mut self, s: &Str) {
@@ -646,10 +641,13 @@ impl Compiler {
     fn call(&mut self, c: &CallExpr) {
         self.code.push(Value::Uninitialized); // ip
         self.code.push(Value::Uninitialized); // bp
+        let save_extra = self.extra_args;
+        self.extra_args = 0;
         for arg in c.args.iter() {
             self.expr(arg);
         }
-        self.code.push(Value::Count(c.args.len()));
+        self.code.push(Value::Count(c.args.len() + self.extra_args));
+        self.extra_args = save_extra;
 
         let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
         swap(&mut arg_types, &mut self.arg_types);

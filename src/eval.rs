@@ -82,15 +82,15 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        // for (i, instr) in code.iter().enumerate() {
-        // eprintln!("0x{:08x}: {}", i + CODE, instr);
-        // }
+        for (i, instr) in code.iter().enumerate() {
+            eprintln!("0x{:08x}: {}", i + CODE, instr);
+        }
         self.code = code;
         while self.ip < self.code.len() + CODE {
-            // eprintln!("Stack: {:?}", self.memory.stack);
-            // eprint!("IP: 0x{:08x}:  ", self.ip);
-            // eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
-            // eprint!("BP: 0x{:08x}     ", self.bp);
+            eprintln!("Stack: {:?}", self.memory.stack);
+            eprint!("IP: 0x{:08x}:  ", self.ip);
+            eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
+            eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - CODE].op {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {
@@ -124,6 +124,13 @@ impl Evaluator {
                     self.memory.memcpy(dst, src, num);
                     self.memory
                         .truncate_stack(self.memory.stack_top() - num - 1);
+                }
+                MachineOperation::LoadN => {
+                    let num = pop!(Value::Count);
+                    let src = pop!(Value::Ptr);
+                    let dst = self.memory.stack_top();
+                    self.memory.reserve(num);
+                    self.memory.memcpy(dst, src, num);
                 }
                 MachineOperation::Alloc => {
                     let val = pop!(Value::Count);

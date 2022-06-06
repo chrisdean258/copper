@@ -57,7 +57,7 @@ impl Display for Instruction {
 
         match self.value {
             Value::Uninitialized => Ok(()),
-            _ => f.write_fmt(format_args!(" ({})", self.value)),
+            _ => f.write_fmt(format_args!(" ({:?})", self.value)),
         }
     }
 }
@@ -162,6 +162,11 @@ impl CodeBuilder {
 
     pub fn load(&mut self) -> usize {
         self.emit_code(MachineOperation::Load)
+    }
+
+    pub fn load_n(&mut self, count: usize) -> usize {
+        self.push(Value::Count(count));
+        self.emit_code(MachineOperation::LoadN)
     }
 
     pub fn store(&mut self) -> usize {
