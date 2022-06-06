@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::operation::Operation;
 use std::collections::HashMap;
 
@@ -30,7 +29,6 @@ pub struct TypeEntry {
 
 #[derive(Debug, Clone)]
 struct GenericOperation {
-    operation: Operation,
     signatures: Vec<Signature>,
 }
 
@@ -185,18 +183,10 @@ impl TypeSystem {
         self.ensure_op(Operation::Deref);
     }
 
-    pub fn find_or_make_type(&mut self, name: String, te_type: TypeEntryType) -> Type {
-        match self.types_by_name.get(&name) {
-            Some(a) => *a,
-            None => self.new_type(name, te_type),
-        }
-    }
-
     pub fn ensure_op(&mut self, operation: Operation) {
         self.operations
             .entry(operation)
             .or_insert_with(|| GenericOperation {
-                operation,
                 signatures: Vec::new(),
             });
     }
