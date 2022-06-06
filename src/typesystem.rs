@@ -46,7 +46,23 @@ pub struct ResolvedFunction {
 pub struct Signature {
     pub inputs: Vec<Type>,
     pub output: Type,
-    pub allow_multiple_last: bool,
+    pub repeated_inputs: Option<Type>,
+}
+
+impl Signature {
+    pub fn match_inputs(&self, inputs: &[Type]) -> bool {
+        let inputs_eq = self.inputs.iter().zip(inputs).all(|(a, b)| a.matches(b));
+        if !inputs_eq {
+            return false;
+        }
+        if self.inputs.len() == inputs.len() {
+            return true;
+        }
+        if let Some(t) = self.repeated_inputs {
+            return inputs[self.inputs.len()..].iter().all(|a| a.matches(&t));
+        }
+        false
+    }
 }
 
 pub type Type = usize;
@@ -62,6 +78,16 @@ pub const CHAR: Type = 8;
 pub const INT: Type = 9;
 pub const FLOAT: Type = 10;
 pub const STR: Type = 11;
+
+trait TypeMatch {
+    fn matches(&self, other: &Type) -> bool;
+}
+
+impl TypeMatch for Type {
+    fn matches(&self, other: &Type) -> bool {
+        self == other || *self == ANY || *other == ANY
+    }
+}
 
 impl TypeSystem {
     pub fn new() -> Self {
@@ -112,7 +138,7 @@ impl TypeSystem {
                     $(self.add_signature(op, Signature {
                         inputs: vec![$( $input ),+],
                         output: $returntype,
-                        allow_multiple_last: false,
+                        repeated_inputs: None,
                     });)*
                 }
             };
@@ -224,7 +250,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![list_type, list_type],
                 output: list_type,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -233,7 +259,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![list_type, list_type],
                 output: list_type,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -253,7 +279,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: option_type,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -262,7 +288,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, NULL],
                 output: option_type,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -271,7 +297,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, t],
                 output: option_type,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -280,7 +306,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: BOOL,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -289,7 +315,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: BOOL,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -322,7 +348,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type],
                 output: t,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -543,6 +569,18 @@ impl TypeSystem {
             .map(|t| self.typename(*t))
             .collect::<Vec<String>>()
             .join(", ")
+    }
+
+    pub fn format_args_repeated(&self, args: &[Type], repeated: Type) -> String {
+        format!("{}, *{}", self.format_args(args), self.typename(repeated))
+    }
+
+    pub fn format_args_from_sig(&self, sig: &Signature) -> String {
+        if let Some(t) = sig.repeated_inputs {
+            self.format_args_repeated(&sig.inputs, t)
+        } else {
+            self.format_args(&sig.inputs)
+        }
     }
 
     pub fn mangle(&self, name: &str, sig: &Signature) -> String {

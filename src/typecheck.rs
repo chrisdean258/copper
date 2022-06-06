@@ -539,7 +539,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
                                 sig: Signature {
                                     inputs: $args.clone(),
                                     output: $out,
-                                    allow_multiple_last: false,
+                                    repeated_inputs: None,
                                 },
                             })
                         }
@@ -568,7 +568,29 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         check_err!(errs);
 
         if functype == BUILTIN_FUNCTION {
-            return Ok(UNIT);
+            let funcname = match &c.function.as_ref().etype {
+                ExpressionType::RefExpr(r) => r.name.clone(),
+                _ => {
+                    return Err(
+                        self.error("Cannot indirectly call call Builtin functions yet".to_string())
+                    )
+                }
+            };
+            let mut funcs: Vec<BuiltinFunction> = BuiltinFunction::get_table()
+                .into_iter()
+                .filter(|x| x.name == funcname)
+                .collect();
+            debug_assert_eq!(funcs.len(), 1);
+            let func = funcs.pop().unwrap();
+            return if func.signature.match_inputs(&args) {
+                Ok(func.signature.output)
+            } else {
+                Err(self.error(format!(
+                    "Functions inputs didnt match. Exepcted `{}` found `{}`",
+                    self.system.format_args_from_sig(&func.signature),
+                    self.system.format_args(&args),
+                )))
+            };
         }
 
         if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
@@ -685,7 +707,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         let func_sig = Signature {
             inputs: args.clone(),
             output: rv,
-            allow_multiple_last: false,
+            repeated_inputs: None,
         };
         let sig_handle = self.system.add_function_signature(functype, func_sig);
         function.borrow_mut().locals = Some(self.closescope());
@@ -725,7 +747,8 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
                     return Err(s);
                 }
             };
-            function.borrow_mut().locals = Some(self.closescope());
+            let locals = Some(self.closescope());
+            debug_assert_eq!(function.borrow_mut().locals, locals);
         }
         self.need_recheck = save;
         Ok(rv)
@@ -747,7 +770,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             Signature {
                 inputs: args.clone(),
                 output: UNKNOWN_RETURN,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
 
@@ -788,7 +811,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             Signature {
                 inputs: args.clone(),
                 output: rv,
-                allow_multiple_last: false,
+                repeated_inputs: None,
             },
         );
         c.function.as_mut().derived_type =

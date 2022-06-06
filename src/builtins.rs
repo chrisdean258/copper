@@ -28,7 +28,7 @@ macro_rules! as_type {
 pub struct BuiltinFunction {
     pub func: fn(&mut Evaluator, usize, usize) -> Value,
     pub name: String,
-    pub returns: Type,
+    pub signature: Signature,
 }
 
 impl Debug for BuiltinFunction {
@@ -43,17 +43,29 @@ impl BuiltinFunction {
             BuiltinFunction {
                 name: "write".to_string(),
                 func: write,
-                returns: UNIT,
+                signature: Signature {
+                    inputs: vec![INT],
+                    output: UNIT,
+                    repeated_inputs: Some(ANY),
+                },
             },
             BuiltinFunction {
                 name: "alloc".to_string(),
                 func: alloc,
-                returns: UNIT, // TODO: define a pointer type
+                signature: Signature {
+                    inputs: vec![INT],
+                    output: PTR,
+                    repeated_inputs: None,
+                },
             },
             BuiltinFunction {
                 name: "len".to_string(),
                 func: len,
-                returns: INT,
+                signature: Signature {
+                    inputs: vec![ANY],
+                    output: INT,
+                    repeated_inputs: None,
+                },
             },
         ]
     }
