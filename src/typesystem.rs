@@ -46,6 +46,7 @@ pub struct ResolvedFunction {
 pub struct Signature {
     pub inputs: Vec<Type>,
     pub output: Type,
+    pub allow_multiple_last: bool,
 }
 
 pub type Type = usize;
@@ -111,6 +112,7 @@ impl TypeSystem {
                     $(self.add_signature(op, Signature {
                         inputs: vec![$( $input ),+],
                         output: $returntype,
+                        allow_multiple_last: false,
                     });)*
                 }
             };
@@ -222,6 +224,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![list_type, list_type],
                 output: list_type,
+                allow_multiple_last: false,
             },
         );
 
@@ -230,6 +233,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![list_type, list_type],
                 output: list_type,
+                allow_multiple_last: false,
             },
         );
 
@@ -249,6 +253,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: option_type,
+                allow_multiple_last: false,
             },
         );
 
@@ -257,6 +262,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, NULL],
                 output: option_type,
+                allow_multiple_last: false,
             },
         );
 
@@ -265,6 +271,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, t],
                 output: option_type,
+                allow_multiple_last: false,
             },
         );
 
@@ -273,6 +280,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: BOOL,
+                allow_multiple_last: false,
             },
         );
 
@@ -281,6 +289,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type, option_type],
                 output: BOOL,
+                allow_multiple_last: false,
             },
         );
 
@@ -313,6 +322,7 @@ impl TypeSystem {
             Signature {
                 inputs: vec![option_type],
                 output: t,
+                allow_multiple_last: false,
             },
         );
 

@@ -539,6 +539,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
                                 sig: Signature {
                                     inputs: $args.clone(),
                                     output: $out,
+                                    allow_multiple_last: false,
                                 },
                             })
                         }
@@ -684,6 +685,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
         let func_sig = Signature {
             inputs: args.clone(),
             output: rv,
+            allow_multiple_last: false,
         };
         let sig_handle = self.system.add_function_signature(functype, func_sig);
         function.borrow_mut().locals = Some(self.closescope());
@@ -745,6 +747,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             Signature {
                 inputs: args.clone(),
                 output: UNKNOWN_RETURN,
+                allow_multiple_last: false,
             },
         );
 
@@ -785,6 +788,7 @@ self.system.typename(ltype), b.op, self.system.typename(rtype)))
             Signature {
                 inputs: args.clone(),
                 output: rv,
+                allow_multiple_last: false,
             },
         );
         c.function.as_mut().derived_type =
