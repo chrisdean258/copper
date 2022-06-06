@@ -82,15 +82,15 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        for (i, instr) in code.iter().enumerate() {
-            eprintln!("0x{:08x}: {}", i + CODE, instr);
-        }
+        // for (i, instr) in code.iter().enumerate() {
+            // eprintln!("0x{:08x}: {}", i + CODE, instr);
+        // }
         self.code = code;
         while self.ip < self.code.len() + CODE {
-            eprintln!("Stack: {:?}", self.memory.stack);
-            eprint!("IP: 0x{:08x}:  ", self.ip);
-            eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
-            eprint!("BP: 0x{:08x}     ", self.bp);
+            // eprintln!("Stack: {:?}", self.memory.stack);
+            // eprint!("IP: 0x{:08x}:  ", self.ip);
+            // eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
+            // eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - CODE].op {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {
