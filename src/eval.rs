@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use crate::builtins::BuiltinFunction;
-use crate::code_builder::Instruction;
 use crate::memory::{Memory, BUILTIN_CODE, CODE, STACK};
 use crate::operation::MachineOperation;
 // use crate::typesystem;
@@ -8,7 +7,7 @@ use crate::value::Value;
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
-    code: Vec<Instruction>,
+    code: Vec<MachineOperation>,
     pub memory: Memory,
     builtin_table: Vec<BuiltinFunction>,
     ip: usize,
@@ -28,7 +27,7 @@ impl Evaluator {
 
     pub fn eval(
         &mut self,
-        code: Vec<Instruction>,
+        code: Vec<MachineOperation>,
         mut strings: Vec<String>,
         entry: usize,
     ) -> Result<Value, String> {
@@ -83,7 +82,7 @@ impl Evaluator {
         }
         self.ip = entry;
         // for (i, instr) in code.iter().enumerate() {
-            // eprintln!("0x{:08x}: {}", i + CODE, instr);
+        // eprintln!("0x{:08x}: {}", i + CODE, instr);
         // }
         self.code = code;
         while self.ip < self.code.len() + CODE {
@@ -91,7 +90,7 @@ impl Evaluator {
             // eprint!("IP: 0x{:08x}:  ", self.ip);
             // eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
             // eprint!("BP: 0x{:08x}     ", self.bp);
-            match self.code[self.ip - CODE].op {
+            match self.code[self.ip - CODE] {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {
                     break;
@@ -103,7 +102,7 @@ impl Evaluator {
                         );
                     }
                 }
-                MachineOperation::Push => self.memory.push(self.code[self.ip - CODE].value),
+                MachineOperation::Push(v) => self.memory.push(v),
                 MachineOperation::Pop => {
                     self.memory.pop();
                 }
@@ -152,25 +151,22 @@ impl Evaluator {
                     self.memory
                         .push(Value::Ptr((self.bp as isize + o) as usize));
                 }
-                MachineOperation::Jump => {
-                    self.ip = pop!(Value::Ptr);
+                MachineOperation::Jump(ip) => {
+                    self.ip = ip;
                     continue;
                 }
-                MachineOperation::JumpRel => {
-                    let o = pop!(Value::PtrOffset);
-                    self.ip = (self.ip as isize + o) as usize;
+                MachineOperation::JumpRel(offset) => {
+                    self.ip = (self.ip as isize + offset) as usize;
                     continue;
                 }
-                MachineOperation::JumpIf => {
-                    let addr = pop!(Value::Ptr);
+                MachineOperation::JumpIf(ip) => {
                     let cond = pop!(Value::Bool);
                     if cond != 0 {
-                        self.ip = addr;
+                        self.ip = ip;
                         continue;
                     }
                 }
-                MachineOperation::JumpRelIf => {
-                    let offset = pop!(Value::PtrOffset);
+                MachineOperation::JumpRelIf(offset) => {
                     let cond = pop!(Value::Bool);
                     if cond != 0 {
                         self.ip = (self.ip as isize + offset) as usize;

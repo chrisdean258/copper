@@ -1,5 +1,5 @@
 use crate::builtins::BuiltinFunction;
-use crate::code_builder::{CodeBuilder, Instruction};
+use crate::code_builder::CodeBuilder;
 use crate::operation::{MachineOperation, Operation};
 use crate::parser::*;
 use crate::typesystem::{Signature, Type, TypeSystem, NULL};
@@ -71,7 +71,7 @@ impl Compiler {
         name: String,
         p: &ParseTree,
         types: &TypeSystem,
-    ) -> (Vec<Instruction>, Vec<String>, usize) {
+    ) -> (Vec<MachineOperation>, Vec<String>, usize) {
         self.types = Some(types.clone());
         self.code.open_function(name);
         if p.globals.unwrap() > 0 {
@@ -163,7 +163,7 @@ impl Compiler {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit_code(MachineOperation::Pop);
+                    self.code.emit(MachineOperation::Pop);
                 }
             }
             Statement::ClassDecl(c) => todo!("{:?}", c),
@@ -234,7 +234,7 @@ impl Compiler {
     fn binop(&mut self, b: &BinOp) {
         self.expr(b.lhs.as_ref());
         self.expr(b.rhs.as_ref());
-        self.code.emit_code(b.op.as_machine_op());
+        self.code.emit(b.op.as_machine_op());
     }
 
     fn preunop(&mut self, p: &PreUnOp) {
@@ -244,7 +244,7 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit_code(MachineOperation::Plus);
+                self.code.emit(MachineOperation::Plus);
                 self.code.store();
             }
             Operation::PreDec => {
@@ -252,13 +252,13 @@ impl Compiler {
                 self.code.dup();
                 self.code.load();
                 self.code.push(Value::Int(1));
-                self.code.emit_code(MachineOperation::Minus);
+                self.code.emit(MachineOperation::Minus);
                 self.code.store();
             }
             t if t.is_preunop() => {
                 self.expr(p.rhs.as_ref());
                 if p.op != Operation::Deref {
-                    self.code.emit_code(p.op.as_machine_op());
+                    self.code.emit(p.op.as_machine_op());
                 }
             }
             _ => unreachable!(),
@@ -302,7 +302,7 @@ impl Compiler {
         self.code.dup();
         self.code.rotate(3);
         self.code.push(Value::Int(1));
-        self.code.emit_code(match p.op {
+        self.code.emit(match p.op {
             Operation::PostInc => MachineOperation::Plus,
             Operation::PostDec => MachineOperation::Minus,
             _ => unreachable!(),
@@ -391,7 +391,7 @@ impl Compiler {
             self.code.dup();
             self.code.load();
             self.expr(a.rhs.as_ref());
-            self.code.emit_code(a.op.underlying_binop().as_machine_op());
+            self.code.emit(a.op.underlying_binop().as_machine_op());
         } else {
             let types = self.types.as_ref().unwrap();
             let save = self.current_null;
@@ -429,16 +429,17 @@ impl Compiler {
         self.expr(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
         swap(&mut self.continues, &mut continues);
-        let stop = self.code.next_function_relative_addr();
-        self.code.backpatch_jump_rel(start, stop as isize);
+        let condition = self.code.next_function_relative_addr();
         self.expr(w.condition.as_ref());
         self.code.jump_relative_if(body as isize);
         let end = self.code.push(Value::Uninitialized);
+
+        self.code.backpatch_jump_rel(start, condition as isize);
         for addr in breaks {
             self.code.backpatch_jump_rel(addr, end as isize);
         }
         for addr in continues {
-            self.code.backpatch_jump_rel(addr, stop as isize);
+            self.code.backpatch_jump_rel(addr, condition as isize);
         }
     }
 
@@ -453,7 +454,7 @@ impl Compiler {
             self.code.push(Value::Uninitialized); // If return value
             self.expr(i.condition.as_ref());
             self.code.dup();
-            self.code.emit_code(MachineOperation::BoolNot);
+            self.code.emit(MachineOperation::BoolNot);
             let mut next_branch = self.code.jump_relative_if(0);
             self.expr(i.body.as_ref());
             self.code.rotate(3);
@@ -466,9 +467,9 @@ impl Compiler {
                 self.expr(body.condition.as_ref());
                 self.code.dup();
                 self.code.rotate(3);
-                self.code.emit_code(MachineOperation::BoolOr);
+                self.code.emit(MachineOperation::BoolOr);
                 self.code.swap();
-                self.code.emit_code(MachineOperation::BoolNot);
+                self.code.emit(MachineOperation::BoolNot);
                 next_branch = self.code.jump_relative_if(0);
                 self.expr(body.body.as_ref());
                 self.code.rotate(3);
@@ -497,7 +498,7 @@ impl Compiler {
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             } else {
-                self.code.emit_code(MachineOperation::BoolNot);
+                self.code.emit(MachineOperation::BoolNot);
                 let jump_to_end = self.code.jump_relative_if(0);
                 self.expr(i.body.as_ref());
                 let end = self.code.next_function_relative_addr();
@@ -535,18 +536,18 @@ impl Compiler {
         self.get_no_ref(i.obj.as_ref());
         self.code.dup();
         self.code.push(Value::PtrOffset(1));
-        self.code.emit_code(MachineOperation::Plus);
+        self.code.emit(MachineOperation::Plus);
         self.code.load();
 
         debug_assert!(i.args.len() == 1);
         self.expr(&i.args[0]);
         self.code.dup();
         self.code.rotate(3);
-        self.code.emit_code(MachineOperation::CmpLE);
+        self.code.emit(MachineOperation::CmpLE);
         self.code.conditional_fail();
         self.code.swap();
         self.code.load();
-        self.code.emit_code(MachineOperation::Plus);
+        self.code.emit(MachineOperation::Plus);
         if !self.need_ref {
             self.code.load();
         }
