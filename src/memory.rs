@@ -55,7 +55,7 @@ impl Memory {
         self.stack.pop().unwrap()
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn last(&mut self) -> &Value {
         self.stack.last().unwrap()
     }
