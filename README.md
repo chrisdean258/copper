@@ -17,7 +17,7 @@ for example
 ```copper
 fn do_action_if(val, cond, action) if cond(val) action(val)
 
-do_action_if(10, \0 % 2 == 0, print)
+do_action_if(10, \0 % 2 == 0, \print(\0))
 ```
 
 will print 10
@@ -37,7 +37,7 @@ fn do_a_thing() {
 returns 1
 
 ```copper
-fn if_false() if(false) 5 else 8
+fn if_false() if false 5 else 8
 ```
 returns 8
 

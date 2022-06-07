@@ -15,10 +15,6 @@ color() {
 	tput sgr0
 }
 
-
-
-
-
 if [ $# -eq 0 ]; then
 	num_tests=0
 	num_passed=0
@@ -26,7 +22,7 @@ if [ $# -eq 0 ]; then
 	for file in ./test/*.cu; do
 		num_tests=$(($num_tests + 1))
 		if run-test "$file" &>/dev/null; then
-			num_passed="$(echo "$num_passed" | awk '{print $1 + 1}')"
+			num_passed="$((num_passed + 1))"
 			color 2 "Passed $file"
 		else
 			color 1 "Failed $file"
