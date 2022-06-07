@@ -49,6 +49,25 @@ pub struct Signature {
     pub repeated_inputs: Option<Type>,
 }
 
+#[macro_export]
+macro_rules! sig {
+    ($($ty:ident),* $(,)? => $outty:ident) => {
+         Signature {
+            inputs: vec![$($ty),*],
+            output: $outty,
+            repeated_inputs: None,
+        }
+    };
+    ($($ty:ident),* $(,)? + $repty:ident => $outty:ident) => {
+         Signature {
+            inputs: vec![$($ty),*],
+            output: $outty,
+            repeated_inputs: Some($repty),
+        }
+    }
+}
+pub(crate) use sig;
+
 impl Signature {
     pub fn match_inputs(&self, inputs: &[Type]) -> bool {
         let inputs_eq = self.inputs.iter().zip(inputs).all(|(a, b)| a.matches(b));
@@ -135,11 +154,7 @@ impl TypeSystem {
                 let ops = vec![$(Operation::$operation),+];
                 for op in ops {
                     self.ensure_op(op);
-                    $(self.add_signature(op, Signature {
-                        inputs: vec![$( $input ),+],
-                        output: $returntype,
-                        repeated_inputs: None,
-                    });)*
+                    $(self.add_signature(op, sig!($($input),+ => $returntype));)*
                 }
             };
         }
@@ -245,23 +260,8 @@ impl TypeSystem {
         let list_type = self.new_type(new_name, TypeEntryType::Container(t));
         self.types[t].list_type = Some(list_type);
 
-        self.add_signature(
-            Operation::Equal,
-            Signature {
-                inputs: vec![list_type, list_type],
-                output: list_type,
-                repeated_inputs: None,
-            },
-        );
-
-        self.add_signature(
-            Operation::Plus,
-            Signature {
-                inputs: vec![list_type, list_type],
-                output: list_type,
-                repeated_inputs: None,
-            },
-        );
+        self.add_signature(Operation::Equal, sig!(list_type, list_type => list_type));
+        self.add_signature(Operation::Plus, sig!(list_type, list_type => list_type));
 
         list_type
     }
@@ -271,88 +271,17 @@ impl TypeSystem {
             return t;
         }
         let new_name = format!("option<{}>", self.typename(t));
-        let option_type = self.new_type(new_name, TypeEntryType::Container(t));
-        self.types[t].option_type = Some(option_type);
+        let op_type = self.new_type(new_name, TypeEntryType::Container(t));
+        self.types[t].option_type = Some(op_type);
 
-        self.add_signature(
-            Operation::Equal,
-            Signature {
-                inputs: vec![option_type, option_type],
-                output: option_type,
-                repeated_inputs: None,
-            },
-        );
+        self.add_signature(Operation::Equal, sig!(op_type,op_type => op_type));
+        self.add_signature(Operation::Equal, sig!(op_type, NULL => op_type));
+        self.add_signature(Operation::Equal, sig!(op_type, t => op_type));
+        self.add_signature(Operation::CmpEq, sig!(op_type,op_type => BOOL));
+        self.add_signature(Operation::CmpNotEq, sig!(op_type,op_type => BOOL));
+        self.add_signature(Operation::Deref, sig!(op_type => t));
 
-        self.add_signature(
-            Operation::Equal,
-            Signature {
-                inputs: vec![option_type, NULL],
-                output: option_type,
-                repeated_inputs: None,
-            },
-        );
-
-        self.add_signature(
-            Operation::Equal,
-            Signature {
-                inputs: vec![option_type, t],
-                output: option_type,
-                repeated_inputs: None,
-            },
-        );
-
-        self.add_signature(
-            Operation::CmpEq,
-            Signature {
-                inputs: vec![option_type, option_type],
-                output: BOOL,
-                repeated_inputs: None,
-            },
-        );
-
-        self.add_signature(
-            Operation::CmpNotEq,
-            Signature {
-                inputs: vec![option_type, option_type],
-                output: BOOL,
-                repeated_inputs: None,
-            },
-        );
-
-        // self.add_signature(
-        // Operation::CmpEq,
-        // Signature {
-        // inputs: vec![option_type, NULL],
-        // output: BOOL,
-        // },
-        // );
-
-        // self.add_signature(
-        // Operation::CmpNotEq,
-        // Signature {
-        // inputs: vec![NULL, option_type],
-        // output: BOOL,
-        // },
-        // );
-
-        // self.add_signature(
-        // Operation::CmpNotEq,
-        // Signature {
-        // inputs: vec![option_type, NULL],
-        // output: BOOL,
-        // },
-        // );
-
-        self.add_signature(
-            Operation::Deref,
-            Signature {
-                inputs: vec![option_type],
-                output: t,
-                repeated_inputs: None,
-            },
-        );
-
-        option_type
+        op_type
     }
 
     pub fn underlying_type(&self, t: Type) -> Option<Type> {

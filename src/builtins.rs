@@ -37,36 +37,29 @@ impl Debug for BuiltinFunction {
     }
 }
 
+macro_rules! builtin_func {
+    ($name:ident, $($ty:ident),+ $(,)? => $outty:ident) => {
+        BuiltinFunction {
+            name: stringify!($name).to_string(),
+            func: $name,
+            signature: sig!($($ty),+ => $outty),
+        }
+    };
+    ($name:ident, $($ty:ident),* $(,)? + $repty:ident => $outty:ident) => {
+        BuiltinFunction {
+            name: stringify!($name).to_string(),
+            func: $name,
+            signature: sig!($($ty),+ + $repty=> $outty),
+        }
+    }
+}
+
 impl BuiltinFunction {
     pub fn get_table() -> Vec<BuiltinFunction> {
         vec![
-            BuiltinFunction {
-                name: "write".to_string(),
-                func: write,
-                signature: Signature {
-                    inputs: vec![INT],
-                    output: UNIT,
-                    repeated_inputs: Some(ANY),
-                },
-            },
-            BuiltinFunction {
-                name: "alloc".to_string(),
-                func: alloc,
-                signature: Signature {
-                    inputs: vec![INT],
-                    output: PTR,
-                    repeated_inputs: None,
-                },
-            },
-            BuiltinFunction {
-                name: "len".to_string(),
-                func: len,
-                signature: Signature {
-                    inputs: vec![ANY],
-                    output: INT,
-                    repeated_inputs: None,
-                },
-            },
+            builtin_func!(write, INT + ANY => UNIT),
+            builtin_func!(alloc, INT => PTR),
+            builtin_func!(len, ANY => INT),
         ]
     }
 }
