@@ -58,9 +58,9 @@ pub enum MachineOperation {
     Alloc,
     Load,
     LoadN(usize),
-    Rotate,
+    Rotate(usize),
     Swap,
-    Reserve,
+    Reserve(usize),
     RefFrame(isize),
     Jump(usize),
     JumpRel(isize),
@@ -268,9 +268,9 @@ impl Display for MachineOperation {
             MachineOperation::Store => "store",
             MachineOperation::StoreN(n) => return f.write_fmt(format_args!("storeN ({})", n)),
             MachineOperation::Alloc => "alloc",
-            MachineOperation::Rotate => "rotate",
+            MachineOperation::Rotate(n) => return f.write_fmt(format_args!("rotate ({})", n)),
             MachineOperation::Swap => "swap",
-            MachineOperation::Reserve => "reserve",
+            MachineOperation::Reserve(n) => return f.write_fmt(format_args!("reserve ({})", n)),
             MachineOperation::RefFrame(offset) => {
                 return f.write_fmt(format_args!("refframe ({})", hex(*offset)))
             }

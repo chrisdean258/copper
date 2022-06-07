@@ -134,12 +134,10 @@ impl Evaluator {
                     let addr = self.memory.malloc(val);
                     self.memory.push(Value::Ptr(addr));
                 }
-                MachineOperation::Reserve => {
-                    let size = pop!(Value::Count);
+                MachineOperation::Reserve(size) => {
                     self.memory.reserve(size);
                 }
-                MachineOperation::Rotate => {
-                    let num = pop!(Value::Count);
+                MachineOperation::Rotate(num) => {
                     self.memory.rotate(num);
                 }
                 MachineOperation::Dup => self.memory.dup(),

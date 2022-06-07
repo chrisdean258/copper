@@ -103,12 +103,8 @@ impl CodeBuilder {
             self.active_functions.last().unwrap().code.len() - 1
         } else if size == 1 {
             self.push(Value::Uninitialized)
-        } else if size == 2 {
-            self.push(Value::Uninitialized);
-            self.push(Value::Uninitialized)
         } else {
-            self.push(Value::Count(size));
-            self.emit(MachineOperation::Reserve)
+            self.emit(MachineOperation::Reserve(size))
         }
     }
 
@@ -117,7 +113,13 @@ impl CodeBuilder {
     }
 
     pub fn pop(&mut self) -> usize {
+        // let code = &mut self.active_functions.last_mut().unwrap().code;
+        // if let MachineOperation::Push(_) = code.last().unwrap() {
+        // code.pop();
+        // code.len() - 1
+        // } else {
         self.emit(MachineOperation::Pop)
+        // }
     }
 
     pub fn dup(&mut self) -> usize {
@@ -198,8 +200,7 @@ impl CodeBuilder {
     }
 
     pub fn rotate(&mut self, how_many: usize) -> usize {
-        self.push(Value::Count(how_many));
-        self.emit(MachineOperation::Rotate)
+        self.emit(MachineOperation::Rotate(how_many))
     }
 
     pub fn swap(&mut self) -> usize {

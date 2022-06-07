@@ -6,4 +6,4 @@ def fib(a):
     else:
         return fib(a - 1) + fib(a - 2)
 
-print(fib(34))
+print(fib(40))
