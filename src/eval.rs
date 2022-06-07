@@ -114,7 +114,10 @@ impl Evaluator {
                     let value = self.memory.pop();
                     let addr = pop!(Value::Ptr);
                     self.memory[addr] = value;
-                    self.memory.push(value);
+                    match self.code[self.ip - CODE + 1] {
+                        MachineOperation::Pop => self.ip += 1,
+                        _ => self.memory.push(value),
+                    }
                 }
                 MachineOperation::StoreN(num) => {
                     let dst = as_type!(self.memory[self.memory.stack_top() - num - 1], Value::Ptr);

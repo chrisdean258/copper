@@ -113,13 +113,13 @@ impl CodeBuilder {
     }
 
     pub fn pop(&mut self) -> usize {
-        // let code = &mut self.active_functions.last_mut().unwrap().code;
-        // if let MachineOperation::Push(_) = code.last().unwrap() {
-        // code.pop();
-        // code.len() - 1
-        // } else {
-        self.emit(MachineOperation::Pop)
-        // }
+        let code = &mut self.active_functions.last_mut().unwrap().code;
+        if let MachineOperation::Push(_) = code.last().unwrap() {
+            code.pop();
+            code.len() - 1
+        } else {
+            self.emit(MachineOperation::Pop)
+        }
     }
 
     pub fn dup(&mut self) -> usize {
