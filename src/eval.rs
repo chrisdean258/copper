@@ -48,36 +48,37 @@ impl Evaluator {
             };
         }
 
+        macro_rules! last {
+            ($typ:path) => {
+                as_type!(self.memory.last().clone(), $typ)
+            };
+        }
+
         macro_rules! do_binop {
             ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
                 let a = self.memory.pop();
-                let b = self.memory.pop();
-                self.memory.push(match (a, b) {
-                    $(
-                        (Value::$t1(aa), Value::$t2(bb)) => Value::$to(bb $op aa),
-                    )+
-                    _ => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b),
-                })
+                *self.memory.last_mut() = match (a, self.memory.last()) {
+                    $( (Value::$t1(aa), Value::$t2(bb)) => Value::$to(bb $op aa),)+
+                    (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
+                };
             };
         }
         macro_rules! do_comparison {
             ($op:tt, $($t1:ident, $t2:ident),+ $(,)?) => {
                 let a = self.memory.pop();
-                let b = self.memory.pop();
-                self.memory.push(match (a, b) {
-                    $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(if bb $op aa {1} else {0}),)+
-                    _ => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b),
-                })
+                *self.memory.last_mut() = match (a, self.memory.last()) {
+                    $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(if *bb $op aa {1} else {0}),)+
+                    (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
+                };
             };
         }
 
         macro_rules! do_unop {
             ($op:tt, $($t:ident),+ $(,)?) => {
-                let a = self.memory.pop();
-                self.memory.push(match a {
+                *self.memory.last_mut() = match self.memory.last() {
                     $(Value::$t(aa) => Value::$t($op aa),)+
-                    _ => unreachable!("Trying to apply binop {} {:?}", stringify!(op), a),
-                })
+                    a => unreachable!("Trying to apply binop {} {:?}", stringify!($op), a),
+                }
             };
         }
         self.ip = entry;
@@ -107,8 +108,8 @@ impl Evaluator {
                     self.memory.pop();
                 }
                 MachineOperation::Load => {
-                    let addr = pop!(Value::Ptr);
-                    self.memory.push(self.memory[addr]);
+                    let addr = last!(Value::Ptr);
+                    *self.memory.last_mut() = self.memory[addr];
                 }
                 MachineOperation::Store => {
                     let value = self.memory.pop();
@@ -133,9 +134,9 @@ impl Evaluator {
                     self.memory.memcpy(dst, src, num);
                 }
                 MachineOperation::Alloc => {
-                    let val = pop!(Value::Count);
+                    let val = last!(Value::Count);
                     let addr = self.memory.malloc(val);
-                    self.memory.push(Value::Ptr(addr));
+                    *self.memory.last_mut() = Value::Ptr(addr);
                 }
                 MachineOperation::Reserve(size) => {
                     self.memory.reserve(size);
@@ -175,8 +176,8 @@ impl Evaluator {
                     let rv = self.memory.pop();
                     self.memory.truncate_stack(self.bp);
                     self.bp = pop!(Value::Ptr);
-                    self.ip = pop!(Value::Ptr);
-                    self.memory.push(rv);
+                    self.ip = last!(Value::Ptr);
+                    *self.memory.last_mut() = rv;
                     continue;
                 }
                 MachineOperation::Call => {
@@ -258,42 +259,41 @@ impl Evaluator {
                 }
                 MachineOperation::CmpEq => {
                     let a = self.memory.pop();
-                    let b = self.memory.pop();
-                    self.memory.push(match (a, b) {
+                    *self.memory.last_mut() = match (a, self.memory.last()) {
                         (Value::Count(aa), Value::Count(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         (Value::Float(aa), Value::Float(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         (Value::Int(aa), Value::Int(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         (Value::Char(aa), Value::Char(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         (Value::Bool(aa), Value::Bool(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         // (Value::Null, Value::Null) => Value::Bool(1),
                         // (Value::Null, Value::None(_)) => Value::Bool(1),
                         // (Value::None(_), Value::Null) => Value::Bool(1),
                         (Value::None(aa), Value::None(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
+                            Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
                         // (Value::Null, _) => Value::Bool(0),
                         // (_, Value::Null) => Value::Bool(0),
                         (Value::None(_), _) => Value::Bool(0),
                         (_, Value::None(_)) => Value::Bool(0),
-                        _ => {
+                        (_, b) => {
                             unreachable!("Trying to apply binop {:?} == {:?}", a, b)
                         }
-                    });
+                    };
                 }
                 MachineOperation::CmpNotEq => {
                     let a = self.memory.pop();
-                    let b = self.memory.pop();
-                    self.memory.push(match (a, b) {
+                    let b = self.memory.last().clone();
+                    *self.memory.last_mut() = match (a, b) {
                         (Value::Count(aa), Value::Count(bb)) => {
                             Value::Bool(if bb != aa { 1 } else { 0 })
                         }
@@ -322,7 +322,7 @@ impl Evaluator {
                         _ => {
                             unreachable!("Trying to apply binop {:?} != {:?}", a, b)
                         }
-                    });
+                    };
                 }
                 MachineOperation::BitShiftLeft => {
                     do_binop!(<<,
@@ -347,8 +347,8 @@ impl Evaluator {
                 }
                 MachineOperation::Plus => {
                     let a = self.memory.pop();
-                    let b = self.memory.pop();
-                    let val = match (a, b) {
+                    let b = self.memory.last().clone();
+                    *self.memory.last_mut() = match (a, b) {
                         (Value::PtrOffset(aa), Value::Ptr(bb)) => {
                             Value::Ptr((bb as isize + aa) as usize)
                         }
@@ -364,7 +364,6 @@ impl Evaluator {
                             unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
                         }
                     };
-                    self.memory.push(val);
                 }
                 MachineOperation::Times => {
                     do_binop!(*,
@@ -387,11 +386,10 @@ impl Evaluator {
                     );
                 }
                 MachineOperation::BoolNot => {
-                    let a = self.memory.pop();
-                    self.memory.push(match a {
+                    *self.memory.last_mut() = match self.memory.last() {
                         Value::Bool(aa) => Value::Bool(1 - aa),
-                        _ => unreachable!("Trying to apply binop !{:?}", a),
-                    })
+                        a => unreachable!("Trying to apply binop !{:?}", a),
+                    }
                 }
                 MachineOperation::BitNot => {
                     do_unop!(!, Int, Char);

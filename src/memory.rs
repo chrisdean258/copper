@@ -56,6 +56,16 @@ impl Memory {
     }
 
     #[inline(always)]
+    pub fn last(&mut self) -> &Value {
+        self.stack.last().unwrap()
+    }
+
+    #[inline(always)]
+    pub fn last_mut(&mut self) -> &mut Value {
+        self.stack.last_mut().unwrap()
+    }
+
+    #[inline(always)]
     pub fn reserve(&mut self, count: usize) {
         self.stack
             .resize(self.stack.len() + count, Value::Uninitialized)
