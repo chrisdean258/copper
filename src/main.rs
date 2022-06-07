@@ -14,7 +14,7 @@ mod value;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::env;
-use std::fs::{read_to_string, File};
+use std::fs::File;
 use std::io::{self, BufRead};
 
 fn main() {
@@ -178,11 +178,15 @@ fn eval_stdin(typecheck_only: bool) -> Result<i64, String> {
 }
 
 fn eval_file(filename: &str, typecheck_only: bool) -> Result<i64, String> {
-    let mut lines =
-        vec![read_to_string(filename).map_err(|e| format!("{}: {}", filename, e))?].into_iter();
-    // let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    let lexer = lex::Lexer::new(filename, &mut lines);
-    eval_lexer(lexer, typecheck_only)
+    let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
+    let md = file
+        .metadata()
+        .map_err(|e| format!("{}: {}", filename, e))?;
+    if md.is_dir() {
+        return Err(format!("{}: Is a directory", filename));
+    }
+    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
+    eval_lexer(lex::Lexer::new(filename, &mut lines), typecheck_only)
 }
 
 fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<i64, String> {
