@@ -87,8 +87,7 @@ impl CodeBuilder {
     }
 
     pub fn local_ref(&mut self, number: isize) -> usize {
-        self.push(Value::PtrOffset(number));
-        self.emit(MachineOperation::RefFrame)
+        self.emit(MachineOperation::RefFrame(number))
     }
 
     pub fn global_ref(&mut self, number: usize) -> usize {
@@ -130,8 +129,7 @@ impl CodeBuilder {
     }
 
     pub fn load_n(&mut self, count: usize) -> usize {
-        self.push(Value::Count(count));
-        self.emit(MachineOperation::LoadN)
+        self.emit(MachineOperation::LoadN(count))
     }
 
     pub fn store(&mut self) -> usize {
@@ -139,8 +137,7 @@ impl CodeBuilder {
     }
 
     pub fn store_n(&mut self, count: usize) -> usize {
-        self.push(Value::Count(count));
-        self.emit(MachineOperation::StoreN)
+        self.emit(MachineOperation::StoreN(count))
     }
 
     pub fn return_(&mut self) -> usize {

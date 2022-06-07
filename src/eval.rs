@@ -116,16 +116,14 @@ impl Evaluator {
                     self.memory[addr] = value;
                     self.memory.push(value);
                 }
-                MachineOperation::StoreN => {
-                    let num = pop!(Value::Count);
+                MachineOperation::StoreN(num) => {
                     let dst = as_type!(self.memory[self.memory.stack_top() - num - 1], Value::Ptr);
                     let src = self.memory.stack_top() - num;
                     self.memory.memcpy(dst, src, num);
                     self.memory
                         .truncate_stack(self.memory.stack_top() - num - 1);
                 }
-                MachineOperation::LoadN => {
-                    let num = pop!(Value::Count);
+                MachineOperation::LoadN(num) => {
                     let src = pop!(Value::Ptr);
                     let dst = self.memory.stack_top();
                     self.memory.reserve(num);
@@ -146,8 +144,7 @@ impl Evaluator {
                 }
                 MachineOperation::Dup => self.memory.dup(),
                 MachineOperation::Swap => self.memory.swap(),
-                MachineOperation::RefFrame => {
-                    let o = pop!(Value::PtrOffset);
+                MachineOperation::RefFrame(o) => {
                     self.memory
                         .push(Value::Ptr((self.bp as isize + o) as usize));
                 }

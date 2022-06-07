@@ -54,14 +54,14 @@ pub enum MachineOperation {
     Pop,
     Dup,
     Store,
-    StoreN,
+    StoreN(usize),
     Alloc,
     Load,
-    LoadN,
+    LoadN(usize),
     Rotate,
     Swap,
     Reserve,
-    RefFrame,
+    RefFrame(isize),
     Jump(usize),
     JumpRel(isize),
     JumpIf(usize),
@@ -246,6 +246,14 @@ impl Display for Operation {
     }
 }
 
+fn hex(val: isize) -> String {
+    if val >= 0 {
+        format!("+0x{:x}", val)
+    } else {
+        format!("-0x{:x}", -val)
+    }
+}
+
 impl Display for MachineOperation {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.write_str(match self {
@@ -256,37 +264,25 @@ impl Display for MachineOperation {
             MachineOperation::Pop => "pop",
             MachineOperation::Dup => "dup",
             MachineOperation::Load => "load",
-            MachineOperation::LoadN => "loadN",
+            MachineOperation::LoadN(n) => return f.write_fmt(format_args!("loadN ({})", n)),
             MachineOperation::Store => "store",
-            MachineOperation::StoreN => "storeN",
+            MachineOperation::StoreN(n) => return f.write_fmt(format_args!("storeN ({})", n)),
             MachineOperation::Alloc => "alloc",
             MachineOperation::Rotate => "rotate",
             MachineOperation::Swap => "swap",
             MachineOperation::Reserve => "reserve",
-            MachineOperation::RefFrame => "refframe",
+            MachineOperation::RefFrame(offset) => {
+                return f.write_fmt(format_args!("refframe ({})", hex(*offset)))
+            }
             MachineOperation::Jump(ip) => return f.write_fmt(format_args!("jmp (+0x{:x})", ip)),
             MachineOperation::JumpIf(ip) => {
                 return f.write_fmt(format_args!("jmpif (+0x{:x})", ip))
             }
             MachineOperation::JumpRel(offset) => {
-                return f.write_fmt(format_args!(
-                    "jmprel ({})",
-                    if *offset > 0 {
-                        format!("+0x{:x}", offset)
-                    } else {
-                        format!("-0x{:x}", -offset)
-                    }
-                ))
+                return f.write_fmt(format_args!("jmprel ({})", hex(*offset)))
             }
             MachineOperation::JumpRelIf(offset) => {
-                return f.write_fmt(format_args!(
-                    "jmprelif ({})",
-                    if *offset > 0 {
-                        format!("+0x{:x}", offset)
-                    } else {
-                        format!("-0x{:x}", -offset)
-                    }
-                ))
+                return f.write_fmt(format_args!("jmprelif ({})", hex(*offset)))
             }
             MachineOperation::Call => "call",
             MachineOperation::Return => "ret",
