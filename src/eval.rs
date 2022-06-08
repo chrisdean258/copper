@@ -292,7 +292,7 @@ impl Evaluator {
                 }
                 MachineOperation::CmpNotEq => {
                     let a = self.memory.pop();
-                    let b = self.memory.last().clone();
+                    let b = *self.memory.last();
                     *self.memory.last_mut() = match (a, b) {
                         (Value::Count(aa), Value::Count(bb)) => {
                             Value::Bool(if bb != aa { 1 } else { 0 })
@@ -347,7 +347,7 @@ impl Evaluator {
                 }
                 MachineOperation::Plus => {
                     let a = self.memory.pop();
-                    let b = self.memory.last().clone();
+                    let b = *self.memory.last();
                     *self.memory.last_mut() = match (a, b) {
                         (Value::PtrOffset(aa), Value::Ptr(bb)) => {
                             Value::Ptr((bb as isize + aa) as usize)
@@ -397,6 +397,6 @@ impl Evaluator {
             }
             self.ip += 1;
         }
-        Ok(Value::Null)
+        Ok(Value::Uninitialized)
     }
 }

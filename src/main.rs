@@ -15,8 +15,6 @@ mod value;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::env;
-use std::fs::File;
-use std::io::{self, BufRead};
 
 fn main() {
     std::process::exit(real_main() as i32)
@@ -58,7 +56,7 @@ fn real_main() -> i64 {
         Some(filename) => intp.interpret_file("__main__".to_string(), filename),
         None if use_stdin => intp.interpret_stdin(),
         None => {
-            return repl(typecheck_only);
+            return repl(intp);
         }
     };
 
@@ -74,63 +72,26 @@ fn real_main() -> i64 {
     }
 }
 
-fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Evaluator), String> {
-    let mut typechecker = typecheck::TypeChecker::new();
-    let mut evaluator = eval::Evaluator::new();
-    let mut compiler = compiler::Compiler::new();
-    let file = File::open(find_stdlib()).map_err(|e| format!("{}: {}", find_stdlib(), e))?;
-    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    let stdlib_lexer = lex::Lexer::new(&find_stdlib(), &mut lines);
-    let mut stdlib_tree = parser::parse(stdlib_lexer)?;
-    typechecker.typecheck(&mut stdlib_tree)?;
-    let (code, strings, entry) =
-        compiler.compile("stdlib".to_string(), &stdlib_tree, &typechecker.system);
-
-    evaluator.eval(code, strings, entry)?;
-    Ok((typechecker, compiler, evaluator))
-}
-
-fn repl(typecheck_only: bool) -> i64 {
+fn repl(mut intp: interpretter::Interpretter) -> i64 {
     let mut rl = Editor::<()>::new();
     let mut lineno: usize = 1;
-    let mut typechecker;
-    let _compiler;
-    let _evaluator;
-
-    match stdlib_env() {
-        Ok((t, c, e)) => {
-            typechecker = t;
-            _compiler = c;
-            _evaluator = e;
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            return 1;
-        }
-    }
 
     loop {
         let readline = rl.readline(">>> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
-                let lexer = lex::Lexer::new_with_lineno("<stdin>", vec![line].into_iter(), lineno);
-                lineno += 1;
-                let mut tree = match parser::parse(lexer) {
-                    Ok(t) => t,
-                    Err(s) => {
-                        eprintln!("{}", s);
-                        continue;
-                    }
-                };
-                if let Err(s) = typechecker.typecheck(&mut tree) {
-                    eprintln!("{}", s);
-                    continue;
-                };
-                if typecheck_only {
-                    continue;
+                let lexer = lex::Lexer::new_with_lineno(
+                    "<stdin>",
+                    vec![format!("print({{ {} }})", line)].into_iter(),
+                    lineno,
+                );
+                match intp.interpret_lexer("__main__".to_string(), lexer) {
+                    Ok(value::Value::Uninitialized) => (),
+                    Ok(a) => println!("{}", a),
+                    Err(s) => println!("{}", s),
                 }
-                // let _val = _evaluator.eval(code);
+                lineno += 1;
             }
             Err(ReadlineError::Interrupted) => break,
             Err(ReadlineError::Eof) => {

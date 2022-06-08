@@ -99,9 +99,9 @@ impl CodeBuilder {
     }
 
     pub fn reserve(&mut self, size: usize) -> usize {
-        if size == 0 {
-            self.active_functions.last().unwrap().code.len() - 1
-        } else if size == 1 {
+        // if size == 0 {
+        // self.active_functions.last().unwrap().code.len() - 1
+        if size == 1 {
             self.push(Value::Uninitialized)
         } else {
             self.emit(MachineOperation::Reserve(size))
