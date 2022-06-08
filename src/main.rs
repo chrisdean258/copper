@@ -3,6 +3,7 @@ mod builtins;
 mod code_builder;
 mod compiler;
 mod eval;
+mod interpretter;
 mod lex;
 mod location;
 mod memory;
@@ -19,6 +20,10 @@ use std::io::{self, BufRead};
 
 fn main() {
     std::process::exit(real_main() as i32)
+}
+
+fn find_stdlib() -> String {
+    format!("{}/git/copper/stdlib/stdlib.cu", env::var("HOME").unwrap())
 }
 
 fn real_main() -> i64 {
@@ -40,16 +45,18 @@ fn real_main() -> i64 {
         }
     }
 
+    let stdlib = find_stdlib();
+
+    let mut intp = interpretter::Interpretter::new(typecheck_only);
+    if let Err(s) = intp.interpret_file("__stdlib__".to_string(), &stdlib) {
+        eprintln!("{} (ERROR IN STDLIB)", s);
+        return 2;
+    }
+
     let rv = match file_or_cmd {
-        Some(cmd) if is_cmd => eval_cmd(cmd, typecheck_only),
-        Some(filename) => eval_file(filename, typecheck_only),
-        None if use_stdin => match eval_stdin(typecheck_only) {
-            Ok(i) => return i,
-            Err(s) => {
-                eprintln!("{}", s);
-                return 1;
-            }
-        },
+        Some(cmd) if is_cmd => intp.interpret_cmd("__main__".to_string(), cmd),
+        Some(filename) => intp.interpret_file("__main__".to_string(), filename),
+        None if use_stdin => intp.interpret_stdin(),
         None => {
             return repl(typecheck_only);
         }
@@ -60,12 +67,11 @@ fn real_main() -> i64 {
             eprintln!("{}", s);
             1
         }
-        Ok(i) => i,
+        Ok(v) => match v {
+            value::Value::Int(i) => i,
+            _ => 0,
+        },
     }
-}
-
-fn find_stdlib() -> String {
-    format!("{}/git/copper/stdlib/stdlib.cu", env::var("HOME").unwrap())
 }
 
 fn stdlib_env() -> Result<(typecheck::TypeChecker, compiler::Compiler, eval::Evaluator), String> {
@@ -138,59 +144,4 @@ fn repl(typecheck_only: bool) -> i64 {
         }
     }
     0
-}
-
-fn eval_lexer<T: Iterator<Item = String>>(
-    lexer: lex::Lexer<T>,
-    typecheck_only: bool,
-) -> Result<i64, String> {
-    let mut typechecker = typecheck::TypeChecker::new();
-    let mut evaluator = eval::Evaluator::new();
-    let mut compiler = compiler::Compiler::new();
-
-    let file = File::open(find_stdlib()).map_err(|e| format!("{}: {}", find_stdlib(), e))?;
-    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    let stdlib_lexer = lex::Lexer::new(&find_stdlib(), &mut lines);
-    let mut stdlib_tree = parser::parse(stdlib_lexer)?;
-    let mut tree = parser::parse(lexer)?;
-    typechecker.typecheck(&mut stdlib_tree)?;
-    typechecker.typecheck(&mut tree)?;
-
-    if typecheck_only {
-        return Ok(0);
-    }
-
-    let (s_code, s_strings, s_entry) =
-        compiler.compile("stdlib".to_string(), &stdlib_tree, &typechecker.system);
-    let (code, strings, entry) =
-        compiler.compile("__main__".to_string(), &tree, &typechecker.system);
-
-    evaluator.eval(s_code, s_strings, s_entry)?;
-    Ok(match evaluator.eval(code, strings, entry)? {
-        value::Value::Int(i) => i,
-        _ => 0,
-    })
-}
-
-fn eval_stdin(typecheck_only: bool) -> Result<i64, String> {
-    let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
-    eval_lexer(lex::Lexer::new("<stdin>", &mut lines), typecheck_only)
-}
-
-fn eval_file(filename: &str, typecheck_only: bool) -> Result<i64, String> {
-    let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
-    let md = file
-        .metadata()
-        .map_err(|e| format!("{}: {}", filename, e))?;
-    if md.is_dir() {
-        return Err(format!("{}: Is a directory", filename));
-    }
-    let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-    eval_lexer(lex::Lexer::new(filename, &mut lines), typecheck_only)
-}
-
-fn eval_cmd(cmd: &str, typecheck_only: bool) -> Result<i64, String> {
-    let mut lines = vec![cmd.into()].into_iter();
-    let lexer = lex::Lexer::new("<cmdline>", &mut lines);
-    eval_lexer(lexer, typecheck_only)
 }
