@@ -22,11 +22,10 @@ do_action_if(10, \0 % 2 == 0, \print(\0))
 
 will print 10
 
-Its also worth noting that you dont need semicolons or newlines, copper will
-figure out what you meant.
+Its also worth noting that you dont need semicolons, newlines, or even spaces
+between expressions or statements, copper will figure out what you meant.
 
 Braced expressions will return the last value calculated in the expression.
-Return statements are not yet implemented
 
 ```copper
 fn do_a_thing() {
@@ -41,30 +40,115 @@ fn if_false() if false 5 else 8
 ```
 returns 8
 
+### Flow control
+
+Copper uses pretty standard control flows. 
+
+```copper
+if true print(1) else print(2)
+```
+
+will print `1`
+
+but also 
+
+```copper
+print(if true 1 else 2)
+```
+
+will print `1`
+
+
+```copper
+i = 1
+while true i++
+```
+will loop infinitely
+```copper
+i = 0
+while true {
+	i += 1
+	if i > 9 { break }
+}
+
+print(i)
+```
+
+will print 10 as the look ends with the `break`. `continue` works similarly to c as well.
+Note: `break` and `continue` must be used within brackets, but I am working on an expression form
+
+`for` loops are yet to be implemented
+
 
 ### Types
 Currently only some basic types are supported:
 - Int
 - Char
 - String
-- Null
-- Nullable&lt;T&gt; where T is one of the above
+- Optional&lt;T&gt; where T is one of the above
+- List&lt;T&gt;
 
-A nullable value is created when on creation a variable is assigned a null value then later assigned another non null value
+You can create an optional by conditionally returning a value or null from an
+if statment You can compare and optional to `null` or to a value of its
+underlying type You can extract the value with the unary `*` operator
 
-When it comes to types, you cannot change type except for a Null type promoting to a Nullable type
+```copper
+a = if true 1 else null
 
-## Call Stack
-
-```
-return ip
-return bp
-args...
-
-local vars...
+if a == null print("a was null") else print(*a)
 
 ```
 
+It is worth noting that a comparison to null with ONLY compare the outermost
+level to null. I.E
 
+```copper
+i = if true null else 1
+j = if false null else i
+print(j == null)
+```
+prints `false` and
 
+```copper
+i = if true null else 1
+j = if true null else i
+print(j == null)
+```
+prints `true` and 
+```copper
+i = if true null else 1
+j = if false null else i
+print(*j == null)
+```
+prints `true`
 
+as the type of null is deduced based on the expression to the 'most' optional value
+
+Lists are a work in progress but can be defined and indexed, although cannot be
+changed in size. It _should_ go without saying that lists are 0-indexed
+(looking at you lua).
+
+```
+a = [1, 2, 3]
+print(a[1])
+```
+prints `2`
+
+### Var args
+
+Copper supports variable arguments to functions. Currently the only thing that
+can be done with these is pass them along to a builtin function but hopefully
+soon they will be iterable
+
+```copper
+fn print(*args) write(1, *args, '\n')
+```
+
+This is the current definition of print in the stdlib. It passes all its
+arguments to `write`, a builtin, and sets the file decriptor as 1 and prints a
+newline
+
+### Builtins
+
+The current builtins are `write`, `alloc`, and `len` however these functions
+should likely not be used yet except for `write`
