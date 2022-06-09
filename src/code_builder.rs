@@ -1,6 +1,7 @@
 use crate::memory;
 use crate::operation::MachineOperation;
 // use crate::typesystem::*;
+use crate::optimizer::optimize;
 use crate::value::Value;
 use std::fmt::{Display, Formatter};
 
@@ -61,6 +62,8 @@ impl CodeBuilder {
         for pp in patchpoints {
             f.code[*pp] = MachineOperation::Push(Value::Ptr(rv + memory::CODE));
         }
+
+        f.code = optimize(f.code);
 
         self.finished_functions.append(&mut f.code);
         rv + memory::CODE

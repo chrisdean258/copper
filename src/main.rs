@@ -8,6 +8,7 @@ mod lex;
 mod location;
 mod memory;
 mod operation;
+mod optimizer;
 mod parser;
 mod typecheck;
 mod typesystem;

@@ -104,6 +104,7 @@ impl Evaluator {
                     }
                 }
                 MachineOperation::Push(v) => self.memory.push(v),
+                MachineOperation::Inplace(v) => *self.memory.last_mut() = v,
                 MachineOperation::Pop => {
                     self.memory.pop();
                 }
@@ -115,10 +116,12 @@ impl Evaluator {
                     let value = self.memory.pop();
                     let addr = pop!(Value::Ptr);
                     self.memory[addr] = value;
-                    match self.code[self.ip - CODE + 1] {
-                        MachineOperation::Pop => self.ip += 1,
-                        _ => self.memory.push(value),
-                    }
+                    self.memory.push(value);
+                }
+                MachineOperation::FastStore => {
+                    let value = self.memory.pop();
+                    let addr = pop!(Value::Ptr);
+                    self.memory[addr] = value;
                 }
                 MachineOperation::StoreN(num) => {
                     let dst = as_type!(self.memory[self.memory.stack_top() - num - 1], Value::Ptr);
