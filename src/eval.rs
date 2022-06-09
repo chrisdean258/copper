@@ -89,7 +89,7 @@ impl Evaluator {
         while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);
             // eprint!("IP: 0x{:08x}:  ", self.ip);
-            // eprint!("{:20}  ", self.code[self.ip - CODE].to_string());
+            // eprint!("{:23}  ", self.code[self.ip - CODE].to_string());
             // eprint!("BP: 0x{:08x}     ", self.bp);
             match self.code[self.ip - CODE] {
                 MachineOperation::Nop => (),
@@ -114,9 +114,9 @@ impl Evaluator {
                 }
                 MachineOperation::Store => {
                     let value = self.memory.pop();
-                    let addr = pop!(Value::Ptr);
+                    let addr = last!(Value::Ptr);
                     self.memory[addr] = value;
-                    self.memory.push(value);
+                    *self.memory.last_mut() = value;
                 }
                 MachineOperation::FastStore => {
                     let value = self.memory.pop();

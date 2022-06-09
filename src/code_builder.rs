@@ -128,7 +128,11 @@ impl CodeBuilder {
     }
 
     pub fn load_n(&mut self, count: usize) -> usize {
-        self.emit(MachineOperation::LoadN(count))
+        if count == 1 {
+            self.emit(MachineOperation::Load)
+        } else {
+            self.emit(MachineOperation::LoadN(count))
+        }
     }
 
     pub fn store(&mut self) -> usize {
