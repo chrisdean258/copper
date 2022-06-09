@@ -25,6 +25,7 @@ impl Evaluator {
         }
     }
 
+    #[allow(clippy::assign_op_pattern)]
     pub fn eval(
         &mut self,
         code: Vec<MachineOperation>,
@@ -57,8 +58,8 @@ impl Evaluator {
         macro_rules! do_binop {
             ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
                 let a = self.memory.pop();
-                *self.memory.last_mut() = match (a, self.memory.last()) {
-                    $( (Value::$t1(aa), Value::$t2(bb)) => Value::$to(bb $op aa),)+
+                match (a, self.memory.last_mut()) {
+                    $( (Value::$t1(aa), Value::$t2(ref mut bb)) => {*bb = *bb $op aa ; })+
                     (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
                 };
             };
@@ -75,16 +76,16 @@ impl Evaluator {
 
         macro_rules! do_unop {
             ($op:tt, $($t:ident),+ $(,)?) => {
-                *self.memory.last_mut() = match self.memory.last() {
-                    $(Value::$t(aa) => Value::$t($op aa),)+
+                match self.memory.last_mut() {
+                    $(Value::$t(ref mut aa) => {*aa = $op *aa;})+
                     a => unreachable!("Trying to apply binop {} {:?}", stringify!($op), a),
                 }
             };
         }
         self.ip = entry;
-        for (i, instr) in code.iter().enumerate() {
-            eprintln!("0x{:08x}: {}", i + CODE, instr);
-        }
+        // for (i, instr) in code.iter().enumerate() {
+        // eprintln!("0x{:08x}: {}", i + CODE, instr);
+        // }
         self.code = code;
         while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);
