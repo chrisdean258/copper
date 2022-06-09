@@ -1,5 +1,5 @@
 use crate::operation::MachineOperation;
-use crate::value::Value;
+// use crate::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 struct BasicBlock {
@@ -71,6 +71,10 @@ fn optimize_basic_block(code: &[MachineOperation], out: &mut Vec<MachineOperatio
             }
             (Store, Pop) => {
                 out.push(FastStore);
+                i += 1;
+            }
+            (RefFrame(o), Load) => {
+                out.push(LoadLocal(o));
                 i += 1;
             }
             // (Push(Value::Bool(1)), JumpRelIf(o)) => {

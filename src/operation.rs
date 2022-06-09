@@ -59,6 +59,7 @@ pub enum MachineOperation {
     StoreN(usize),
     Alloc,
     Load,
+    LoadLocal(isize),
     LoadN(usize),
     Rotate(usize),
     Swap,
@@ -267,6 +268,9 @@ impl Display for MachineOperation {
             MachineOperation::Pop => "pop",
             MachineOperation::Dup => "dup",
             MachineOperation::Load => "load",
+            MachineOperation::LoadLocal(n) => {
+                return f.write_fmt(format_args!("loadlocal ({})", n))
+            }
             MachineOperation::LoadN(n) => return f.write_fmt(format_args!("loadN ({})", n)),
             MachineOperation::Store => "store",
             MachineOperation::FastStore => "faststore",

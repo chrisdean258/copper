@@ -82,9 +82,9 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        // for (i, instr) in code.iter().enumerate() {
-        // eprintln!("0x{:08x}: {}", i + CODE, instr);
-        // }
+        for (i, instr) in code.iter().enumerate() {
+            eprintln!("0x{:08x}: {}", i + CODE, instr);
+        }
         self.code = code;
         while self.ip < self.code.len() + CODE {
             // eprintln!("Stack: {:?}", self.memory.stack);
@@ -111,6 +111,10 @@ impl Evaluator {
                 MachineOperation::Load => {
                     let addr = last!(Value::Ptr);
                     *self.memory.last_mut() = self.memory[addr];
+                }
+                MachineOperation::LoadLocal(o) => {
+                    let ptr = (self.bp as isize + o) as usize;
+                    self.memory.push(self.memory[ptr]);
                 }
                 MachineOperation::Store => {
                     let value = self.memory.pop();
