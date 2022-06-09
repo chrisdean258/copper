@@ -38,28 +38,22 @@ impl Debug for BuiltinFunction {
 }
 
 macro_rules! builtin_func {
-    ($name:ident, $($ty:ident),+ $(,)? => $outty:ident) => {
+    ($name:ident, $($toks:tt)* ) => {
         BuiltinFunction {
             name: stringify!($name).to_string(),
             func: $name,
-            signature: sig!($($ty),+ => $outty),
+            signature: sig!($($toks)*),
         }
     };
-    ($name:ident, $($ty:ident),* $(,)? + $repty:ident => $outty:ident) => {
-        BuiltinFunction {
-            name: stringify!($name).to_string(),
-            func: $name,
-            signature: sig!($($ty),+ + $repty=> $outty),
-        }
-    }
 }
 
 impl BuiltinFunction {
-    pub fn get_table() -> Vec<BuiltinFunction> {
+    pub fn get_table(ts: &mut TypeSystem) -> Vec<BuiltinFunction> {
         vec![
-            builtin_func!(write, INT + ANY => UNIT),
+            builtin_func!(write, INT; ANY, ... => UNIT),
             builtin_func!(alloc, INT => PTR),
             builtin_func!(len, ANY => INT),
+            builtin_func!(getline, => ts.option_type(STR)),
         ]
     }
 }
@@ -105,4 +99,8 @@ fn len(eval: &mut Evaluator, first: usize, count: usize) -> Value {
         Value::Str(s) => eval.memory.strings[s].len() as i64,
         t => panic!("Canot type len of {:?}", t),
     })
+}
+
+fn getline(_eval: &mut Evaluator, _first: usize, _count: usize) -> Value {
+    Value::Null
 }

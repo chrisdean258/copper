@@ -37,7 +37,7 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(types: &mut TypeSystem) -> Self {
         Self {
             code: CodeBuilder::new(),
             need_ref: false,
@@ -45,7 +45,7 @@ impl Compiler {
                 {
                     // Builtins
                     let mut b = HashMap::new();
-                    for (i, func) in BuiltinFunction::get_table().iter().enumerate() {
+                    for (i, func) in BuiltinFunction::get_table(types).iter().enumerate() {
                         b.insert(func.name.clone(), MemoryLocation::BuiltinFunction(i));
                     }
                     b

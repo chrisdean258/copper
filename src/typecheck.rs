@@ -55,7 +55,7 @@ impl TypeChecker {
             repeated_arg: None,
         };
         rv.openscope();
-        for f in BuiltinFunction::get_table() {
+        for f in BuiltinFunction::get_table(&mut rv.system) {
             rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
         }
         rv.openscope();
@@ -587,7 +587,7 @@ impl TypeChecker {
                     )
                 }
             };
-            let mut funcs: Vec<BuiltinFunction> = BuiltinFunction::get_table()
+            let mut funcs: Vec<BuiltinFunction> = BuiltinFunction::get_table(&mut self.system)
                 .into_iter()
                 .filter(|x| x.name == funcname)
                 .collect();

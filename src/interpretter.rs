@@ -16,10 +16,13 @@ pub struct Interpretter {
 
 impl Interpretter {
     pub fn new(typecheck_only: bool) -> Self {
+        let mut typechecker = TypeChecker::new();
+        let compiler = Compiler::new(&mut typechecker.system);
+        let evaluator = Evaluator::new(&mut typechecker.system);
         Self {
-            typechecker: TypeChecker::new(),
-            evaluator: Evaluator::new(),
-            compiler: Compiler::new(),
+            typechecker,
+            evaluator,
+            compiler,
             typecheck_only,
         }
     }

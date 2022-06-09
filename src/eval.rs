@@ -2,7 +2,7 @@
 use crate::builtins::BuiltinFunction;
 use crate::memory::{Memory, BUILTIN_CODE, CODE, STACK};
 use crate::operation::MachineOperation;
-// use crate::typesystem;
+use crate::typesystem::TypeSystem;
 use crate::value::Value;
 
 #[derive(Clone, Debug)]
@@ -15,11 +15,11 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-    pub fn new() -> Self {
+    pub fn new(types: &mut TypeSystem) -> Self {
         Self {
             code: Vec::new(),
             memory: Memory::new(),
-            builtin_table: BuiltinFunction::get_table(),
+            builtin_table: BuiltinFunction::get_table(types),
             ip: CODE,
             bp: STACK,
         }

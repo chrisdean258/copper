@@ -51,18 +51,32 @@ pub struct Signature {
 
 #[macro_export]
 macro_rules! sig {
-    ($($ty:ident),* $(,)? => $outty:ident) => {
+    ($($ty:expr),*; $repty:expr, ... => $outty:expr) => {
+         Signature {
+            inputs: vec![$($ty),*],
+            output: $outty,
+            repeated_inputs: Some($repty),
+        }
+    };
+    ($($ty:expr),* $(,)? => $outty:expr) => {
          Signature {
             inputs: vec![$($ty),*],
             output: $outty,
             repeated_inputs: None,
         }
     };
-    ($($ty:ident),* $(,)? + $repty:ident => $outty:ident) => {
+    ($repty:expr, ... => $outty:expr) => {
          Signature {
-            inputs: vec![$($ty),*],
+            inputs: vec![],
             output: $outty,
             repeated_inputs: Some($repty),
+        }
+    };
+    (=> $outty:expr) => {
+         Signature {
+            inputs: vec![],
+            output: $outty,
+            repeated_inputs: None,
         }
     }
 }
