@@ -405,12 +405,10 @@ impl Evaluator {
                         Float, Float => Float
                     );
                 }
-                MachineOperation::BoolNot => {
-                    *self.memory.last_mut() = match self.memory.last() {
-                        Value::Bool(aa) => Value::Bool(1 - aa),
-                        a => unreachable!("Trying to apply binop !{:?}", a),
-                    }
-                }
+                MachineOperation::BoolNot => match self.memory.last_mut() {
+                    Value::Bool(ref mut aa) => *aa = 1 - *aa,
+                    a => unreachable!("Trying to apply binop !{:?}", a),
+                },
                 MachineOperation::BitNot => {
                     do_unop!(!, Int, Char);
                 }
