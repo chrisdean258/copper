@@ -12,7 +12,7 @@ pub struct Interpretter {
     compiler: Compiler,
     evaluator: Evaluator,
     typecheck_only: bool,
-    debug: bool,
+    pub debug: bool,
 }
 
 impl Interpretter {
@@ -42,7 +42,13 @@ impl Interpretter {
         let (code, strings, entry) = self
             .compiler
             .compile(label, &tree, &self.typechecker.system);
-        self.evaluator.eval(code, strings, entry, self.debug)
+        self.evaluator.eval(
+            code,
+            strings,
+            entry,
+            self.debug,
+            &self.compiler.code.rev_functions,
+        )
     }
 
     pub fn interpret_stdin(&mut self) -> Result<Value, String> {

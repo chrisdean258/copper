@@ -1,9 +1,12 @@
 #![allow(dead_code)]
-use crate::builtins::BuiltinFunction;
-use crate::memory::{Memory, BUILTIN_CODE, CODE, STACK};
-use crate::operation::MachineOperation;
-use crate::typesystem::TypeSystem;
-use crate::value::Value;
+use crate::{
+    builtins::BuiltinFunction,
+    memory::{Memory, BUILTIN_CODE, CODE, STACK},
+    operation::MachineOperation,
+    typesystem::TypeSystem,
+    value::Value,
+};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
@@ -32,6 +35,7 @@ impl Evaluator {
         mut strings: Vec<String>,
         entry: usize,
         debug: bool,
+        funcs: &HashMap<usize, String>,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
 
@@ -86,7 +90,18 @@ impl Evaluator {
         self.ip = entry;
         if cfg!(debug_assertions) && debug {
             for (i, instr) in code.iter().enumerate() {
-                eprintln!("0x{:08x}: {}", i + CODE, instr);
+                if let Some(name) = funcs.get(&i) {
+                    eprintln!("{}:", name)
+                }
+                eprint!("\t0x{:08x}: {}", i + CODE, instr);
+                match instr {
+                    MachineOperation::CallKnown(addr) => {
+                        eprint!(" ({})", funcs.get(&(addr - CODE)).unwrap())
+                    }
+                    MachineOperation::CallBuiltin(_addr) => {}
+                    _ => {}
+                }
+                eprintln!();
             }
         }
         self.code = code;
@@ -209,6 +224,23 @@ impl Evaluator {
                         self.ip = pop!(Value::Ptr);
                         self.memory.push(rv);
                     }
+                    continue;
+                }
+                MachineOperation::CallBuiltin(ip) => {
+                    let num_args = pop!(Value::Count);
+                    let builtin_idx = ip - BUILTIN_CODE;
+                    let bp = self.memory.stack_top() - num_args;
+                    let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
+                    self.memory.truncate_stack(self.bp);
+                    self.memory.push(rv);
+                }
+                MachineOperation::CallKnown(ip) => {
+                    let num_args = pop!(Value::Count);
+                    let bp = self.memory.stack_top() - num_args;
+                    self.memory[bp - 1] = Value::Ptr(self.bp);
+                    self.memory[bp - 2] = Value::Ptr(self.ip + 1);
+                    self.bp = bp;
+                    self.ip = ip;
                     continue;
                 }
                 MachineOperation::BoolOr => {

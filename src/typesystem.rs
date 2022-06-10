@@ -503,7 +503,7 @@ impl TypeSystem {
     }
 
     pub fn format_signature(&self, sig: &Signature) -> String {
-        let arg_types = self.format_args(&sig.inputs);
+        let arg_types = self.format_args_from_sig(sig);
         format!("({}) -> {}", arg_types, self.typename(sig.output))
     }
 
@@ -515,7 +515,11 @@ impl TypeSystem {
     }
 
     pub fn format_args_repeated(&self, args: &[Type], repeated: Type) -> String {
-        format!("{}, *{}", self.format_args(args), self.typename(repeated))
+        if args.is_empty() {
+            format!("*{}", self.typename(repeated))
+        } else {
+            format!("{}, *{}", self.format_args(args), self.typename(repeated))
+        }
     }
 
     pub fn format_args_from_sig(&self, sig: &Signature) -> String {

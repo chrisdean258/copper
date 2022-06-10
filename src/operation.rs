@@ -70,6 +70,8 @@ pub enum MachineOperation {
     JumpIf(usize),
     JumpRelIf(isize),
     Call,
+    CallBuiltin(usize),
+    CallKnown(usize),
     Return,
     BoolOr,
     BoolXor,
@@ -293,6 +295,12 @@ impl Display for MachineOperation {
                 return f.write_fmt(format_args!("jmprelif ({})", hex(*offset)))
             }
             MachineOperation::Call => "call",
+            MachineOperation::CallBuiltin(addr) => {
+                return f.write_fmt(format_args!("callbuiltin (0x{:x})", addr))
+            }
+            MachineOperation::CallKnown(addr) => {
+                return f.write_fmt(format_args!("callknown (0x{:x})", addr))
+            }
             MachineOperation::Return => "ret",
             MachineOperation::BoolOr => "||",
             MachineOperation::BoolXor => "^^",

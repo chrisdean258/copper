@@ -1,14 +1,15 @@
-use crate::memory;
-use crate::operation::MachineOperation;
-// use crate::typesystem::*;
-use crate::optimizer::optimize;
-use crate::value::Value;
-use std::fmt::{Display, Formatter};
+use crate::{memory, operation::MachineOperation, optimizer::optimize, value::Value};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 #[derive(Debug, Clone)]
 pub struct CodeBuilder {
     pub active_functions: Vec<Function>,
     pub finished_functions: Vec<MachineOperation>,
+    pub functions: HashMap<String, usize>,
+    pub rev_functions: HashMap<usize, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,8 @@ impl CodeBuilder {
         Self {
             active_functions: Vec::new(),
             finished_functions: Vec::new(),
+            functions: HashMap::new(),
+            rev_functions: HashMap::new(),
         }
     }
 
@@ -50,7 +53,6 @@ impl CodeBuilder {
     }
 
     pub fn close_function(&mut self) -> usize {
-        debug_assert!(!self.active_functions.is_empty());
         self.close_function_and_patch(&[])
     }
 
@@ -64,8 +66,10 @@ impl CodeBuilder {
         }
 
         f.code = optimize(f.code);
-
+        let addr = self.finished_functions.len();
         self.finished_functions.append(&mut f.code);
+        self.functions.insert(f.name.clone(), addr);
+        self.rev_functions.insert(addr, f.name.clone());
         rv + memory::CODE
     }
 

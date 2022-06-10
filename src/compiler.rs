@@ -20,7 +20,7 @@ enum MemoryLocation {
 
 #[derive(Debug, Clone)]
 pub struct Compiler {
-    code: CodeBuilder,
+    pub code: CodeBuilder,
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
@@ -577,17 +577,11 @@ impl Compiler {
             f,
             sig
         );
-        let name = match &f.name {
-            Some(n) => format!(
-                "{}{}",
-                n,
-                self.types.as_ref().unwrap().format_signature(sig)
-            ),
-            None => format!(
-                "<anonymous>{}",
-                self.types.as_ref().unwrap().format_signature(sig)
-            ),
-        };
+        let name = format!(
+            "{}{}",
+            f.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+            self.types.as_ref().unwrap().format_signature(sig)
+        );
         self.open_scope();
         self.code.open_function(name);
         for argname in f.argnames.iter() {

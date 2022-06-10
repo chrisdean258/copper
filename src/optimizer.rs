@@ -1,5 +1,4 @@
-use crate::operation::MachineOperation;
-use crate::value::Value;
+use crate::{memory, operation::MachineOperation, value::Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 struct BasicBlock {
@@ -85,10 +84,14 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                 code[i] = Nop;
                 code[i + 1] = Reserve(a + 1);
             }
-            // (Push(Value::Uninitialized), Push(Value::Uninitialized)) => {
-            // code[i] = Nop;
-            // code[i + 1] = Reserve(2);
-            // }
+            (Push(Value::Ptr(ip)), Call) => {
+                code[i] = Nop;
+                code[i + 1] = if ip < memory::CODE {
+                    CallBuiltin(ip)
+                } else {
+                    CallKnown(ip)
+                }
+            }
             (Push(Value::Bool(1)), JumpRelIf(o)) => {
                 code[i] = Nop;
                 code[i + 1] = JumpRel(o);
