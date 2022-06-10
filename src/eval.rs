@@ -52,9 +52,21 @@ impl Evaluator {
             ($typ:path) => {
                 as_type!(self.memory.pop(), $typ)
             };
+            () => {
+                self.memory.pop()
+            };
         }
 
-        macro_rules! last {
+        macro_rules! push {
+            ($val:expr) => {
+                self.memory.push($val)
+            };
+        }
+
+        macro_rules! inplace {
+            () => {
+                self.memory.last_mut()
+            };
             ($typ:path) => {
                 as_type!(self.memory.last().clone(), $typ)
             };
@@ -63,7 +75,7 @@ impl Evaluator {
         macro_rules! do_binop {
             ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
                 let a = self.memory.pop();
-                match (a, self.memory.last_mut()) {
+                match (a, inplace!()) {
                     $( (Value::$t1(aa), Value::$t2(ref mut bb)) => {*bb = *bb $op aa;})+
                     (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
                 };
@@ -72,7 +84,7 @@ impl Evaluator {
         macro_rules! do_comparison {
             ($op:tt, $($t1:ident, $t2:ident),+ $(,)?) => {
                 let a = self.memory.pop();
-                *self.memory.last_mut() = match (a, self.memory.last()) {
+                *inplace!() = match (a, self.memory.last()) {
                     $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(if *bb $op aa {1} else {0}),)+
                     (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
                 };
@@ -81,7 +93,7 @@ impl Evaluator {
 
         macro_rules! do_unop {
             ($op:tt, $($t:ident),+ $(,)?) => {
-                match self.memory.last_mut() {
+                match inplace!() {
                     $(Value::$t(ref mut aa) => {*aa = $op *aa;})+
                     a => unreachable!("Trying to apply binop {} {:?}", stringify!($op), a),
                 }
@@ -124,24 +136,24 @@ impl Evaluator {
                         );
                     }
                 }
-                MachineOperation::Push(v) => self.memory.push(v),
-                MachineOperation::Inplace(v) => *self.memory.last_mut() = v,
+                MachineOperation::Push(v) => push!(v),
+                MachineOperation::Inplace(v) => *inplace!() = v,
                 MachineOperation::Pop => {
                     self.memory.pop();
                 }
                 MachineOperation::Load => {
-                    let addr = last!(Value::Ptr);
-                    *self.memory.last_mut() = self.memory[addr];
+                    let addr = inplace!(Value::Ptr);
+                    *inplace!() = self.memory[addr];
                 }
                 MachineOperation::LoadLocal(o) => {
                     let ptr = (self.bp as isize + o) as usize;
-                    self.memory.push(self.memory[ptr]);
+                    push!(self.memory[ptr]);
                 }
                 MachineOperation::Store => {
                     let value = self.memory.pop();
-                    let addr = last!(Value::Ptr);
+                    let addr = inplace!(Value::Ptr);
                     self.memory[addr] = value;
-                    *self.memory.last_mut() = value;
+                    *inplace!() = value;
                 }
                 MachineOperation::FastStore => {
                     let value = self.memory.pop();
@@ -162,9 +174,9 @@ impl Evaluator {
                     self.memory.memcpy(dst, src, num);
                 }
                 MachineOperation::Alloc => {
-                    let val = last!(Value::Count);
+                    let val = inplace!(Value::Count);
                     let addr = self.memory.malloc(val);
-                    *self.memory.last_mut() = Value::Ptr(addr);
+                    *inplace!() = Value::Ptr(addr);
                 }
                 MachineOperation::Reserve(size) => {
                     self.memory.reserve(size);
@@ -204,8 +216,8 @@ impl Evaluator {
                     let rv = self.memory.pop();
                     self.memory.truncate_stack(self.bp);
                     self.bp = pop!(Value::Ptr);
-                    self.ip = last!(Value::Ptr);
-                    *self.memory.last_mut() = rv;
+                    self.ip = inplace!(Value::Ptr);
+                    *inplace!() = rv;
                     continue;
                 }
                 MachineOperation::Call => {
@@ -222,7 +234,7 @@ impl Evaluator {
                         self.memory.truncate_stack(self.bp);
                         self.bp = pop!(Value::Ptr);
                         self.ip = pop!(Value::Ptr);
-                        self.memory.push(rv);
+                        push!(rv);
                     }
                     continue;
                 }
@@ -232,7 +244,7 @@ impl Evaluator {
                     let bp = self.memory.stack_top() - num_args;
                     let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
                     self.memory.truncate_stack(self.bp);
-                    self.memory.push(rv);
+                    push!(rv);
                 }
                 MachineOperation::CallKnown(ip) => {
                     let num_args = pop!(Value::Count);
@@ -304,7 +316,7 @@ impl Evaluator {
                 }
                 MachineOperation::CmpEq => {
                     let a = self.memory.pop();
-                    *self.memory.last_mut() = match (a, self.memory.last()) {
+                    *inplace!() = match (a, self.memory.last()) {
                         (Value::Count(aa), Value::Count(bb)) => {
                             Value::Bool(if *bb == aa { 1 } else { 0 })
                         }
@@ -338,7 +350,7 @@ impl Evaluator {
                 MachineOperation::CmpNotEq => {
                     let a = self.memory.pop();
                     let b = *self.memory.last();
-                    *self.memory.last_mut() = match (a, b) {
+                    *inplace!() = match (a, b) {
                         (Value::Count(aa), Value::Count(bb)) => {
                             Value::Bool(if bb != aa { 1 } else { 0 })
                         }
@@ -393,7 +405,7 @@ impl Evaluator {
                 MachineOperation::Plus => {
                     let a = self.memory.pop();
                     // let b = *self.memory.last();
-                    match (a, self.memory.last_mut()) {
+                    match (a, inplace!()) {
                         (Value::PtrOffset(aa), Value::Ptr(ref mut bb)) => {
                             *bb = (*bb as isize + aa) as usize;
                         }
@@ -401,7 +413,7 @@ impl Evaluator {
                             *bb = (*bb as isize + aa as isize) as usize;
                         }
                         (Value::Ptr(aa), Value::Int(bb)) => {
-                            *self.memory.last_mut() = Value::Ptr((*bb + aa as i64) as usize);
+                            *inplace!() = Value::Ptr((*bb + aa as i64) as usize);
                         }
                         (Value::Int(aa), Value::Int(ref mut bb)) => {
                             *bb += aa;
@@ -415,7 +427,7 @@ impl Evaluator {
                         (Value::Str(aa), Value::Str(bb)) => {
                             let bb = *bb;
                             let val = self.memory.strcat(bb, aa);
-                            *self.memory.last_mut() = Value::Str(val);
+                            *inplace!() = Value::Str(val);
                         }
                         (a, b) => {
                             unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
@@ -442,7 +454,7 @@ impl Evaluator {
                         Float, Float => Float
                     );
                 }
-                MachineOperation::BoolNot => match self.memory.last_mut() {
+                MachineOperation::BoolNot => match inplace!() {
                     Value::Bool(ref mut aa) => *aa = 1 - *aa,
                     a => unreachable!("Trying to apply binop !{:?}", a),
                 },
