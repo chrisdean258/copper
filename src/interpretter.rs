@@ -12,10 +12,11 @@ pub struct Interpretter {
     compiler: Compiler,
     evaluator: Evaluator,
     typecheck_only: bool,
+    debug: bool,
 }
 
 impl Interpretter {
-    pub fn new(typecheck_only: bool) -> Self {
+    pub fn new(typecheck_only: bool, debug: bool) -> Self {
         let mut typechecker = TypeChecker::new();
         let compiler = Compiler::new(&mut typechecker.system);
         let evaluator = Evaluator::new(&mut typechecker.system);
@@ -24,6 +25,7 @@ impl Interpretter {
             evaluator,
             compiler,
             typecheck_only,
+            debug,
         }
     }
 
@@ -40,7 +42,7 @@ impl Interpretter {
         let (code, strings, entry) = self
             .compiler
             .compile(label, &tree, &self.typechecker.system);
-        self.evaluator.eval(code, strings, entry)
+        self.evaluator.eval(code, strings, entry, self.debug)
     }
 
     pub fn interpret_stdin(&mut self) -> Result<Value, String> {

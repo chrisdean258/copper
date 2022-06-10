@@ -31,6 +31,7 @@ impl Evaluator {
         code: Vec<MachineOperation>,
         mut strings: Vec<String>,
         entry: usize,
+        debug: bool,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
 
@@ -83,15 +84,19 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        // for (i, instr) in code.iter().enumerate() {
-        // eprintln!("0x{:08x}: {}", i + CODE, instr);
-        // }
+        if cfg!(debug_assertions) && debug {
+            for (i, instr) in code.iter().enumerate() {
+                eprintln!("0x{:08x}: {}", i + CODE, instr);
+            }
+        }
         self.code = code;
         while self.ip < self.code.len() + CODE {
-            // eprintln!("Stack: {:?}", self.memory.stack);
-            // eprint!("IP: 0x{:08x}:  ", self.ip);
-            // eprint!("{:23}  ", self.code[self.ip - CODE].to_string());
-            // eprint!("BP: 0x{:08x}     ", self.bp);
+            if cfg!(debug_assertions) && debug {
+                eprintln!("Stack: {:?}", self.memory.stack);
+                eprint!("IP: 0x{:08x}:  ", self.ip);
+                eprint!("{:23}  ", self.code[self.ip - CODE].to_string());
+                eprint!("BP: 0x{:08x}     ", self.bp);
+            }
             match self.code[self.ip - CODE] {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {

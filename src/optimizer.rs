@@ -1,5 +1,5 @@
 use crate::operation::MachineOperation;
-// use crate::value::Value;
+use crate::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 struct BasicBlock {
@@ -41,7 +41,9 @@ pub fn optimize(mut code: Vec<MachineOperation>) -> Vec<MachineOperation> {
 
     for (addr, block) in basic_blocks.iter_mut() {
         block.new_addr = new_code.len();
-        optimize_basic_block(&code[*addr..*addr + block.orig_len], &mut new_code);
+        new_code.append(&mut optimize_basic_block(
+            &code[*addr..*addr + block.orig_len],
+        ));
     }
 
     for (i, inst) in new_code.iter_mut().enumerate() {
@@ -57,38 +59,53 @@ pub fn optimize(mut code: Vec<MachineOperation>) -> Vec<MachineOperation> {
     new_code
 }
 
-fn optimize_basic_block(code: &[MachineOperation], out: &mut Vec<MachineOperation>) {
+fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
     use MachineOperation::*;
     let mut i = 0;
+    let mut code = code.to_vec();
     while i < code.len() - 1 {
         match (code[i], code[i + 1]) {
             (Push(_), Pop) => {
-                i += 1;
+                code[i] = Nop;
+                code[i + 1] = Nop;
             }
             (Pop, Push(v)) => {
-                out.push(Inplace(v));
-                i += 1;
+                code[i] = Nop;
+                code[i + 1] = Inplace(v);
             }
             (Store, Pop) => {
-                out.push(FastStore);
-                i += 1;
+                code[i] = Nop;
+                code[i + 1] = FastStore;
             }
             (RefFrame(o), Load) => {
-                out.push(LoadLocal(o));
-                i += 1;
+                code[i] = Nop;
+                code[i + 1] = LoadLocal(o);
             }
-            // (Push(Value::Bool(1)), JumpRelIf(o)) => {
+            (Reserve(a), Push(Value::Uninitialized)) => {
+                code[i] = Nop;
+                code[i + 1] = Reserve(a + 1);
+            }
+            // (Push(Value::Uninitialized), Push(Value::Uninitialized)) => {
+            // code[i] = Nop;
+            // code[i + 1] = Reserve(2);
+            // }
+            (Push(Value::Bool(1)), JumpRelIf(o)) => {
+                code[i] = Nop;
+                code[i + 1] = JumpRel(o);
+            }
+            (Push(Value::Bool(0)), JumpRelIf(_)) => {
+                code[i] = Nop;
+                code[i + 1] = Nop;
+            }
             // out.push(JumpRel(o));
             // i += 1;
             // }
             // (Push(Value::Bool(0)), JumpRelIf(_)) => {
             // i += 1;
             // }
-            (t, _) => out.push(t),
+            _ => (),
         }
         i += 1;
     }
-    if i < code.len() {
-        out.push(code[i]);
-    }
+    code.into_iter().filter(|&x| !matches!(x, Nop)).collect()
 }
