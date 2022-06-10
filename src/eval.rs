@@ -59,7 +59,7 @@ impl Evaluator {
             ($op:tt, $($t1:ident, $t2:ident => $to:ident),+ $(,)?) => {
                 let a = self.memory.pop();
                 match (a, self.memory.last_mut()) {
-                    $( (Value::$t1(aa), Value::$t2(ref mut bb)) => {*bb = *bb $op aa ; })+
+                    $( (Value::$t1(aa), Value::$t2(ref mut bb)) => {*bb = *bb $op aa;})+
                     (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
                 };
             };
@@ -355,20 +355,32 @@ impl Evaluator {
                 }
                 MachineOperation::Plus => {
                     let a = self.memory.pop();
-                    let b = *self.memory.last();
-                    *self.memory.last_mut() = match (a, b) {
-                        (Value::PtrOffset(aa), Value::Ptr(bb)) => {
-                            Value::Ptr((bb as isize + aa) as usize)
+                    // let b = *self.memory.last();
+                    match (a, self.memory.last_mut()) {
+                        (Value::PtrOffset(aa), Value::Ptr(ref mut bb)) => {
+                            *bb = (*bb as isize + aa) as usize;
                         }
-                        (Value::Int(aa), Value::Ptr(bb)) => Value::Ptr((bb as i64 + aa) as usize),
-                        (Value::Ptr(aa), Value::Int(bb)) => Value::Ptr((bb + aa as i64) as usize),
-                        (Value::Int(aa), Value::Int(bb)) => Value::Int(bb + aa),
-                        (Value::Char(aa), Value::Char(bb)) => Value::Char(bb + aa),
-                        (Value::Float(aa), Value::Float(bb)) => Value::Float(bb + aa),
-                        (Value::Str(aa), Value::Str(bb)) => Value::Str(self.memory.alloc_string(
-                            format!("{}{}", self.memory.strings[bb], self.memory.strings[aa]),
-                        )),
-                        _ => {
+                        (Value::Int(aa), Value::Ptr(ref mut bb)) => {
+                            *bb = (*bb as isize + aa as isize) as usize;
+                        }
+                        (Value::Ptr(aa), Value::Int(bb)) => {
+                            *self.memory.last_mut() = Value::Ptr((*bb + aa as i64) as usize);
+                        }
+                        (Value::Int(aa), Value::Int(ref mut bb)) => {
+                            *bb += aa;
+                        }
+                        (Value::Char(aa), Value::Char(ref mut bb)) => {
+                            *bb += aa;
+                        }
+                        (Value::Float(aa), Value::Float(ref mut bb)) => {
+                            *bb += aa;
+                        }
+                        (Value::Str(aa), Value::Str(bb)) => {
+                            let bb = *bb;
+                            let val = self.memory.strcat(bb, aa);
+                            *self.memory.last_mut() = Value::Str(val);
+                        }
+                        (a, b) => {
                             unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
                         }
                     };

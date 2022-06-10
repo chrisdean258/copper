@@ -45,6 +45,10 @@ impl Memory {
         self.strings.len() - 1
     }
 
+    pub fn strcat(&mut self, idx1: usize, idx2: usize) -> usize {
+        self.alloc_string(format!("{}{}", self.strings[idx1], self.strings[idx2]))
+    }
+
     #[inline(always)]
     pub fn push(&mut self, val: Value) {
         self.stack.push(val);
