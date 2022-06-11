@@ -47,7 +47,6 @@ fn real_main() -> i64 {
             use_stdin = true;
         } else {
             file_or_cmd = Some(arg);
-            break;
         }
     }
 

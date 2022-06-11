@@ -797,14 +797,6 @@ impl TypeChecker {
         if let Some(t) = self.system.match_signature(functype, &args) {
             return Ok(t);
         }
-        let sig_handle = self.system.add_function_signature(
-            functype,
-            Signature {
-                inputs: args.clone(),
-                output: UNKNOWN_RETURN,
-                repeated_inputs: None,
-            },
-        );
 
         swap(&mut self.lambda_args, &mut args);
 
@@ -838,7 +830,7 @@ impl TypeChecker {
         }
 
         swap(&mut self.lambda_args, &mut args);
-        self.system.add_function_signature(
+        let sig_handle = self.system.add_function_signature(
             functype,
             Signature {
                 inputs: args.clone(),
@@ -846,8 +838,10 @@ impl TypeChecker {
                 repeated_inputs: None,
             },
         );
-        c.function.as_mut().derived_type =
-            Some(self.system.function_type_resolve(functype, sig_handle));
+
+        let rftyp = self.system.function_type_resolve(functype, sig_handle);
+        c.function.as_mut().derived_type = Some(rftyp);
+
         Ok(rv)
     }
 }

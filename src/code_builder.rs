@@ -98,7 +98,7 @@ impl CodeBuilder {
     }
 
     pub fn global_ref(&mut self, number: usize) -> usize {
-        self.push(Value::Ptr(number + memory::STACK))
+        self.push(Value::Ptr(number + memory::STACK + 1))
     }
 
     pub fn builtin_ref(&mut self, number: usize) -> usize {
