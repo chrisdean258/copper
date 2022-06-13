@@ -16,6 +16,8 @@ pub enum TypeEntryType {
     Basic,
     Container(Type),
     Function(Function),
+    Class(Class),
+    ResolvedClass(ResolvedClass),
     ResolvedFunction(ResolvedFunction),
 }
 
@@ -30,6 +32,17 @@ pub struct TypeEntry {
 #[derive(Debug, Clone)]
 struct GenericOperation {
     signatures: Vec<Signature>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Class {
+    resolved_types: Vec<Type>,
+    num_fields: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedClass {
+    fields: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -308,6 +321,14 @@ impl TypeSystem {
     pub fn function_type(&mut self, name: String) -> Type {
         let te_type = TypeEntryType::Function(Function {
             resolved_types: Vec::new(),
+        });
+        self.new_type(name, te_type)
+    }
+
+    pub fn class_type(&mut self, name: String, num_fields: usize) -> Type {
+        let te_type = TypeEntryType::Class(Class {
+            resolved_types: Vec::new(),
+            num_fields,
         });
         self.new_type(name, te_type)
     }

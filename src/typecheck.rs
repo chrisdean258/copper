@@ -1,23 +1,19 @@
-use crate::builtins::BuiltinFunction;
-use crate::location::Location;
-// use crate::operation::Operation;
-use crate::parser;
-use crate::parser::ParseTree;
-use crate::parser::*;
-use crate::typesystem;
-use crate::typesystem::*;
-use crate::value::Value;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::mem::swap;
-use std::rc::Rc;
+use crate::{
+    builtins::BuiltinFunction, location::Location, parser, parser::ParseTree, parser::*,
+    typesystem, typesystem::*, value::Value,
+};
+use std::{cell::RefCell, collections::HashMap, mem::swap, rc::Rc};
 
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
     func_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    class_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+
     type_to_func: HashMap<Type, Rc<RefCell<parser::Function>>>,
     type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
+    type_to_class: HashMap<Type, Rc<RefCell<ClassDecl>>>,
+
     allow_insert: Option<Type>,
     lambda_args: Vec<Type>,
     location: Option<Location>,
@@ -43,8 +39,10 @@ impl TypeChecker {
             system: TypeSystem::new(),
             scopes: Vec::new(),
             func_scopes: Vec::new(),
+            class_scopes: Vec::new(),
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
+            type_to_class: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
             location: None,
@@ -120,6 +118,13 @@ impl TypeChecker {
         place
     }
 
+    fn insert_class_scope(&mut self, name: &str, t: Type) -> usize {
+        let mut scope = self.class_scopes.last().unwrap().borrow_mut();
+        let place = scope.len();
+        scope.insert(String::from(name), t);
+        place
+    }
+
     fn func_mangle_name_scope_insert(&mut self, name: &str, sig: Signature) {
         let mut idx = None;
         for (i, scope) in self.func_scopes.iter().rev().enumerate() {
@@ -138,10 +143,13 @@ impl TypeChecker {
     fn openscope(&mut self) {
         self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
         self.func_scopes.push(Rc::new(RefCell::new(HashMap::new())));
+        self.class_scopes
+            .push(Rc::new(RefCell::new(HashMap::new())));
     }
 
     fn closescope(&mut self) -> usize {
         self.func_scopes.pop();
+        self.class_scopes.pop();
         debug_assert!(!self.scopes.is_empty());
         let rv = self.scopes.last().unwrap().borrow().len();
         self.scopes.pop();
@@ -151,7 +159,7 @@ impl TypeChecker {
     fn statement(&mut self, s: &mut Statement) -> Result<Type, TypeError> {
         match s {
             Statement::Expr(e) => self.expr(e),
-            Statement::ClassDecl(c) => todo!("{:?}", c),
+            Statement::ClassDecl(c) => self.classdecl(c.clone()),
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
             Statement::Continue(_) => Ok(UNIT),
@@ -192,6 +200,15 @@ impl TypeChecker {
         }
 
         Ok(rv)
+    }
+
+    fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, TypeError> {
+        let cc = c.borrow();
+        let typ = self.system.class_type(cc.name.clone(), cc.fields.len());
+        self.insert_class_scope(&cc.name, typ);
+        drop(cc);
+        self.type_to_class.insert(typ, c);
+        todo!()
     }
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
