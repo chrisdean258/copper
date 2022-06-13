@@ -60,9 +60,9 @@ impl Memory {
     }
 
     // #[inline(always)]
-    pub fn last(&mut self) -> &Value {
-        self.stack.last().unwrap()
-    }
+    // pub fn last(&mut self) -> &Value {
+    // self.stack.last().unwrap()
+    // }
 
     #[inline(always)]
     pub fn last_mut(&mut self) -> &mut Value {
@@ -87,17 +87,17 @@ impl Memory {
     }
 
     // #[inline(always)]
-    pub fn dup(&mut self) {
-        debug_assert!(!self.stack.is_empty());
-        self.stack.push(*self.stack.last().unwrap());
-    }
+    // pub fn dup(&mut self) {
+    // debug_assert!(!self.stack.is_empty());
+    // self.stack.push(*self.stack.last().unwrap());
+    // }
 
     // #[inline(always)]
-    pub fn swap(&mut self) {
-        debug_assert!(self.stack.len() >= 2);
-        let len = self.stack.len();
-        self.stack.swap(len - 1, len - 2);
-    }
+    // pub fn swap(&mut self) {
+    // debug_assert!(self.stack.len() >= 2);
+    // let len = self.stack.len();
+    // self.stack.swap(len - 1, len - 2);
+    // }
 
     // #[inline(always)]
     pub fn truncate_stack(&mut self, ptr: usize) {

@@ -1,18 +1,18 @@
-use crate::compiler::Compiler;
-use crate::eval::Evaluator;
-use crate::lex::Lexer;
-use crate::parser;
-use crate::typecheck::TypeChecker;
-use crate::value::Value;
-use std::fs::File;
-use std::io::{self, BufRead};
+use crate::{
+    compiler::Compiler, eval::Evaluator, lex::Lexer, memory::CODE, operation::MachineOperation,
+    parser, typecheck::TypeChecker, value::Value,
+};
+use std::{
+    fs::File,
+    io::{self, BufRead},
+};
 
 pub struct Interpretter {
     typechecker: TypeChecker,
     compiler: Compiler,
     evaluator: Evaluator,
     typecheck_only: bool,
-    pub debug: bool,
+    debug: bool,
 }
 
 impl Interpretter {
@@ -29,6 +29,30 @@ impl Interpretter {
         }
     }
 
+    pub fn print_code(&self, code: &[MachineOperation]) {
+        for (i, instr) in code.iter().enumerate() {
+            if let Some(name) = self.compiler.code.rev_functions.get(&i) {
+                eprintln!("{}:", name)
+            }
+            eprint!("\t0x{:08x}: {}", i + CODE, instr);
+            match instr {
+                MachineOperation::CallKnown(addr) => {
+                    eprint!(
+                        " ({})",
+                        self.compiler
+                            .code
+                            .rev_functions
+                            .get(&(addr - CODE))
+                            .unwrap()
+                    )
+                }
+                MachineOperation::CallBuiltin(_addr) => {}
+                _ => {}
+            }
+            eprintln!();
+        }
+    }
+
     pub fn interpret_lexer<T: Iterator<Item = String>>(
         &mut self,
         label: String,
@@ -42,13 +66,10 @@ impl Interpretter {
         let (code, strings, entry) = self
             .compiler
             .compile(label, &tree, &self.typechecker.system);
-        self.evaluator.eval(
-            code,
-            strings,
-            entry,
-            self.debug,
-            &self.compiler.code.rev_functions,
-        )
+        if cfg!(debug_assertions) && self.debug {
+            self.print_code(&code);
+        }
+        self.evaluator.eval(code, strings, entry, self.debug)
     }
 
     pub fn interpret_stdin(&mut self) -> Result<Value, String> {

@@ -6,10 +6,7 @@ use crate::{
     typesystem::TypeSystem,
     value::Value,
 };
-use std::{
-    collections::HashMap,
-    mem::{replace, swap},
-};
+use std::mem::{replace, swap};
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
@@ -39,7 +36,6 @@ impl Evaluator {
         mut strings: Vec<String>,
         entry: usize,
         debug: bool,
-        funcs: &HashMap<usize, String>,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
         let mut reg = Value::Uninitialized;
@@ -103,22 +99,6 @@ impl Evaluator {
             };
         }
         self.ip = entry;
-        if cfg!(debug_assertions) && debug {
-            for (i, instr) in code.iter().enumerate() {
-                if let Some(name) = funcs.get(&i) {
-                    eprintln!("{}:", name)
-                }
-                eprint!("\t0x{:08x}: {}", i + CODE, instr);
-                match instr {
-                    MachineOperation::CallKnown(addr) => {
-                        eprint!(" ({})", funcs.get(&(addr - CODE)).unwrap())
-                    }
-                    MachineOperation::CallBuiltin(_addr) => {}
-                    _ => {}
-                }
-                eprintln!();
-            }
-        }
         self.code = code;
         while self.ip < self.code.len() + CODE {
             if cfg!(debug_assertions) && debug {
@@ -231,11 +211,9 @@ impl Evaluator {
                     }
                 }
                 MachineOperation::Return => {
-                    let rv = reg;
                     self.memory.truncate_stack(self.bp);
                     self.bp = as_type!(self.memory.pop(), Value::Ptr);
                     self.ip = as_type!(self.memory.pop(), Value::Ptr);
-                    reg = rv;
                     continue;
                 }
                 MachineOperation::Call => {
@@ -426,7 +404,6 @@ impl Evaluator {
                 }
                 MachineOperation::Plus => {
                     let a = pop!();
-                    // let b = *self.memory.last();
                     match (a, &mut reg) {
                         (Value::PtrOffset(aa), Value::Ptr(ref mut bb)) => {
                             *bb = (*bb as isize + aa) as usize;
