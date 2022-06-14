@@ -37,7 +37,6 @@ struct GenericOperation {
 #[derive(Debug, Clone)]
 pub struct Class {
     resolved_types: Vec<Type>,
-    num_fields: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -325,10 +324,9 @@ impl TypeSystem {
         self.new_type(name, te_type)
     }
 
-    pub fn class_type(&mut self, name: String, num_fields: usize) -> Type {
+    pub fn class_type(&mut self, name: String) -> Type {
         let te_type = TypeEntryType::Class(Class {
             resolved_types: Vec::new(),
-            num_fields,
         });
         self.new_type(name, te_type)
     }
@@ -398,13 +396,19 @@ impl TypeSystem {
     }
 
     pub fn is_function(&self, func: Type) -> bool {
-        match &self.types[func].te_type {
-            TypeEntryType::UnknownReturn => true,
-            TypeEntryType::Function(_) => true,
-            TypeEntryType::ResolvedFunction(_) => true,
-            _ if func == BUILTIN_FUNCTION => true,
-            _ => false,
+        if func == BUILTIN_FUNCTION {
+            return true;
         }
+        matches!(
+            &self.types[func].te_type,
+            TypeEntryType::UnknownReturn
+                | TypeEntryType::Function(_)
+                | TypeEntryType::ResolvedFunction(_)
+        )
+    }
+
+    pub fn is_class(&self, func: Type) -> bool {
+        matches!(&self.types[func].te_type, TypeEntryType::Class(_))
     }
 
     pub fn is_option(&self, opt: Type) -> bool {

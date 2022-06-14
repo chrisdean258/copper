@@ -86,8 +86,12 @@ impl TypeChecker {
         }
     }
 
-    fn lookup_scope(&mut self, name: &str) -> Option<Type> {
-        for scope in self.scopes.iter().rev() {
+    fn lookup_general_scope(
+        &self,
+        name: &str,
+        scopes: &[Rc<RefCell<HashMap<String, Type>>>],
+    ) -> Option<Type> {
+        for scope in scopes.iter().rev() {
             if let Some(t) = scope.borrow().get(name) {
                 return Some(*t);
             }
@@ -95,13 +99,16 @@ impl TypeChecker {
         None
     }
 
-    fn lookup_func_scope(&mut self, name: &str) -> Option<Type> {
-        for scope in self.func_scopes.iter().rev() {
-            if let Some(t) = scope.borrow().get(name) {
-                return Some(*t);
-            }
-        }
-        None
+    fn lookup_scope(&self, name: &str) -> Option<Type> {
+        self.lookup_general_scope(name, &self.scopes)
+    }
+
+    fn lookup_func_scope(&self, name: &str) -> Option<Type> {
+        self.lookup_general_scope(name, &self.func_scopes)
+    }
+
+    fn lookup_class_scope(&self, name: &str) -> Option<Type> {
+        self.lookup_general_scope(name, &self.class_scopes)
     }
 
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
@@ -204,11 +211,11 @@ impl TypeChecker {
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, TypeError> {
         let cc = c.borrow();
-        let typ = self.system.class_type(cc.name.clone(), cc.fields.len());
+        let typ = self.system.class_type(cc.name.clone());
         self.insert_class_scope(&cc.name, typ);
         drop(cc);
         self.type_to_class.insert(typ, c);
-        todo!()
+        Ok(typ)
     }
 
     fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
@@ -312,7 +319,9 @@ impl TypeChecker {
                 return Ok(typ);
             }
             None => (),
-            // None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
+        }
+        if let Some(t) = self.lookup_class_scope(&r.name) {
+            return Ok(t);
         }
         match self.lookup_func_scope(&r.name) {
             Some(t) if self.allow_raw_func => Ok(t),
@@ -578,15 +587,33 @@ impl TypeChecker {
         }
         let save = self.allow_raw_func;
         self.allow_raw_func = true;
-        let functype = self.expr(c.function.as_mut())?;
+        let mut functype = self.expr(c.function.as_mut())?;
         self.allow_raw_func = save;
-        let funcloc = c.function.location.clone();
+        let mut funcloc = c.function.location.clone();
+        let mut args = Vec::new();
+
+        if self.system.is_class(functype) {
+            let classdecl = self.type_to_class.get_mut(&functype).unwrap().clone();
+            match classdecl.borrow_mut().methods.get_mut("__init__") {
+                Some(init) => {
+                    funcloc = init.location.clone();
+                    functype = self.expr(init)?;
+                    args.push(functype);
+                }
+                _ => {
+                    return Err(vec![funcloc.errfmt(format_args!(
+                        "class {} contains no __init__ method",
+                        self.system.typename(functype)
+                    ))]);
+                }
+            };
+        }
 
         if !self.system.is_function(functype) {
             return Err(self.error("Trying to call value that is not callable".to_string()));
         }
+
         let mut errs: TypeError = Vec::new();
-        let mut args = Vec::new();
         for arg in c.args.iter_mut() {
             match self.expr(arg) {
                 Ok(t) => args.push(t),
