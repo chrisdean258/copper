@@ -14,7 +14,7 @@ use std::rc::Rc;
 #[allow(dead_code)]
 pub enum Statement {
     Expr(Expression),
-    ClassDecl(ClassDecl),
+    ClassDecl(Rc<RefCell<ClassDecl>>),
     Import(Import),
     FromImport(FromImport),
     Continue(Continue),
@@ -88,7 +88,7 @@ pub struct ClassDecl {
     pub location: Location,
     pub name: String,
     pub fields: HashSet<String>,
-    pub methods: HashMap<String, Function>,
+    pub methods: HashMap<String, Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -307,13 +307,13 @@ macro_rules! expect_val {
 }
 
 macro_rules! if_expect {
-    ( $lexer:ident, $token:path ) => {
+    ( $lexer:ident, $($token:path),* $(,)? ) => {
         if let Some(token) = $lexer.peek() {
             match &token.token_type {
-                $token => {
+                $($token => {
                     $lexer.next();
                     true
-                }
+                })*
                 _ => false,
             }
         } else {
@@ -423,13 +423,12 @@ impl ParseTree {
         }))
     }
 
-    #[allow(dead_code)]
     fn parse_class_decl<T: Iterator<Item = String>>(
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, String> {
-        let _location = expect!(lexer, TokenType::Class).location;
-        let _name = expect_val!(lexer, TokenType::Identifier);
+        let location = expect!(lexer, TokenType::Class).location;
+        let name = expect_val!(lexer, TokenType::Identifier);
         expect!(lexer, TokenType::OpenBrace);
 
         let mut fields = HashSet::new();
@@ -438,23 +437,19 @@ impl ParseTree {
             let token = lexer.peek().ok_or("Unexpected EOF")?;
             match token.token_type {
                 TokenType::CloseBrace => {
-                    lexer.next();
+                    expect!(lexer, TokenType::CloseBrace);
                     break;
                 }
                 TokenType::Function => {
                     let fun = self.parse_function(lexer, true)?;
-                    let ffun = match &fun.etype {
-                        ExpressionType::Function(f) => f,
+                    let fname = match &fun.etype {
+                        ExpressionType::Function(f) => f.borrow().name.clone().unwrap(),
                         _ => unreachable!(),
                     };
-                    if methods
-                        .insert(ffun.borrow().name.as_ref().unwrap().clone(), fun.clone())
-                        .is_some()
-                    {
-                        return Err(fun.location.errfmt(format_args!(
-                            "Redefinition of method `{}`",
-                            ffun.borrow().name.clone().unwrap()
-                        )));
+                    if methods.insert(fname.clone(), fun.clone()).is_some() {
+                        return Err(fun
+                            .location
+                            .errfmt(format_args!("Redefinition of method `{}`", fname)));
                     }
                 }
                 TokenType::Field => {
@@ -470,11 +465,15 @@ impl ParseTree {
                                 .location
                                 .errfmt(format_args!("Redefinition of field {}", fieldname)));
                         }
-                        if if_expect!(lexer, TokenType::Semicolon) {
-                            break;
-                        }
-                        if !if_expect!(lexer, TokenType::Comma) {
-                            break;
+                        match lexer.peek().ok_or("Unexpected EOF")?.token_type {
+                            TokenType::Semicolon => {
+                                lexer.next();
+                                break;
+                            }
+                            TokenType::Comma => {
+                                lexer.next();
+                            }
+                            _ => break,
                         }
                     }
                 }
@@ -482,13 +481,12 @@ impl ParseTree {
             }
         }
 
-        todo!();
-        /*Ok(Statement::ClassDecl(ClassDecl {
+        Ok(Statement::ClassDecl(Rc::new(RefCell::new(ClassDecl {
             location,
             name,
             fields,
             methods,
-        }))*/
+        }))))
     }
 
     fn parse_block<T: Iterator<Item = String>>(
