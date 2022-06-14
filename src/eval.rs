@@ -13,7 +13,7 @@ pub struct Evaluator {
     code: Vec<MachineOperation>,
     pub memory: Memory,
     builtin_table: Vec<BuiltinFunction>,
-    ip: usize,
+    //ip: usize,
     bp: usize,
 }
 
@@ -23,7 +23,6 @@ impl Evaluator {
             code: Vec::new(),
             memory: Memory::new(),
             builtin_table: BuiltinFunction::get_table(types),
-            ip: CODE,
             bp: STACK + 1,
         }
     }
@@ -34,7 +33,7 @@ impl Evaluator {
         &mut self,
         code: Vec<MachineOperation>,
         mut strings: Vec<String>,
-        entry: usize,
+        mut ip: usize,
         debug: bool,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
@@ -98,16 +97,15 @@ impl Evaluator {
                 }
             };
         }
-        self.ip = entry;
         self.code = code;
-        while self.ip < self.code.len() + CODE {
+        while ip < self.code.len() + CODE {
             if cfg!(debug_assertions) && debug {
                 eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
-                eprint!("IP: 0x{:08x}:  ", self.ip);
-                eprint!("{:23}  ", self.code[self.ip - CODE].to_string());
+                eprint!("IP: 0x{:08x}:  ", ip);
+                eprint!("{:23}  ", self.code[ip - CODE].to_string());
                 eprint!("BP: 0x{:08x}     ", self.bp);
             }
-            match self.code[self.ip - CODE] {
+            match self.code[ip - CODE] {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {
                     break;
@@ -188,69 +186,69 @@ impl Evaluator {
                 MachineOperation::RefFrame(o) => {
                     push!(Value::Ptr((self.bp as isize + o) as usize));
                 }
-                MachineOperation::Jump(ip) => {
-                    self.ip = ip;
+                MachineOperation::Jump(newip) => {
+                    ip = newip;
                     continue;
                 }
                 MachineOperation::JumpRel(offset) => {
-                    self.ip = (self.ip as isize + offset) as usize;
+                    ip = (ip as isize + offset) as usize;
                     continue;
                 }
-                MachineOperation::JumpIf(ip) => {
+                MachineOperation::JumpIf(newip) => {
                     let cond = pop!(Value::Bool);
                     if cond != 0 {
-                        self.ip = ip;
+                        ip = newip;
                         continue;
                     }
                 }
                 MachineOperation::JumpRelIf(offset) => {
                     let cond = pop!(Value::Bool);
                     if cond != 0 {
-                        self.ip = (self.ip as isize + offset) as usize;
+                        ip = (ip as isize + offset) as usize;
                         continue;
                     }
                 }
                 MachineOperation::Return => {
                     self.memory.truncate_stack(self.bp);
                     self.bp = as_type!(self.memory.pop(), Value::Ptr);
-                    self.ip = as_type!(self.memory.pop(), Value::Ptr);
+                    ip = as_type!(self.memory.pop(), Value::Ptr);
                     continue;
                 }
                 MachineOperation::Call => {
-                    let ip = pop!(Value::Ptr);
+                    let newip = pop!(Value::Ptr);
                     let num_args = inplace!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
 
-                    if ip < CODE {
-                        let builtin_idx = ip - BUILTIN_CODE;
+                    if newip < CODE {
+                        let builtin_idx = newip - BUILTIN_CODE;
                         let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
                         self.memory.truncate_stack(self.bp);
                         reg = rv;
                     } else {
                         // these must be written into memory
                         self.memory[bp - 1] = Value::Ptr(self.bp);
-                        self.memory[bp - 2] = Value::Ptr(self.ip + 1);
+                        self.memory[bp - 2] = Value::Ptr(ip + 1);
                         self.bp = bp;
-                        self.ip = ip;
+                        ip = newip;
                         reg = self.memory.pop();
                         continue;
                     }
                 }
-                MachineOperation::CallBuiltin(ip) => {
+                MachineOperation::CallBuiltin(newip) => {
                     let num_args = inplace!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
-                    let builtin_idx = ip - BUILTIN_CODE;
+                    let builtin_idx = newip - BUILTIN_CODE;
                     let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
                     self.memory.truncate_stack(self.bp);
                     reg = rv;
                 }
-                MachineOperation::CallKnown(ip) => {
+                MachineOperation::CallKnown(newip) => {
                     let num_args = inplace!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
                     self.memory[bp - 1] = Value::Ptr(self.bp);
-                    self.memory[bp - 2] = Value::Ptr(self.ip + 1);
+                    self.memory[bp - 2] = Value::Ptr(ip + 1);
                     self.bp = bp;
-                    self.ip = ip;
+                    ip = newip;
                     reg = self.memory.pop();
                     continue;
                 }
@@ -461,7 +459,7 @@ impl Evaluator {
                     do_unop!(!, Int, Char);
                 }
             }
-            self.ip += 1;
+            ip += 1;
         }
         Ok(Value::Uninitialized)
     }
