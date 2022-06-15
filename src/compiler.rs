@@ -1,13 +1,17 @@
-use crate::builtins::BuiltinFunction;
-use crate::code_builder::CodeBuilder;
-use crate::operation::{MachineOperation, Operation};
-use crate::parser::*;
-use crate::typesystem::{Signature, Type, TypeSystem, NULL};
-use crate::value::Value;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::mem::swap;
-use std::rc::Rc;
+use crate::{
+    builtins::BuiltinFunction,
+    code_builder::CodeBuilder,
+    operation::{MachineOperation, Operation},
+    parser::*,
+    typesystem::{Signature, Type, TypeSystem, NULL},
+    value::Value,
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    mem::{swap, take},
+    rc::Rc,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
@@ -25,6 +29,7 @@ pub struct Compiler {
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
     func_scopes: Vec<HashMap<String, Rc<RefCell<Function>>>>,
+    class_scopes: Vec<HashMap<String, Rc<RefCell<ClassDecl>>>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
@@ -53,6 +58,7 @@ impl Compiler {
                 HashMap::new(), //globals
             ],
             func_scopes: vec![HashMap::new(), HashMap::new()],
+            class_scopes: vec![HashMap::new(), HashMap::new()],
             types: None,
             num_args: 0,
             arg_types: None,
@@ -94,6 +100,7 @@ impl Compiler {
         self.num_locals.push(0);
         self.scopes.push(HashMap::new());
         self.func_scopes.push(HashMap::new());
+        self.class_scopes.push(HashMap::new());
     }
 
     fn close_scope(&mut self) {
@@ -101,6 +108,7 @@ impl Compiler {
         self.num_locals.pop();
         self.scopes.pop();
         self.func_scopes.pop();
+        self.class_scopes.pop();
     }
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
@@ -166,13 +174,20 @@ impl Compiler {
                     self.code.emit(MachineOperation::Pop);
                 }
             }
-            Statement::ClassDecl(c) => todo!("{:?}", c),
+            Statement::ClassDecl(c) => self.classdecl(c),
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
             Statement::Continue(c) => self.continue_(c),
             Statement::Break(b) => self.break_(b),
             Statement::Return(r) => self.return_(r),
         }
+    }
+
+    fn classdecl(&mut self, c: &Rc<RefCell<ClassDecl>>) {
+        self.class_scopes
+            .last_mut()
+            .unwrap()
+            .insert(c.borrow().name.clone(), c.clone());
     }
 
     fn return_(&mut self, r: &Return) {
@@ -350,6 +365,15 @@ impl Compiler {
         }
     }
 
+    fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
+        for scope in table.iter().rev() {
+            if let Some(f) = scope.get(key) {
+                return Some(f.clone());
+            }
+        }
+        None
+    }
+
     fn funcrefexpr(&mut self, r: &FuncRefExpr) {
         let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
         if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
@@ -365,22 +389,29 @@ impl Compiler {
                 t => unreachable!("Expected CodeLocation found {:?}", t),
             }
         }
-        let mut func = None;
-        for scope in self.func_scopes.iter().rev() {
-            if let Some(f) = scope.get(&r.name) {
-                func = Some(f.clone());
-                break;
-            }
-        }
-        let func =
-            func.unwrap_or_else(|| panic!("Could not find a func `{}` in func_scope", r.name));
+        let mut is_init = false;
+        let func = match self.scope_lookup(&r.name, &self.func_scopes) {
+            Some(f) => f,
+            None => match self.scope_lookup(&r.name, &self.class_scopes) {
+                None => panic!(
+                    "Could not find a func `{}` in func_scope or class_scope",
+                    r.name
+                ),
+                Some(c) => {
+                    is_init = true;
+                    match &c.borrow().methods.get("__init__").unwrap().etype {
+                        ExpressionType::Function(f) => f.clone(),
+                        _ => unreachable!(),
+                    }
+                }
+            },
+        };
 
         self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
-        let mut save_bp_list = Vec::new();
-        swap(&mut save_bp_list, &mut self.recursive_calls);
-        let addr = self.single_function(&func.borrow(), &r.sig);
-        swap(&mut save_bp_list, &mut self.recursive_calls);
+        let save_bp_list = take(&mut self.recursive_calls);
+        let addr = self.single_function(&func.borrow(), &r.sig, is_init);
+        self.recursive_calls = save_bp_list;
         self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
     }
@@ -564,13 +595,13 @@ impl Compiler {
         } else {
             // I think this is broken but it _might_ work
             for sig in sigs.iter() {
-                let addr = self.single_function(&f.borrow(), sig);
+                let addr = self.single_function(&f.borrow(), sig, false);
                 self.code.push(Value::Ptr(addr));
             }
         }
     }
 
-    fn single_function(&mut self, f: &Function, sig: &Signature) -> usize {
+    fn single_function(&mut self, f: &Function, sig: &Signature, _is_init: bool) -> usize {
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.argnames.len(),
             "{:#?}\n-------------------\n{:#?}",
@@ -638,10 +669,16 @@ impl Compiler {
         self.code.push(Value::Uninitialized); // bp
         let save_extra = self.extra_args;
         self.extra_args = 0;
+        let mut is_init_num = 0;
+        if let Some(size) = c.is_init {
+            self.code.alloc(size);
+            is_init_num = 1;
+        }
         for arg in c.args.iter() {
             self.expr(arg);
         }
-        self.code.push(Value::Count(c.args.len() + self.extra_args));
+        self.code
+            .push(Value::Count(c.args.len() + self.extra_args + is_init_num));
         self.extra_args = save_extra;
 
         let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());

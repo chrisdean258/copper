@@ -1,14 +1,8 @@
-use crate::lex::*;
-use crate::location::Location;
-use crate::operation::Operation;
-use crate::typesystem::Signature;
-use crate::typesystem::Type;
-use crate::value::Value;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::iter::Peekable;
-use std::mem::swap;
-use std::rc::Rc;
+use crate::{
+    lex::*, location::Location, operation::Operation, typesystem::Signature, typesystem::Type,
+    value::Value,
+};
+use std::{cell::RefCell, collections::HashMap, iter::Peekable, mem::swap, rc::Rc};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -87,7 +81,7 @@ pub struct FromImport {
 pub struct ClassDecl {
     pub location: Location,
     pub name: String,
-    pub fields: HashSet<String>,
+    pub fields: HashMap<String, usize>,
     pub methods: HashMap<String, Expression>,
 }
 
@@ -117,6 +111,7 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
+    pub is_init: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -431,7 +426,7 @@ impl ParseTree {
         let name = expect_val!(lexer, TokenType::Identifier);
         expect!(lexer, TokenType::OpenBrace);
 
-        let mut fields = HashSet::new();
+        let mut fields = HashMap::new();
         let mut methods = HashMap::new();
         loop {
             let token = lexer.peek().ok_or("Unexpected EOF")?;
@@ -460,7 +455,7 @@ impl ParseTree {
                             TokenType::Identifier(s) => s,
                             _ => break,
                         };
-                        if !fields.insert(fieldname.clone()) {
+                        if fields.insert(fieldname.clone(), fields.len()).is_some() {
                             return Err(token
                                 .location
                                 .errfmt(format_args!("Redefinition of field {}", fieldname)));
@@ -783,6 +778,7 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
+                            is_init: None,
                         }),
                     }
                 }

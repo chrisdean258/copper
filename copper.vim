@@ -52,7 +52,6 @@ syn keyword copperOperator in
 
 syn match copperNumber '\<\d\+\(\.\d\+\)\?'
 syn match copperString '"\([^"\\]\|\\.\)*"'
-syn match copperString '"\([^"\\]\|\\.\)*'
 syn match copperChar '\'\([^"\\]\|\\.\)\''
 syn match copperLambdaArg '\\\d\+'
 syn match copperComment '#.*$'

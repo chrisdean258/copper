@@ -86,7 +86,7 @@ impl TypeChecker {
         }
     }
 
-    fn lookup_general_scope(
+    fn scope_lookup_general(
         &self,
         name: &str,
         scopes: &[Rc<RefCell<HashMap<String, Type>>>],
@@ -99,16 +99,16 @@ impl TypeChecker {
         None
     }
 
-    fn lookup_scope(&self, name: &str) -> Option<Type> {
-        self.lookup_general_scope(name, &self.scopes)
+    fn scope_lookup(&self, name: &str) -> Option<Type> {
+        self.scope_lookup_general(name, &self.scopes)
     }
 
-    fn lookup_func_scope(&self, name: &str) -> Option<Type> {
-        self.lookup_general_scope(name, &self.func_scopes)
+    fn scope_lookup_func(&self, name: &str) -> Option<Type> {
+        self.scope_lookup_general(name, &self.func_scopes)
     }
 
-    fn lookup_class_scope(&self, name: &str) -> Option<Type> {
-        self.lookup_general_scope(name, &self.class_scopes)
+    fn scope_lookup_class(&self, name: &str) -> Option<Type> {
+        self.scope_lookup_general(name, &self.class_scopes)
     }
 
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
@@ -241,7 +241,7 @@ impl TypeChecker {
             ExpressionType::Lambda(l) => self.lambda(l),
             ExpressionType::List(l) => self.list(l),
             ExpressionType::IndexExpr(i) => self.index(i),
-            ExpressionType::DottedLookup(d) => todo!("{:?}", d),
+            ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
@@ -310,7 +310,7 @@ impl TypeChecker {
     }
 
     fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
-        match self.lookup_scope(&r.name) {
+        match self.scope_lookup(&r.name) {
             Some(t) => return Ok(t),
             None if self.allow_insert.is_some() => {
                 let typ = self.allow_insert.unwrap();
@@ -320,10 +320,10 @@ impl TypeChecker {
             }
             None => (),
         }
-        if let Some(t) = self.lookup_class_scope(&r.name) {
+        if let Some(t) = self.scope_lookup_class(&r.name) {
             return Ok(t);
         }
-        match self.lookup_func_scope(&r.name) {
+        match self.scope_lookup_func(&r.name) {
             Some(t) if self.allow_raw_func => Ok(t),
             Some(_) => Err(self.error(format!(
                 "`{}` is a function whose types cannot be determined. Try wrapping it in a lambda",
@@ -335,7 +335,7 @@ impl TypeChecker {
 
     fn funcrefexpr(&mut self, r: &mut FuncRefExpr) -> Result<Type, TypeError> {
         let name = self.system.mangle(&r.name, &r.sig);
-        match self.lookup_scope(&name) {
+        match self.scope_lookup(&name) {
             Some(t) => Ok(t),
             None => unreachable!("Could not find {:?} in scope", r),
         }
@@ -570,7 +570,7 @@ impl TypeChecker {
             ($c:ident, $args:ident, $out:expr) => {
                 match &$c.function.as_ref().etype {
                     ExpressionType::RefExpr(r) => {
-                        if self.lookup_func_scope(&r.name).is_some() {
+                        if self.scope_lookup_func(&r.name).is_some() {
                             $c.function.as_mut().etype = ExpressionType::FuncRefExpr(FuncRefExpr {
                                 name: r.name.clone(),
                                 sig: Signature {
@@ -594,6 +594,7 @@ impl TypeChecker {
 
         if self.system.is_class(functype) {
             let classdecl = self.type_to_class.get_mut(&functype).unwrap().clone();
+            c.is_init = Some(classdecl.borrow().fields.len());
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
                     funcloc = init.location.clone();
@@ -715,7 +716,15 @@ impl TypeChecker {
         let num_default_needed = if function.borrow().repeated.is_some() {
             0
         } else {
-            function.borrow().argnames.len() - args.len()
+            let argnamelen = function.borrow().argnames.len();
+            if argnamelen < args.len() {
+                return Err(self.error(format!(
+                    "Too many arguments. Expected {} found {}",
+                    argnamelen,
+                    args.len()
+                )));
+            }
+            argnamelen - args.len()
         };
 
         if num_default_needed > function.borrow().default_args.len() {
@@ -887,5 +896,13 @@ impl TypeChecker {
         c.function.as_mut().derived_type = Some(rftyp);
 
         Ok(rv)
+    }
+
+    fn dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Type, TypeError> {
+        let lhs_typ = self.expr(d.lhs.as_mut())?;
+        let classdecl = self.type_to_class.get(&lhs_typ).unwrap();
+        let _idx = classdecl.borrow().fields.get(&d.rhs);
+        // let field_type = self.system.class_query_field(d.rhs);
+        todo!()
     }
 }
