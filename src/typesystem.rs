@@ -328,7 +328,7 @@ impl TypeSystem {
         let te_type = TypeEntryType::Class(Class {
             resolved_types: Vec::new(),
         });
-        self.new_type(name, te_type)
+        self.new_type(format!("<class '{}'>", name), te_type)
     }
 
     pub fn add_signature(&mut self, op: Operation, sig: Signature) {

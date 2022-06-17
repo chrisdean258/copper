@@ -598,8 +598,8 @@ impl TypeChecker {
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
                     funcloc = init.location.clone();
-                    functype = self.expr(init)?;
                     args.push(functype);
+                    functype = self.expr(init)?;
                 }
                 _ => {
                     return Err(vec![funcloc.errfmt(format_args!(
