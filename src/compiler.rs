@@ -630,6 +630,11 @@ impl Compiler {
             self.code.store_fast();
         }
         self.expr(f.body.as_ref());
+        if f.is_init.is_some() {
+            self.code.local_ref(0);
+            self.code.load();
+        }
+
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
@@ -695,7 +700,7 @@ impl Compiler {
     }
 
     fn dotted_lookup(&mut self, d: &DottedLookup) {
-        self.get_ref(d.lhs.as_ref());
+        self.get_no_ref(d.lhs.as_ref());
         self.code.push(Value::PtrOffset(d.index.unwrap() as isize));
         self.code.emit(MachineOperation::Plus);
         if !self.need_ref {
