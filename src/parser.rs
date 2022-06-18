@@ -210,6 +210,7 @@ pub struct Str {
 pub struct DottedLookup {
     pub lhs: Box<Expression>,
     pub rhs: String,
+    pub index: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -1041,6 +1042,7 @@ impl ParseTree {
             etype: ExpressionType::DottedLookup(DottedLookup {
                 lhs: Box::new(lhs),
                 rhs,
+                index: None,
             }),
         })
     }

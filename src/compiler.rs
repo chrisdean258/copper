@@ -689,7 +689,12 @@ impl Compiler {
         self.code.call();
     }
 
-    fn dotted_lookup(&mut self, _d: &DottedLookup) {
-        todo!()
+    fn dotted_lookup(&mut self, d: &DottedLookup) {
+        self.get_ref(d.lhs.as_ref());
+        self.code.push(Value::PtrOffset(d.index.unwrap() as isize));
+        self.code.emit(MachineOperation::Plus);
+        if !self.need_ref {
+            self.code.load();
+        }
     }
 }

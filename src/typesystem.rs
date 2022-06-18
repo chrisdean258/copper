@@ -18,6 +18,7 @@ pub enum TypeEntryType {
     Function(Function),
     Class(Class),
     ResolvedClass(ResolvedClass),
+    UnresolvedClass(UnresolvedClass),
     ResolvedFunction(ResolvedFunction),
 }
 
@@ -36,12 +37,21 @@ struct GenericOperation {
 
 #[derive(Debug, Clone)]
 pub struct Class {
-    resolved_types: Vec<Type>,
+    // resolved_types: HashSet<Type>,
+    // unresolved_types: HashSet<Type>,
+    num_fields: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnresolvedClass {
+    fields: Vec<Option<Type>>,
+    class: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedClass {
     fields: Vec<Type>,
+    class: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -324,11 +334,64 @@ impl TypeSystem {
         self.new_type(name, te_type)
     }
 
-    pub fn class_type(&mut self, name: String) -> Type {
+    pub fn class_type(&mut self, name: String, num_fields: usize) -> Type {
         let te_type = TypeEntryType::Class(Class {
-            resolved_types: Vec::new(),
+            // resolved_types: HashSet::new(),
+            // unresolved_types: HashSet::new(),
+            num_fields,
         });
-        self.new_type(format!("<class '{}'>", name), te_type)
+        self.new_type(name, te_type)
+    }
+
+    pub fn class_query_field(&self, cls: Type, idx: usize) -> Option<Type> {
+        match &self.types[cls].te_type {
+            TypeEntryType::ResolvedClass(r) => Some(r.fields[idx]),
+            TypeEntryType::UnresolvedClass(u) => u.fields[idx],
+            _ => panic!("querying {} as (Un)ResolvedClassType", self.typename(cls)),
+        }
+    }
+
+    pub fn set_field_type(&mut self, cls: Type, idx: usize, typ: Type) {
+        match &mut self.types[cls].te_type {
+            TypeEntryType::UnresolvedClass(u) => u.fields[idx] = Some(typ),
+            _ => panic!("querying {} as UnresolvedClassType", self.typename(cls)),
+        }
+    }
+
+    pub fn class_new_unresolved(&mut self, cls: Type) -> Type {
+        let name = self.types[cls].name.clone();
+        let num_fields = match &mut self.types[cls].te_type {
+            TypeEntryType::Class(c) => c.num_fields,
+            _ => unreachable!(),
+        };
+
+        self.new_type(
+            name,
+            TypeEntryType::UnresolvedClass(UnresolvedClass {
+                fields: vec![None; num_fields],
+                class: cls,
+            }),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn resolve_class(&mut self, cls: Type) {
+        self.types[cls].te_type = match &self.types[cls].te_type {
+            TypeEntryType::UnresolvedClass(c) => TypeEntryType::ResolvedClass(ResolvedClass {
+                fields: c.fields.iter().map(|x| x.unwrap_or(UNIT)).collect(),
+                class: c.class,
+            }),
+
+            _ => unreachable!(),
+        };
+    }
+
+    pub fn class_underlying(&self, cls: Type) -> Type {
+        match &self.types[cls].te_type {
+            TypeEntryType::UnresolvedClass(c) => c.class,
+            TypeEntryType::ResolvedClass(c) => c.class,
+            _ => panic!("querying {} as UnresolvedClassType", self.typename(cls)),
+        }
     }
 
     pub fn add_signature(&mut self, op: Operation, sig: Signature) {

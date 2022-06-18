@@ -62,7 +62,7 @@ impl TypeChecker {
 
     fn errmsg(&self, msg: String) -> String {
         debug_assert!(self.location.is_some());
-        format!("{}: {}", self.location.clone().unwrap(), msg)
+        format!("{}: Type Error: {}", self.location.clone().unwrap(), msg)
     }
 
     fn error(&self, msg: String) -> TypeError {
@@ -211,7 +211,9 @@ impl TypeChecker {
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, TypeError> {
         let cc = c.borrow();
-        let typ = self.system.class_type(cc.name.clone());
+        let typ = self
+            .system
+            .class_type(cc.name.clone(), c.borrow().fields.len());
         self.insert_class_scope(&cc.name, typ);
         drop(cc);
         self.type_to_class.insert(typ, c);
@@ -592,14 +594,17 @@ impl TypeChecker {
         let mut funcloc = c.function.location.clone();
         let mut args = Vec::new();
 
+        let mut override_return = None;
         if self.system.is_class(functype) {
             let classdecl = self.type_to_class.get_mut(&functype).unwrap().clone();
             c.is_init = Some(classdecl.borrow().fields.len());
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
                     funcloc = init.location.clone();
-                    args.push(functype);
+                    let unresolved = self.system.class_new_unresolved(functype);
+                    args.push(unresolved);
                     functype = self.expr(init)?;
+                    override_return = Some(unresolved);
                 }
                 _ => {
                     return Err(vec![funcloc.errfmt(format_args!(
@@ -671,7 +676,7 @@ impl TypeChecker {
         // if rv != UNKNOWN_RETURN {
         mangle!(c, args, rv);
         // }
-        Ok(rv)
+        Ok(override_return.unwrap_or(rv))
     }
 
     fn call_function(
@@ -900,9 +905,26 @@ impl TypeChecker {
 
     fn dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Type, TypeError> {
         let lhs_typ = self.expr(d.lhs.as_mut())?;
-        let classdecl = self.type_to_class.get(&lhs_typ).unwrap();
-        let _idx = classdecl.borrow().fields.get(&d.rhs);
-        // let field_type = self.system.class_query_field(d.rhs);
-        todo!()
+        let classdecltyp = self.system.class_underlying(lhs_typ);
+        let classdecl = self.type_to_class.get(&classdecltyp).unwrap();
+        let idx = *classdecl.borrow().fields.get(&d.rhs).unwrap();
+        d.index = Some(idx);
+        let field_type = self.system.class_query_field(lhs_typ, idx);
+        match (field_type, self.allow_insert) {
+            (Some(ft), None) => Ok(ft),
+            (None, Some(ai)) => {
+                self.system.set_field_type(lhs_typ, idx, ai);
+                Ok(ai)
+            }
+            (Some(ft), Some(ai)) if ai == ft => Ok(ai),
+            (Some(ft), Some(ai)) => Err(self.error(format!(
+                "Cannot assign type `{}` = `{}`",
+                self.system.typename(ft),
+                self.system.typename(ai),
+            ))),
+            (None, None) => {
+                Err(self.error("Trying to assign with an uninitialized type".to_string()))
+            }
+        }
     }
 }
