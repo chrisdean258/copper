@@ -624,6 +624,11 @@ impl Compiler {
         if f.locals.unwrap() > f.argnames.len() {
             self.code.reserve(f.locals.unwrap() - f.argnames.len());
         }
+        if let Some(size) = f.is_init {
+            self.code.local_ref(0);
+            self.code.alloc(size);
+            self.code.store_fast();
+        }
         self.expr(f.body.as_ref());
         self.code.return_();
         self.num_args = old_num_args;
@@ -670,8 +675,8 @@ impl Compiler {
         let save_extra = self.extra_args;
         self.extra_args = 0;
         let mut is_init_num = 0;
-        if let Some(size) = c.is_init {
-            self.code.alloc(size);
+        if c.is_init.is_some() {
+            self.code.push(Value::Uninitialized);
             is_init_num = 1;
         }
         for arg in c.args.iter() {

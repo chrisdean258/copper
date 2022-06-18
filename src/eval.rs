@@ -140,8 +140,9 @@ impl Evaluator {
                 }
                 MachineOperation::FastStore => {
                     let value = pop!();
-                    let addr = pop!(Value::Ptr);
+                    let addr = as_type!(reg, Value::Ptr); //pop!(Value::Ptr);
                     self.memory[addr] = value;
+                    pop!();
                 }
                 MachineOperation::StoreN(num) => {
                     //intentional direct stack manipulation

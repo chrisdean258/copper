@@ -600,6 +600,10 @@ impl TypeChecker {
             c.is_init = Some(classdecl.borrow().fields.len());
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
+                    match &mut init.etype {
+                        ExpressionType::Function(f) => f.borrow_mut().is_init = c.is_init,
+                        _ => unreachable!(),
+                    }
                     funcloc = init.location.clone();
                     let unresolved = self.system.class_new_unresolved(functype);
                     args.push(unresolved);

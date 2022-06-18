@@ -143,6 +143,10 @@ impl CodeBuilder {
         self.emit(MachineOperation::Store)
     }
 
+    pub fn store_fast(&mut self) -> usize {
+        self.emit(MachineOperation::FastStore)
+    }
+
     pub fn store_n(&mut self, count: usize) -> usize {
         self.emit(MachineOperation::StoreN(count))
     }

@@ -187,6 +187,7 @@ pub struct Function {
     pub name: Option<String>,
     pub default_args: Vec<Expression>,
     pub locals: Option<usize>,
+    pub is_init: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -886,6 +887,7 @@ impl ParseTree {
                 name,
                 default_args,
                 locals: None,
+                is_init: None,
             }))),
         })
     }
