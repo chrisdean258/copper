@@ -915,17 +915,11 @@ impl TypeChecker {
         d.index = Some(idx);
         let field_type = self.system.class_query_field(lhs_typ, idx);
         match (field_type, self.allow_insert) {
-            (Some(ft), None) => Ok(ft),
+            (Some(ft), _) => Ok(ft),
             (None, Some(ai)) => {
                 self.system.set_field_type(lhs_typ, idx, ai);
                 Ok(ai)
             }
-            (Some(ft), Some(ai)) if ai == ft => Ok(ai),
-            (Some(ft), Some(ai)) => Err(self.error(format!(
-                "Cannot assign type `{}` = `{}`",
-                self.system.typename(ft),
-                self.system.typename(ai),
-            ))),
             (None, None) => {
                 Err(self.error("Trying to assign with an uninitialized type".to_string()))
             }
