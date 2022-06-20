@@ -576,11 +576,7 @@ impl TypeChecker {
                         if self.scope_lookup_func(&r.name).is_some() {
                             $c.function.as_mut().etype = ExpressionType::FuncRefExpr(FuncRefExpr {
                                 name: r.name.clone(),
-                                sig: Signature {
-                                    inputs: $args.clone(),
-                                    output: $out,
-                                    repeated_inputs: None,
-                                },
+                                sig: Signature::new($args.clone(), None, $out),
                             })
                         }
                     }
@@ -710,8 +706,6 @@ impl TypeChecker {
         funcloc: &Location,
     ) -> Result<(Type, usize), TypeError> {
         self.openscope();
-        self.func_returns.push(None);
-        let save_repeated = self.repeated_arg.clone();
         if let Some(name) = function.borrow().repeated.clone() {
             if args.len() > function.borrow().argnames.len() {
                 self.repeated_arg = Some((name, *args.last().unwrap()));
@@ -722,7 +716,18 @@ impl TypeChecker {
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
-        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
+        let rv = self.call_single_check(function.borrow_mut().body.as_mut(), funcloc)?;
+        Ok((rv, self.closescope()))
+    }
+
+    fn call_single_check(
+        &mut self,
+        function: &mut Expression,
+        funcloc: &Location,
+    ) -> Result<Type, TypeError> {
+        self.func_returns.push(None);
+        let save_repeated = self.repeated_arg.clone();
+        let rv = match self.expr(function) {
             Ok(t) if t == UNKNOWN_RETURN => {
                 return Err(vec![
                     format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
@@ -747,7 +752,7 @@ impl TypeChecker {
             }
             _ => (),
         }
-        Ok((rv, self.closescope()))
+        Ok(rv)
     }
 
     fn call_function_int(
@@ -844,45 +849,13 @@ impl TypeChecker {
 
         self.openscope();
         self.func_returns.push(None);
-        let rv = match self.expr(lambda.borrow_mut().body.as_mut()) {
-            Ok(t) if t == UNKNOWN_RETURN => {
-                return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
-                    self.errmsg("Originating with this function call".to_string())
-                ]);
-            }
-            Ok(t) => t,
-            Err(mut s) => {
-                s.push(self.errmsg("Originating with this function call".to_string()));
-                return Err(s);
-            }
-        };
+        let rv = self.call_single_check(lambda.borrow_mut().body.as_mut(), &funcloc)?;
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
-        let derived = self.func_returns.pop().unwrap();
-        match derived {
-            None => (),
-            Some(t) if t == rv => (),
-            Some(t) => {
-                return Err(self.error(format!(
-                    "Cannot return type {} from function. Return type already encountered is {}",
-                    self.system.typename(rv),
-                    self.system.typename(t),
-                )))
-            }
-        }
-
         swap(&mut self.lambda_args, &mut args);
-        let rftyp = self.system.add_function_signature(
-            functype,
-            Signature {
-                inputs: args.clone(),
-                output: rv,
-                repeated_inputs: None,
-            },
-        );
-
+        let rftyp = self
+            .system
+            .add_function_signature(functype, Signature::new(args, None, rv));
         c.function.as_mut().derived_type = Some(rftyp);
-
         Ok(rv)
     }
 
