@@ -140,7 +140,7 @@ impl Evaluator {
                 }
                 MachineOperation::FastStore => {
                     let value = pop!();
-                    let addr = as_type!(reg, Value::Ptr); //pop!(Value::Ptr);
+                    let addr = as_type!(reg, Value::Ptr);
                     self.memory[addr] = value;
                     pop!();
                 }

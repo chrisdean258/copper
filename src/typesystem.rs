@@ -64,6 +64,11 @@ pub struct ResolvedFunction {
     signature: Signature,
 }
 
+#[derive(Debug, Clone)]
+pub struct BoundFunction {
+    signature: Signature,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Signature {
     pub inputs: Vec<Type>,
@@ -105,6 +110,14 @@ macro_rules! sig {
 pub(crate) use sig;
 
 impl Signature {
+    pub fn new(inputs: Vec<Type>, repeated_inputs: Option<Type>, output: Type) -> Self {
+        Self {
+            inputs,
+            output,
+            repeated_inputs,
+        }
+    }
+
     pub fn match_inputs(&self, inputs: &[Type]) -> bool {
         let inputs_eq = self.inputs.iter().zip(inputs).all(|(a, b)| a.matches(b));
         if !inputs_eq {
@@ -117,6 +130,18 @@ impl Signature {
             return inputs[self.inputs.len()..].iter().all(|a| a.matches(&t));
         }
         false
+    }
+
+    pub fn output_type_if_match(&self, ts: &TypeSystem, inputs: &[Type]) -> Result<Type, String> {
+        if self.match_inputs(inputs) {
+            Ok(self.output)
+        } else {
+            Err(format!(
+                "Functions inputs didnt match. Exepcted `{}` found `{}`",
+                ts.format_args_from_sig(self),
+                ts.format_args(inputs),
+            ))
+        }
     }
 }
 
@@ -519,16 +544,6 @@ impl TypeSystem {
         }
     }
 
-    pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> usize {
-        let typ = self.func_type_from_sig(&sig);
-        let ft = match &mut self.types[func].te_type {
-            TypeEntryType::Function(ft) => ft,
-            _ => panic!("trying to add a signature to a non function"),
-        };
-        ft.resolved_types.push(typ);
-        ft.resolved_types.len() - 1
-    }
-
     pub fn func_type_from_sig(&mut self, sig: &Signature) -> Type {
         if let Some(val) = self.func_type_cache.get(sig) {
             return *val;
@@ -544,23 +559,16 @@ impl TypeSystem {
         rv
     }
 
-    pub fn function_type_resolve(&mut self, func: Type, handle: usize) -> Type {
-        let ft = match &self.types[func].te_type {
-            TypeEntryType::Function(ft) => ft,
+    pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> Type {
+        let typ = self.func_type_from_sig(&sig);
+        match &mut self.types[func].te_type {
+            TypeEntryType::Function(ft) => ft.resolved_types.push(typ),
             _ => panic!("trying to signature resolve a non function"),
         };
-        let signature = match &self.types[ft.resolved_types[handle]].te_type {
-            TypeEntryType::ResolvedFunction(r) => r.signature.clone(),
-            _ => unreachable!(),
-        };
-        let typename = format!(
-            "{}({})",
-            self.typename(func),
-            self.format_args(&signature.inputs)
-        );
+        let typename = format!("{}({})", self.typename(func), self.format_args(&sig.inputs));
         self.new_type(
             typename,
-            TypeEntryType::ResolvedFunction(ResolvedFunction { signature }),
+            TypeEntryType::ResolvedFunction(ResolvedFunction { signature: sig }),
         )
     }
 

@@ -276,11 +276,12 @@ impl TypeChecker {
             b.lhs.as_mut().derived_type = Some(rtype);
             ltype = rtype;
         }
-        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(|| 
-            self.error(format!("Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-                               self.system.typename(ltype),
-                               b.op,
-                               self.system.typename(rtype)
+        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(||
+            self.error(format!(
+                    "Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
+                    self.system.typename(ltype),
+                    b.op,
+                    self.system.typename(rtype)
                ))
         )?;
 
@@ -641,26 +642,16 @@ impl TypeChecker {
                     )
                 }
             };
-            let mut funcs: Vec<BuiltinFunction> = BuiltinFunction::get_table(&mut self.system)
-                .into_iter()
-                .filter(|x| x.name == funcname)
-                .collect();
-            debug_assert_eq!(funcs.len(), 1);
-            let func = funcs.pop().unwrap();
-            return if func.signature.match_inputs(&args) {
-                Ok(func.signature.output)
-            } else {
-                Err(self.error(format!(
-                    "Functions inputs didnt match. Exepcted `{}` found `{}`",
-                    self.system.format_args_from_sig(&func.signature),
-                    self.system.format_args(&args),
-                )))
-            };
+            let builtins = BuiltinFunction::get_hashmap(&mut self.system);
+            let func = builtins.get(&funcname).unwrap();
+            return func
+                .signature
+                .output_type_if_match(&self.system, &args)
+                .map_err(|x| vec![x]);
         }
 
         if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
             mangle!(c, args, sig.output);
-            eprintln!("call expression: {:?}", c);
             return Ok(sig.output);
         }
 
@@ -669,18 +660,13 @@ impl TypeChecker {
                 let func = func.clone();
                 self.call_function(func, functype, args.clone(), funcloc, c)?
             }
-            None => match self.type_to_lambda.get_mut(&functype) {
-                Some(lambda) => {
-                    let lambda = lambda.clone();
-                    self.call_lambda(lambda, functype, args.clone(), funcloc, c)?
-                }
-                None => unreachable!(),
-            },
+            None => {
+                let lambda = self.type_to_lambda.get_mut(&functype).unwrap().clone();
+                self.call_lambda(lambda, functype, args.clone(), funcloc, c)?
+            }
         };
-        // if rv != UNKNOWN_RETURN {
         mangle!(c, args, rv);
-        // }
-        Ok(override_return.unwrap_or(rv))
+        Ok(override_return.unwrap_or(rv)) // override return is for constructors
     }
 
     fn call_function(
@@ -708,10 +694,60 @@ impl TypeChecker {
                         sig: func_sig,
                     })
                 }
-                _ => unreachable!(),
+                ExpressionType::DottedLookup(_d) => {
+                    todo!()
+                }
+                _ => (),
             }
         }
         Ok(rv)
+    }
+
+    fn call_function_single_check(
+        &mut self,
+        function: &Rc<RefCell<parser::Function>>,
+        args: &[Type],
+        funcloc: &Location,
+    ) -> Result<(Type, usize), TypeError> {
+        self.openscope();
+        self.func_returns.push(None);
+        let save_repeated = self.repeated_arg.clone();
+        if let Some(name) = function.borrow().repeated.clone() {
+            if args.len() > function.borrow().argnames.len() {
+                self.repeated_arg = Some((name, *args.last().unwrap()));
+            } else {
+                self.repeated_arg = Some((name, 0));
+            }
+        }
+        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
+            self.insert_scope(name, *typ);
+        }
+        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
+            Ok(t) if t == UNKNOWN_RETURN => {
+                return Err(vec![
+                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
+                    self.errmsg("Originating with this function call".to_string())
+                ]);
+            }
+            Ok(t) => t,
+            Err(mut s) => {
+                s.push(self.errmsg("Originating with this function call".to_string()));
+                return Err(s);
+            }
+        };
+        self.repeated_arg = save_repeated;
+        let derived = self.func_returns.pop().unwrap();
+        match derived {
+            Some(t) if t != rv => {
+                return Err(self.error(format!(
+                    "Cannot return type {} from function. Return type already encountered is {}",
+                    self.system.typename(rv),
+                    self.system.typename(t),
+                )))
+            }
+            _ => (),
+        }
+        Ok((rv, self.closescope()))
     }
 
     fn call_function_int(
@@ -760,89 +796,33 @@ impl TypeChecker {
             return Ok(t);
         }
 
-        self.openscope();
-        self.func_returns.push(None);
-        let save_repeated = self.repeated_arg.clone();
-        if let Some(name) = function.borrow().repeated.clone() {
-            if args.len() > function.borrow().argnames.len() {
-                self.repeated_arg = Some((name, *args.last().unwrap()));
-            } else {
-                self.repeated_arg = Some((name, 0));
-            }
-        }
-        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
-            self.insert_scope(name, *typ);
-        }
-
         let save = self.need_recheck;
         self.need_recheck = false;
-        let rv = match self.expr(function.borrow_mut().body.as_mut()) {
-            Ok(t) if t == UNKNOWN_RETURN => {
-                return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
-                    self.errmsg("Originating with this function call".to_string())
-                ]);
-            }
-            Ok(t) => t,
-            Err(mut s) => {
-                s.push(self.errmsg("Originating with this function call".to_string()));
-                return Err(s);
-            }
-        };
+        let (rv, num_locals) = self.call_function_single_check(&function, &args, &funcloc)?;
+        function.borrow_mut().locals = Some(num_locals);
         let func_sig = if function.borrow().repeated.is_none() {
-            Signature {
-                inputs: args.clone(),
-                output: rv,
-                repeated_inputs: None,
-            }
+            Signature::new(args.clone(), None, rv)
         } else {
-            Signature {
-                inputs: args[..function.borrow().argnames.len()].to_vec(),
-                output: rv,
-                repeated_inputs: Some(*args.last().unwrap()),
-            }
+            let num = function.borrow().argnames.len();
+            Signature::new(
+                args.iter().take(num).cloned().collect(),
+                args.last().cloned(),
+                rv,
+            )
         };
-        let sig_handle = self.system.add_function_signature(functype, func_sig);
-        function.borrow_mut().locals = Some(self.closescope());
-        self.repeated_arg = save_repeated;
-        let derived = self.func_returns.pop().unwrap();
-        match derived {
-            None => (),
-            Some(t) if t == rv => (),
-            Some(t) => {
-                return Err(self.error(format!(
-                    "Cannot return type {} from function. Return type already encountered is {}",
-                    self.system.typename(rv),
-                    self.system.typename(t),
-                )))
-            }
-        }
-        let rftyp = self.system.function_type_resolve(functype, sig_handle);
+        let rftyp = self.system.add_function_signature(functype, func_sig);
         c.function.as_mut().derived_type = Some(rftyp);
 
         if self.need_recheck {
-            self.openscope();
-            for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
-                self.insert_scope(name, *typ);
-            }
-            match self.expr(function.borrow_mut().body.as_mut()) {
-                Ok(t) if t == rv => t,
-                Ok(t) => {
-                    return Err(vec![
-                        format!(
+            let (new_rv, num_locals) =
+                self.call_function_single_check(&function, &args, &funcloc)?;
+            if new_rv != rv {
+                return Err(vec![format!(
                             "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
-                            funcloc, self.system.typename(t), self.system.typename(rv)
-                        ),
-                        self.errmsg("Originating with this function call".to_string())
-                    ]);
-                }
-                Err(mut s) => {
-                    s.push(self.errmsg("Originating with this function call".to_string()));
-                    return Err(s);
-                }
-            };
-            let locals = Some(self.closescope());
-            debug_assert_eq!(function.borrow_mut().locals, locals);
+                            funcloc, self.system.typename(new_rv), self.system.typename(rv)),
+                        self.errmsg("Originating with this function call".to_string()) ]);
+            }
+            debug_assert_eq!(function.borrow_mut().locals.unwrap(), num_locals);
         }
         self.need_recheck = save;
         Ok(rv)
@@ -892,7 +872,7 @@ impl TypeChecker {
         }
 
         swap(&mut self.lambda_args, &mut args);
-        let sig_handle = self.system.add_function_signature(
+        let rftyp = self.system.add_function_signature(
             functype,
             Signature {
                 inputs: args.clone(),
@@ -901,7 +881,6 @@ impl TypeChecker {
             },
         );
 
-        let rftyp = self.system.function_type_resolve(functype, sig_handle);
         c.function.as_mut().derived_type = Some(rftyp);
 
         Ok(rv)

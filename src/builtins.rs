@@ -2,6 +2,7 @@ use crate::eval::Evaluator;
 use crate::memory;
 use crate::typesystem::*;
 use crate::value::Value;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::mem;
@@ -55,6 +56,15 @@ impl BuiltinFunction {
             builtin_func!(len, ANY => INT),
             builtin_func!(getline, => ts.option_type(STR)),
         ]
+    }
+
+    pub fn get_hashmap(ts: &mut TypeSystem) -> HashMap<String, BuiltinFunction> {
+        let funcs = Self::get_table(ts);
+        let mut hm = HashMap::with_capacity(funcs.len());
+        for func in funcs {
+            hm.insert(func.name.clone(), func);
+        }
+        hm
     }
 }
 
