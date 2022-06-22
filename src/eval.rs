@@ -143,7 +143,11 @@ impl Evaluator {
                 MachineOperation::Store => {
                     let value = pop!();
                     let addr = inplace!(Value::Ptr);
-                    self.memory[addr] = value;
+                    if let Some(v) = self.memory.get_mut(addr) {
+                        *v = value;
+                    } else if cfg!(debug_assertions) {
+                        panic!("Writing out of bounds 0x{:x}", addr);
+                    }
                     reg = value;
                 }
                 MachineOperation::FastStore => {

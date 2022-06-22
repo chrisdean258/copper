@@ -141,7 +141,7 @@ impl IndexMut<usize> for Memory {
 impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
-        dbg!(addr - STACK, self.stack.get(addr - STACK), &self.stack);
+        // dbg!(addr - STACK, self.stack.get(addr - STACK), &self.stack);
         self.stack
             .get(addr - STACK)
             .unwrap_or_else(|| &self.heap[addr / HEAP - 1].1[addr % HEAP])
