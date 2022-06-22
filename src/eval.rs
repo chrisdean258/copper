@@ -127,11 +127,18 @@ impl Evaluator {
                 }
                 MachineOperation::Load => {
                     let addr = inplace!(Value::Ptr);
-                    reg = self.memory[addr];
+                    if let Some(v) = self.memory.get(addr) {
+                        reg = *v
+                    } else if cfg!(debug_assertions) {
+                        panic!("Reading out of bounds 0x{:x}", addr);
+                    }
                 }
                 MachineOperation::LoadLocal(o) => {
                     let ptr = (self.bp as isize + o) as usize;
-                    push!(self.memory[ptr]);
+                    self.memory.push(reg);
+                    if let Some(v) = self.memory.get(ptr) {
+                        reg = *v;
+                    }
                 }
                 MachineOperation::Store => {
                     let value = pop!();

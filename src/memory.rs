@@ -109,29 +109,48 @@ impl Memory {
         }
         self.heap[idx].1.alloc() + self.heap[idx].0
     }
+
+    pub fn get(&self, addr: usize) -> Option<&Value> {
+        self.stack
+            .get(addr - STACK)
+            .or_else(|| self.heap[addr / HEAP - 1].1.get(addr % HEAP))
+    }
+
+    pub fn get_mut(&mut self, addr: usize) -> Option<&mut Value> {
+        self.stack
+            .get_mut(addr - STACK)
+            .or_else(|| self.heap[addr / HEAP - 1].1.get_mut(addr % HEAP))
+    }
 }
 
 impl IndexMut<usize> for Memory {
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
-        if addr >= STACK && addr - STACK < self.stack.len() {
-            &mut self.stack[addr - STACK]
-        } else if addr >= HEAP {
-            &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
-        } else {
-            panic!("0x{:x} not mapped", addr)
-        }
+        self.stack
+            .get_mut(addr - STACK)
+            .unwrap_or_else(|| &mut self.heap[addr / HEAP - 1].1[addr % HEAP])
+        // if addr >= STACK && addr - STACK < self.stack.len() {
+        // &mut self.stack[addr - STACK]
+        // } else if addr >= HEAP {
+        // &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
+        // } else {
+        // panic!("0x{:x} not mapped", addr)
+        // }
     }
 }
 
 impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
-        if addr >= STACK && addr - STACK < self.stack.len() {
-            &self.stack[addr - STACK]
-        } else if addr >= HEAP {
-            &self.heap[addr / HEAP - 1].1[addr % HEAP]
-        } else {
-            panic!("0x{:x} not mapped", addr)
-        }
+        dbg!(addr - STACK, self.stack.get(addr - STACK), &self.stack);
+        self.stack
+            .get(addr - STACK)
+            .unwrap_or_else(|| &self.heap[addr / HEAP - 1].1[addr % HEAP])
+        // if addr >= STACK && addr - STACK < self.stack.len() {
+        // &self.stack[addr - STACK]
+        // } else if addr >= HEAP {
+        // &self.heap[addr / HEAP - 1].1[addr % HEAP]
+        // } else {
+        // panic!("0x{:x} not mapped", addr)
+        // }
     }
 }

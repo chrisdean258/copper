@@ -30,6 +30,16 @@ impl Allocator {
         debug_assert!(idx % self.block_size == 0, "Trying to free unaligned block");
         self.free.push(idx);
     }
+
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&Value> {
+        self.memory.get(idx)
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut Value> {
+        self.memory.get_mut(idx)
+    }
 }
 
 impl Index<usize> for Allocator {
