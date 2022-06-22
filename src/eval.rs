@@ -98,14 +98,15 @@ impl Evaluator {
             };
         }
         self.code = code;
-        while ip < self.code.len() + CODE {
+        while let Some(instr) = self.code.get(ip - CODE) {
+            //ip < self.code.len() + CODE {
             if cfg!(debug_assertions) && debug {
                 eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
                 eprint!("IP: 0x{:08x}:  ", ip);
                 eprint!("{:23}  ", self.code[ip - CODE].to_string());
                 eprint!("BP: 0x{:08x}     ", self.bp);
             }
-            match self.code[ip - CODE] {
+            match instr {
                 MachineOperation::Nop => (),
                 MachineOperation::Crash => {
                     break;
@@ -118,9 +119,9 @@ impl Evaluator {
                     }
                 }
                 MachineOperation::Push(v) => {
-                    push!(v);
+                    push!(*v);
                 }
-                MachineOperation::Inplace(v) => reg = v,
+                MachineOperation::Inplace(v) => reg = *v,
                 MachineOperation::Pop => {
                     pop!();
                 }
@@ -149,7 +150,7 @@ impl Evaluator {
                     self.memory.push(reg);
                     let dst = as_type!(self.memory[self.memory.stack_top() - num - 1], Value::Ptr);
                     let src = self.memory.stack_top() - num;
-                    self.memory.memcpy(dst, src, num);
+                    self.memory.memcpy(dst, src, *num);
                     self.memory
                         .truncate_stack(self.memory.stack_top() - num - 1);
                     reg = self.memory.pop();
@@ -158,8 +159,8 @@ impl Evaluator {
                     //intentional direct stack manipulation
                     let src = inplace!(Value::Ptr);
                     let dst = self.memory.stack_top();
-                    self.memory.reserve(num);
-                    self.memory.memcpy(dst, src, num);
+                    self.memory.reserve(*num);
+                    self.memory.memcpy(dst, src, *num);
                     reg = self.memory.pop();
                 }
                 MachineOperation::Alloc => {
@@ -168,13 +169,13 @@ impl Evaluator {
                     reg = Value::Ptr(addr);
                 }
                 MachineOperation::Reserve(size) => {
-                    self.memory.reserve(size);
+                    self.memory.reserve(*size);
                 }
                 MachineOperation::Rotate(num) => {
                     // intentional direct stack manipulation
                     // This is possible without pushing but its waaay simpler with it
                     self.memory.push(reg);
-                    self.memory.rotate(num);
+                    self.memory.rotate(*num);
                     reg = self.memory.pop();
                 }
                 MachineOperation::Dup => {
@@ -188,7 +189,7 @@ impl Evaluator {
                     push!(Value::Ptr((self.bp as isize + o) as usize));
                 }
                 MachineOperation::Jump(newip) => {
-                    ip = newip;
+                    ip = *newip;
                     continue;
                 }
                 MachineOperation::JumpRel(offset) => {
@@ -198,7 +199,7 @@ impl Evaluator {
                 MachineOperation::JumpIf(newip) => {
                     let cond = pop!(Value::Bool);
                     if cond != 0 {
-                        ip = newip;
+                        ip = *newip;
                         continue;
                     }
                 }
@@ -249,7 +250,7 @@ impl Evaluator {
                     self.memory[bp - 1] = Value::Ptr(self.bp);
                     self.memory[bp - 2] = Value::Ptr(ip + 1);
                     self.bp = bp;
-                    ip = newip;
+                    ip = *newip;
                     reg = self.memory.pop();
                     continue;
                 }
