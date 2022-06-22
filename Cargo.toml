@@ -11,3 +11,4 @@ rustyline = "9.0.0"
 [profile.release]
 panic = "abort"
 overflow-checks = false
+codegen-units = 1
