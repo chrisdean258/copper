@@ -21,6 +21,7 @@ run-test()
 	if [ -n "$(cat "stderr.txt")" ]; then 
 		rv=$((rv+2))
 	fi
+	rm "stderr.txt"
 	return $rv
 }
 
