@@ -440,7 +440,7 @@ impl Evaluator {
                             reg = Value::Str(val);
                         }
                         (a, b) => {
-                            unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!(op), b)
+                            unreachable!("Trying to apply binop {:?} + {:?}", a, b)
                         }
                     };
                 }
