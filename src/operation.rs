@@ -72,6 +72,8 @@ pub enum MachineOperation {
     Call,
     CallBuiltin(usize),
     CallKnown(usize),
+    CallBuiltinSize(usize, usize),
+    CallKnownSize(usize, usize),
     Return,
     BoolOr,
     BoolXor,
@@ -300,6 +302,12 @@ impl Display for MachineOperation {
             }
             MachineOperation::CallKnown(addr) => {
                 return f.write_fmt(format_args!("callknown (0x{:x})", addr))
+            }
+            MachineOperation::CallBuiltinSize(addr, num_args) => {
+                return f.write_fmt(format_args!("callbuiltin (0x{:x}, {})", addr, num_args))
+            }
+            MachineOperation::CallKnownSize(addr, num_args) => {
+                return f.write_fmt(format_args!("callknown (0x{:x}, {})", addr, num_args))
             }
             MachineOperation::Return => "ret",
             MachineOperation::BoolOr => "||",

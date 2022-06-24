@@ -63,6 +63,20 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
     let mut i = 0;
     let mut code = code.to_vec();
     while i < code.len() - 1 {
+        if i < code.len() - 2 {
+            match (code[i], code[i + 1], code[i + 2]) {
+                (Push(Value::Count(c)), Push(Value::Ptr(ip)), Call) => {
+                    code[i] = Nop;
+                    code[i + 1] = Nop;
+                    code[i + 2] = if ip < memory::CODE {
+                        CallBuiltinSize(ip, c)
+                    } else {
+                        CallKnownSize(ip, c)
+                    }
+                }
+                _ => (),
+            }
+        }
         match (code[i], code[i + 1]) {
             (Push(_), Pop) => {
                 code[i] = Nop;

@@ -13,6 +13,7 @@ pub struct Memory {
     pub stack: Vec<Value>,
     pub heap: Vec<(usize, Allocator)>,
     pub strings: Vec<String>,
+    oob: Value,
 }
 
 impl Memory {
@@ -32,6 +33,7 @@ impl Memory {
                 (HEAP * 10, Allocator::new(1 << 9)),
             ],
             strings: Vec::new(),
+            oob: Value::Uninitialized,
         }
     }
 
@@ -127,7 +129,8 @@ impl IndexMut<usize> for Memory {
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
         self.stack
             .get_mut(addr - STACK)
-            .unwrap_or_else(|| &mut self.heap[addr / HEAP - 1].1[addr % HEAP])
+            .or_else(|| self.heap[addr / HEAP - 1].1.get_mut(addr % HEAP))
+            .unwrap_or(&mut self.oob)
         // if addr >= STACK && addr - STACK < self.stack.len() {
         // &mut self.stack[addr - STACK]
         // } else if addr >= HEAP {
@@ -144,7 +147,8 @@ impl Index<usize> for Memory {
         // dbg!(addr - STACK, self.stack.get(addr - STACK), &self.stack);
         self.stack
             .get(addr - STACK)
-            .unwrap_or_else(|| &self.heap[addr / HEAP - 1].1[addr % HEAP])
+            .or_else(|| self.heap[addr / HEAP - 1].1.get(addr % HEAP))
+            .unwrap_or(&self.oob)
         // if addr >= STACK && addr - STACK < self.stack.len() {
         // &self.stack[addr - STACK]
         // } else if addr >= HEAP {

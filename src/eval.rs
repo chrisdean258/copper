@@ -265,6 +265,25 @@ impl Evaluator {
                     reg = self.memory.pop();
                     continue;
                 }
+                MachineOperation::CallBuiltinSize(newip, num_args) => {
+                    let num_args = *num_args;
+                    self.memory.push(reg);
+                    let bp = self.memory.stack_top() - num_args;
+                    let builtin_idx = newip - BUILTIN_CODE;
+                    let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
+                    self.memory.truncate_stack(self.bp);
+                    reg = rv;
+                }
+                MachineOperation::CallKnownSize(newip, num_args) => {
+                    self.memory.push(reg);
+                    let bp = self.memory.stack_top() - num_args;
+                    self.memory[bp - 1] = Value::Ptr(self.bp);
+                    self.memory[bp - 2] = Value::Ptr(ip + 1);
+                    self.bp = bp;
+                    ip = *newip;
+                    reg = self.memory.pop();
+                    continue;
+                }
                 MachineOperation::BoolOr => {
                     do_binop!(|, Bool, Bool => Bool);
                 }
