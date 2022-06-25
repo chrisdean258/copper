@@ -7,6 +7,7 @@ pub struct Allocator {
     block_size: usize,
     pub memory: Vec<Value>,
     free: Vec<usize>,
+    oob: Value,
 }
 
 impl Allocator {
@@ -15,6 +16,7 @@ impl Allocator {
             block_size,
             memory: Vec::new(),
             free: Vec::new(),
+            oob: Value::Uninitialized,
         }
     }
 
@@ -46,12 +48,12 @@ impl Index<usize> for Allocator {
     type Output = Value;
 
     fn index(&self, idx: usize) -> &Self::Output {
-        &self.memory[idx]
+        self.memory.get(idx).unwrap_or(&self.oob)
     }
 }
 
 impl IndexMut<usize> for Allocator {
     fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        &mut self.memory[idx]
+        self.memory.get_mut(idx).unwrap_or(&mut self.oob)
     }
 }
