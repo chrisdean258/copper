@@ -123,7 +123,7 @@ impl Evaluator {
                 }
                 MachineOperation::Inplace(v) => reg = *v,
                 MachineOperation::Pop => {
-                    pop!();
+                    reg = self.memory.pop();
                 }
                 MachineOperation::Load => {
                     let addr = inplace!(Value::Ptr);
@@ -152,9 +152,10 @@ impl Evaluator {
                 }
                 MachineOperation::FastStore => {
                     let value = pop!();
+                    // do not try to optimize to a pop! as we might write to that spot in memory
                     let addr = as_type!(reg, Value::Ptr);
                     self.memory[addr] = value;
-                    pop!();
+                    reg = self.memory.pop();
                 }
                 MachineOperation::StoreN(num) => {
                     //intentional direct stack manipulation
@@ -190,7 +191,7 @@ impl Evaluator {
                     reg = self.memory.pop();
                 }
                 MachineOperation::Dup => {
-                    push!(reg);
+                    self.memory.push(reg);
                 }
                 MachineOperation::Swap => {
                     //intentionally accessing last_mut here

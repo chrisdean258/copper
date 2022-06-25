@@ -51,22 +51,22 @@ impl Memory {
         self.alloc_string(format!("{}{}", self.strings[idx1], self.strings[idx2]))
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn push(&mut self, val: Value) {
         self.stack.push(val);
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn last_mut(&mut self) -> &mut Value {
         self.stack.last_mut().unwrap()
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn reserve(&mut self, count: usize) {
         self.stack
             .resize(self.stack.len() + count, Value::Uninitialized)
@@ -83,17 +83,14 @@ impl Memory {
         self.stack[idx] = val;
     }
 
-    // #[inline(always)]
     pub fn truncate_stack(&mut self, ptr: usize) {
         self.stack.truncate(ptr - STACK);
     }
 
-    // #[inline(always)]
     pub fn stack_top(&self) -> usize {
         STACK + self.stack.len()
     }
 
-    // #[inline(always)]
     pub fn memcpy(&mut self, dst: usize, src: usize, len: usize) {
         for i in 0..len {
             self[dst + i] = self[src + i];
@@ -131,30 +128,15 @@ impl IndexMut<usize> for Memory {
             .get_mut(addr - STACK)
             .or_else(|| self.heap[addr / HEAP - 1].1.get_mut(addr % HEAP))
             .unwrap_or(&mut self.oob)
-        // if addr >= STACK && addr - STACK < self.stack.len() {
-        // &mut self.stack[addr - STACK]
-        // } else if addr >= HEAP {
-        // &mut self.heap[addr / HEAP - 1].1[addr % HEAP]
-        // } else {
-        // panic!("0x{:x} not mapped", addr)
-        // }
     }
 }
 
 impl Index<usize> for Memory {
     type Output = Value;
     fn index(&self, addr: usize) -> &Self::Output {
-        // dbg!(addr - STACK, self.stack.get(addr - STACK), &self.stack);
         self.stack
             .get(addr - STACK)
             .or_else(|| self.heap[addr / HEAP - 1].1.get(addr % HEAP))
             .unwrap_or(&self.oob)
-        // if addr >= STACK && addr - STACK < self.stack.len() {
-        // &self.stack[addr - STACK]
-        // } else if addr >= HEAP {
-        // &self.heap[addr / HEAP - 1].1[addr % HEAP]
-        // } else {
-        // panic!("0x{:x} not mapped", addr)
-        // }
     }
 }
