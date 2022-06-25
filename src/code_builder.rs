@@ -107,7 +107,12 @@ impl CodeBuilder {
 
     pub fn reserve(&mut self, size: usize) -> usize {
         if size == 0 {
-            self.active_functions.last().unwrap().code.len() - 1
+            let len = self.active_functions.last().unwrap().code.len();
+            if len > 0 {
+                self.active_functions.last().unwrap().code.len() - 1
+            } else {
+                0
+            }
         } else if size == 1 {
             self.push(Value::Uninitialized)
         } else {

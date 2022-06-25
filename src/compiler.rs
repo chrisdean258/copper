@@ -248,8 +248,26 @@ impl Compiler {
 
     fn binop(&mut self, b: &BinOp) {
         self.expr(b.lhs.as_ref());
-        self.expr(b.rhs.as_ref());
-        self.code.emit(b.op.as_machine_op());
+        //TODO option types
+        if b.op == Operation::BoolOr {
+            self.code.dup();
+            let from = self.code.jump_relative_if(0);
+            self.code.pop();
+            self.expr(b.rhs.as_ref());
+            let to = self.code.next_function_relative_addr();
+            self.code.backpatch_jump_rel(from, to as isize);
+        } else if b.op == Operation::BoolAnd {
+            self.code.dup();
+            self.code.emit(MachineOperation::BoolNot);
+            let from = self.code.jump_relative_if(0);
+            self.code.pop();
+            self.expr(b.rhs.as_ref());
+            let to = self.code.next_function_relative_addr();
+            self.code.backpatch_jump_rel(from, to as isize);
+        } else {
+            self.expr(b.rhs.as_ref());
+            self.code.emit(b.op.as_machine_op());
+        }
     }
 
     fn preunop(&mut self, p: &PreUnOp) {
