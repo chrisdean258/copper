@@ -234,7 +234,7 @@ pub struct Continue {
 #[derive(Clone, Debug)]
 pub enum Error {
     UnexpectedEOF,
-    UnexpectedToken(Token, String),
+    UnexpectedToken(Token, Option<&'static str>),
     ContinueNotAllowed(Location),
     BreakNotAllowed(Location),
     MethodRedefinition(Location, String),
@@ -246,10 +246,16 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::UnexpectedEOF => f.write_str("Unexpected EOF"),
-            Self::UnexpectedToken(t, expt) => f.write_fmt(format_args!(
-                "{}: Unexpected `{}`. Expected {}",
-                t.location, t.token_type, expt
-            )),
+            Self::UnexpectedToken(t, expt) => {
+                f.write_fmt(format_args!(
+                    "{}: Unexpected `{}`.",
+                    t.location, t.token_type
+                ))?;
+                if let Some(expected) = expt {
+                    f.write_fmt(format_args!(" Expected `{}`.", expected))?;
+                }
+                Ok(())
+            }
             Self::ContinueNotAllowed(l) => {
                 f.write_fmt(format_args!("{}: `continue` not allowed here", l))
             }
@@ -267,11 +273,11 @@ impl std::fmt::Display for Error {
 }
 
 fn unexpected(token: Token) -> Error {
-    unexpect_known(token, "unknown")
+    Error::UnexpectedToken(token, None)
 }
 
 fn unexpect_known(token: Token, expt: &'static str) -> Error {
-    Error::UnexpectedToken(token, expt.to_owned())
+    Error::UnexpectedToken(token, Some(expt))
 }
 
 macro_rules! binop {
@@ -367,7 +373,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, Error> {
-        let token = lexer.peek().unwrap();
+        let token = lexer.peek().ok_or(Error::UnexpectedEOF)?;
         let rv = Ok(match &token.token_type {
             TokenType::Class => self.parse_class_decl(lexer)?,
             TokenType::Import => self.parse_import(lexer)?,
@@ -727,7 +733,7 @@ impl ParseTree {
                 }
                 _ => return self.parse_post_unary(lexer),
             };
-            let token = lexer.next().unwrap();
+            let token = lexer.next().ok_or(Error::UnexpectedEOF)?;
             let rhs = self.parse_pre_unary(lexer)?;
             if needs_ref {
                 match rhs.etype {

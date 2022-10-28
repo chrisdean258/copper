@@ -353,7 +353,6 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                             break;
                         }
                     }
-                    continue;
                 }
                 _ => break,
             }
