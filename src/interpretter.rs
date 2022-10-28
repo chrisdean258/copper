@@ -58,7 +58,7 @@ impl Interpretter {
         label: String,
         lexer: Lexer<T>,
     ) -> Result<Value, String> {
-        let mut tree = parser::parse(lexer)?;
+        let mut tree = parser::parse(lexer).map_err(|e| e.to_string())?;
         self.typechecker.typecheck(&mut tree)?;
         if self.typecheck_only {
             return Ok(Value::Uninitialized);
