@@ -64,6 +64,7 @@ pub struct ResolvedFunction {
     signature: Signature,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BoundFunction {
     signature: Signature,

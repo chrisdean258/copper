@@ -18,6 +18,7 @@ impl Location {
         }
     }
 
+    #[allow(dead_code)]
     pub fn err(&self, errmsg: &str) -> String {
         format!("{}: {}", self, errmsg)
     }
