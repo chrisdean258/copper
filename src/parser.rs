@@ -271,7 +271,6 @@ fn unexpected(token: Token) -> Error {
 }
 
 fn unexpect_known(token: Token, expt: &'static str) -> Error {
-    panic!("{:?} -- {}", token, expt);
     Error::UnexpectedToken(token, expt.to_owned())
 }
 
