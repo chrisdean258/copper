@@ -38,6 +38,7 @@ impl Evaluator {
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
         let mut reg = Value::Uninitialized;
+        let mut retstack = Vec::new();
 
         macro_rules! as_type {
             ($ex:expr, $typ:path) => {
@@ -224,8 +225,7 @@ impl Evaluator {
                 }
                 MachineOperation::Return => {
                     self.memory.truncate_stack(self.bp);
-                    self.bp = as_type!(self.memory.pop(), Value::Ptr);
-                    ip = as_type!(self.memory.pop(), Value::Ptr);
+                    (self.bp, ip) = retstack.pop().unwrap();
                     continue;
                 }
                 MachineOperation::Call => {
@@ -239,9 +239,7 @@ impl Evaluator {
                         self.memory.truncate_stack(self.bp);
                         reg = rv;
                     } else {
-                        // these must be written into memory
-                        self.memory[bp - 1] = Value::Ptr(self.bp);
-                        self.memory[bp - 2] = Value::Ptr(ip + 1);
+                        retstack.push((self.bp, ip + 1));
                         self.bp = bp;
                         ip = newip;
                         reg = self.memory.pop();
@@ -259,8 +257,7 @@ impl Evaluator {
                 MachineOperation::CallKnown(newip) => {
                     let num_args = inplace!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
-                    self.memory[bp - 1] = Value::Ptr(self.bp);
-                    self.memory[bp - 2] = Value::Ptr(ip + 1);
+                    retstack.push((self.bp, ip + 1));
                     self.bp = bp;
                     ip = *newip;
                     reg = self.memory.pop();
@@ -278,8 +275,7 @@ impl Evaluator {
                 MachineOperation::CallKnownSize(newip, num_args) => {
                     self.memory.push(reg);
                     let bp = self.memory.stack_top() - num_args;
-                    self.memory[bp - 1] = Value::Ptr(self.bp);
-                    self.memory[bp - 2] = Value::Ptr(ip + 1);
+                    retstack.push((self.bp, ip + 1));
                     self.bp = bp;
                     ip = *newip;
                     reg = self.memory.pop();
@@ -349,27 +345,15 @@ impl Evaluator {
                     let b = reg;
                     reg = Value::Bool(0);
                     reg = match (a, b) {
-                        (Value::Count(aa), Value::Count(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
-                        (Value::Float(aa), Value::Float(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
-                        (Value::Int(aa), Value::Int(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
-                        (Value::Char(aa), Value::Char(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
-                        (Value::Bool(aa), Value::Bool(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
+                        (Value::Count(aa), Value::Count(bb)) => Value::Bool(u8::from(bb == aa)),
+                        (Value::Float(aa), Value::Float(bb)) => Value::Bool(u8::from(bb == aa)),
+                        (Value::Int(aa), Value::Int(bb)) => Value::Bool(u8::from(bb == aa)),
+                        (Value::Char(aa), Value::Char(bb)) => Value::Bool(u8::from(bb == aa)),
+                        (Value::Bool(aa), Value::Bool(bb)) => Value::Bool(u8::from(bb == aa)),
                         // (Value::Null, Value::Null) => Value::Bool(1),
                         // (Value::Null, Value::None(_)) => Value::Bool(1),
                         // (Value::None(_), Value::Null) => Value::Bool(1),
-                        (Value::None(aa), Value::None(bb)) => {
-                            Value::Bool(if bb == aa { 1 } else { 0 })
-                        }
+                        (Value::None(aa), Value::None(bb)) => Value::Bool(u8::from(bb == aa)),
                         // (Value::Null, _) => Value::Bool(0),
                         // (_, Value::Null) => Value::Bool(0),
                         (Value::None(_), _) => Value::Bool(0),
@@ -382,27 +366,15 @@ impl Evaluator {
                 MachineOperation::CmpNotEq => {
                     let a = pop!();
                     reg = match (a, reg) {
-                        (Value::Count(aa), Value::Count(bb)) => {
-                            Value::Bool(if bb != aa { 1 } else { 0 })
-                        }
-                        (Value::Float(aa), Value::Float(bb)) => {
-                            Value::Bool(if bb != aa { 1 } else { 0 })
-                        }
-                        (Value::Int(aa), Value::Int(bb)) => {
-                            Value::Bool(if bb != aa { 1 } else { 0 })
-                        }
-                        (Value::Char(aa), Value::Char(bb)) => {
-                            Value::Bool(if bb != aa { 1 } else { 0 })
-                        }
-                        (Value::Bool(aa), Value::Bool(bb)) => {
-                            Value::Bool(if bb != aa { 1 } else { 0 })
-                        }
+                        (Value::Count(aa), Value::Count(bb)) => Value::Bool(u8::from(bb != aa)),
+                        (Value::Float(aa), Value::Float(bb)) => Value::Bool(u8::from(bb != aa)),
+                        (Value::Int(aa), Value::Int(bb)) => Value::Bool(u8::from(bb != aa)),
+                        (Value::Char(aa), Value::Char(bb)) => Value::Bool(u8::from(bb != aa)),
+                        (Value::Bool(aa), Value::Bool(bb)) => Value::Bool(u8::from(bb != aa)),
                         // (Value::Null, Value::Null) => Value::Bool(0),
                         // (Value::Null, Value::None(_)) => Value::Bool(0),
                         // (Value::None(_), Value::Null) => Value::Bool(0),
-                        (Value::None(aa), Value::None(bb)) => {
-                            Value::Bool(if bb == aa { 0 } else { 1 })
-                        }
+                        (Value::None(aa), Value::None(bb)) => Value::Bool(u8::from(bb != aa)),
                         // (Value::Null, _) => Value::Bool(1),
                         // (_, Value::Null) => Value::Bool(1),
                         (Value::None(_), _) => Value::Bool(1),

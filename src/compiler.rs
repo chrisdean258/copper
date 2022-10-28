@@ -693,8 +693,6 @@ impl Compiler {
     }
 
     fn call(&mut self, c: &CallExpr) {
-        self.code.push(Value::Uninitialized); // ip
-        self.code.push(Value::Uninitialized); // bp
         let save_extra = self.extra_args;
         self.extra_args = 0;
         let mut is_init_num = 0;
