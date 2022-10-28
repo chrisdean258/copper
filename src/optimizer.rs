@@ -58,6 +58,7 @@ pub fn optimize(mut code: Vec<MachineOperation>) -> Vec<MachineOperation> {
     new_code
 }
 
+#[allow(clippy::single_match)]
 fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
     use MachineOperation::*;
     let mut i = 0;
