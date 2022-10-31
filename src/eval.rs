@@ -14,6 +14,7 @@ pub struct Evaluator {
     pub memory: Memory,
     builtin_table: Vec<BuiltinFunction>,
     //ip: usize,
+    reg: Value,
     bp: usize,
 }
 
@@ -24,6 +25,7 @@ impl Evaluator {
             memory: Memory::new(),
             builtin_table: BuiltinFunction::get_table(types),
             bp: STACK + 1,
+            reg: Value::Uninitialized,
         }
     }
 
@@ -37,7 +39,7 @@ impl Evaluator {
         debug: bool,
     ) -> Result<Value, String> {
         self.memory.add_strings(&mut strings);
-        let mut reg = Value::Uninitialized;
+        let mut reg = self.reg;
         let mut retstack = Vec::new();
 
         macro_rules! as_type {
@@ -466,6 +468,7 @@ impl Evaluator {
             }
             ip += 1;
         }
+        self.reg = reg;
         Ok(Value::Uninitialized)
     }
 }

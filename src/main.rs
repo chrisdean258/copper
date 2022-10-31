@@ -86,19 +86,41 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
     loop {
         let readline = rl.readline(">>> ");
         match readline {
-            Ok(line) => {
-                rl.add_history_entry(line.as_str());
-                let lexer = lex::Lexer::new_with_lineno(
-                    "<stdin>",
-                    vec![format!("print({{ {} }})", line)].into_iter(),
-                    lineno,
-                );
-                match intp.interpret_lexer("__main__".to_string(), lexer) {
-                    Ok(value::Value::Uninitialized) => (),
-                    Ok(a) => println!("{}", a),
-                    Err(s) => println!("{}", s),
+            Ok(mut line) => {
+                loop {
+                    let lexer = lex::Lexer::new_with_lineno(
+                        "<stdin>",
+                        // vec![format!("print({{ {} }})", line)].into_iter(),
+                        vec![line.clone()].into_iter(),
+                        lineno,
+                    );
+                    match intp.interpret_lexer("__main__".to_string(), lexer) {
+                        Ok(value::Value::Uninitialized) => (),
+                        Ok(a) => println!("{}", a),
+                        Err(e) => match e.downcast_ref::<parser::Error>() {
+                            Some(parser::Error::UnexpectedEOF) => match rl.readline("... ") {
+                                Ok(cont) => {
+                                    line = format!("{}{}", line, cont);
+                                    lineno += 1;
+                                    continue;
+                                }
+                                Err(ReadlineError::Interrupted) => (),
+                                Err(ReadlineError::Eof) => {
+                                    eprintln!("Error: {:?}", e);
+                                }
+                                Err(err) => {
+                                    eprintln!("Error: {:?}", err);
+                                }
+                            },
+                            _ => {
+                                println!("{:?}", e);
+                            }
+                        },
+                    }
+                    lineno += 1;
+                    break;
                 }
-                lineno += 1;
+                rl.add_history_entry(line.as_str());
             }
             Err(ReadlineError::Interrupted) => break,
             Err(ReadlineError::Eof) => {

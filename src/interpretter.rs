@@ -57,8 +57,8 @@ impl Interpretter {
         &mut self,
         label: String,
         lexer: Lexer<T>,
-    ) -> Result<Value, String> {
-        let mut tree = parser::parse(lexer).map_err(|e| e.to_string())?;
+    ) -> Result<Value, Box<dyn std::error::Error>> {
+        let mut tree = parser::parse(lexer)?;
         self.typechecker.typecheck(&mut tree)?;
         if self.typecheck_only {
             return Ok(Value::Uninitialized);
@@ -69,27 +69,35 @@ impl Interpretter {
         if cfg!(debug_assertions) && self.debug {
             self.print_code(&code);
         }
-        self.evaluator.eval(code, strings, entry, self.debug)
+        Ok(self.evaluator.eval(code, strings, entry, self.debug)?)
     }
 
-    pub fn interpret_stdin(&mut self) -> Result<Value, String> {
+    pub fn interpret_stdin(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
         self.interpret_lexer("__main__".to_string(), Lexer::new("<stdin>", &mut lines))
     }
 
-    pub fn interpret_file(&mut self, label: String, filename: &str) -> Result<Value, String> {
+    pub fn interpret_file(
+        &mut self,
+        label: String,
+        filename: &str,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
         let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
         let md = file
             .metadata()
             .map_err(|e| format!("{}: {}", filename, e))?;
         if md.is_dir() {
-            return Err(format!("{}: Is a directory", filename));
+            Err(format!("{}: Is a directory", filename))?;
         }
         let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
         self.interpret_lexer(label, Lexer::new(filename, &mut lines))
     }
 
-    pub fn interpret_cmd(&mut self, label: String, cmd: &str) -> Result<Value, String> {
+    pub fn interpret_cmd(
+        &mut self,
+        label: String,
+        cmd: &str,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
         let mut lines = vec![cmd.into()].into_iter();
         let lexer = Lexer::new("<cmdline>", &mut lines);
         self.interpret_lexer(label, lexer)

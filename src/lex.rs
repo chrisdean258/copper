@@ -276,9 +276,9 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     fn chr(&mut self) -> TokenType {
         use TokenType::Char;
         self.expect_char('\'');
-        let mut c = self.chars.next().expect("Unexpected EOF");
+        let mut c = self.chars.next().expect("Unexpected EOF (a)");
         if c == '\\' {
-            c = match self.chars.next().expect("Unexpected EOF") {
+            c = match self.chars.next().expect("Unexpected EOF (b)") {
                 'n' => '\n',
                 't' => '\t',
                 'r' => '\r',
@@ -296,7 +296,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         let mut chars: Vec<char> = Vec::new();
         while let Some(c) = self.chars.next() {
             chars.push(if c == '\\' {
-                match self.chars.next().expect("Unexpected EOF") {
+                match self.chars.next().expect("Unexpected EOF (c)") {
                     'n' => '\n',
                     't' => '\t',
                     'r' => '\r',
