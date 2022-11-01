@@ -147,21 +147,25 @@ impl Evaluator {
                     }
                 }
                 MachineOperation::Store => {
-                    let value = pop!();
-                    let addr = inplace!(Value::Ptr);
+                    // intentional direct stack manipulation for optiization
+                    let addr = as_type!(self.memory.pop(), Value::Ptr);
                     if let Some(v) = self.memory.get_mut(addr) {
-                        *v = value;
+                        *v = reg;
                     } else if cfg!(debug_assertions) {
                         panic!("Writing out of bounds 0x{:x}", addr);
                     }
-                    reg = value;
                 }
                 MachineOperation::FastStore => {
-                    let value = pop!();
-                    // do not try to optimize to a pop! as we might write to that spot in memory
-                    let addr = as_type!(reg, Value::Ptr);
-                    self.memory[addr] = value;
+                    let addr = as_type!(self.memory.pop(), Value::Ptr);
+                    self.memory[addr] = reg;
                     reg = self.memory.pop();
+
+                    // This is the old impl. Haven't worked out if this new one is 100% yet
+                    //let value = pop!();
+                    // do not try to optimize to a pop! as we might write to that spot in memory
+                    //let addr = as_type!(reg, Value::Ptr);
+                    //self.memory[addr] = value;
+                    //reg = self.memory.pop();
                 }
                 MachineOperation::StoreN(num) => {
                     //intentional direct stack manipulation
