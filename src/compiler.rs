@@ -469,6 +469,8 @@ impl Compiler {
 
     fn block(&mut self, b: &BlockExpr) {
         let mut first = true;
+        let is_final = self.is_final_statement;
+        self.is_final_statement = false;
         for statement in b.statements.iter() {
             if !first {
                 first = false;
@@ -476,6 +478,7 @@ impl Compiler {
             }
             self.statement(statement, false);
         }
+        self.is_final_statement = is_final;
     }
 
     fn whileexpr(&mut self, w: &While) {

@@ -129,10 +129,7 @@ impl Evaluator {
                     reg = self.memory.pop();
                 }
                 MachineOperation::PopAndSave => {
-                    retval = reg;
-                    if !self.memory.stack.is_empty() {
-                        reg = self.memory.pop();
-                    }
+                    retval = pop!();
                 }
                 MachineOperation::Load => {
                     let addr = inplace!(Value::Ptr);
