@@ -83,6 +83,10 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                 code[i] = Nop;
                 code[i + 1] = Nop;
             }
+            (Push(Value::Uninitialized), PopAndSave) => {
+                code[i] = Nop;
+                code[i + 1] = Nop;
+            }
             (Pop, Push(v)) => {
                 code[i] = Nop;
                 code[i + 1] = Inplace(v);

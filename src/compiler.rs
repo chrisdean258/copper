@@ -39,6 +39,7 @@ pub struct Compiler {
     continues: Vec<usize>,
     current_null: Option<usize>,
     extra_args: usize,
+    is_final_statement: bool,
 }
 
 impl Compiler {
@@ -69,6 +70,7 @@ impl Compiler {
             continues: Vec::new(),
             current_null: None,
             extra_args: 0,
+            is_final_statement: false,
         }
     }
 
@@ -83,8 +85,12 @@ impl Compiler {
         if p.globals.unwrap() > 0 {
             self.code.reserve(p.globals.unwrap() - self.scopes[1].len());
         }
-        for statement in p.statements.iter() {
+        for (i, statement) in p.statements.iter().enumerate() {
+            if i == p.statements.len() - 1 {
+                self.is_final_statement = true;
+            }
             self.statement(statement, true);
+            self.is_final_statement = false;
         }
         let entry = self.code.close_function();
         self.types = None;
@@ -171,7 +177,11 @@ impl Compiler {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit(MachineOperation::PopAndSave);
+                    self.code.emit(if self.is_final_statement {
+                        MachineOperation::PopAndSave
+                    } else {
+                        MachineOperation::Pop
+                    });
                 }
             }
             Statement::ClassDecl(c) => self.classdecl(c),
