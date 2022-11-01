@@ -171,7 +171,7 @@ impl Compiler {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit(MachineOperation::Pop);
+                    self.code.emit(MachineOperation::PopAndSave);
                 }
             }
             Statement::ClassDecl(c) => self.classdecl(c),

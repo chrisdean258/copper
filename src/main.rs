@@ -96,6 +96,9 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
                     );
                     match intp.interpret_lexer("__main__".to_string(), lexer) {
                         Ok(value::Value::Uninitialized) => (),
+                        Ok(value::Value::Str(s)) => {
+                            println!("{}", intp.get_string(s));
+                        }
                         Ok(a) => println!("{}", a),
                         Err(e) => match e.downcast_ref::<parser::Error>() {
                             Some(parser::Error::UnexpectedEOF) => match rl.readline("... ") {

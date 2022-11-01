@@ -53,6 +53,10 @@ impl Interpretter {
         }
     }
 
+    pub fn get_string(&self, idx: usize) -> String {
+        self.evaluator.memory.strings[idx].clone()
+    }
+
     pub fn interpret_lexer<T: Iterator<Item = String>>(
         &mut self,
         label: String,

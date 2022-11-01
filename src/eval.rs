@@ -41,6 +41,7 @@ impl Evaluator {
         self.memory.add_strings(&mut strings);
         let mut reg = self.reg;
         let mut retstack = Vec::new();
+        let mut retval = Value::Uninitialized;
 
         macro_rules! as_type {
             ($ex:expr, $typ:path) => {
@@ -126,6 +127,12 @@ impl Evaluator {
                 MachineOperation::Inplace(v) => reg = *v,
                 MachineOperation::Pop => {
                     reg = self.memory.pop();
+                }
+                MachineOperation::PopAndSave => {
+                    retval = reg;
+                    if !self.memory.stack.is_empty() {
+                        reg = self.memory.pop();
+                    }
                 }
                 MachineOperation::Load => {
                     let addr = inplace!(Value::Ptr);
@@ -468,6 +475,6 @@ impl Evaluator {
             ip += 1;
         }
         self.reg = reg;
-        Ok(Value::Uninitialized)
+        Ok(retval)
     }
 }
