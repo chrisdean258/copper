@@ -96,13 +96,12 @@ impl Evaluator {
             ($op:tt, $($t:ident),+ $(,)?) => {
                 match &mut reg {
                     $(Value::$t(ref mut aa) => {*aa = $op *aa;})+
-                    a => unreachable!("Trying to apply binop {} {:?}", stringify!($op), a),
+                    a => unreachable!("Trying to apply unop {} {:?}", stringify!($op), a),
                 }
             };
         }
         self.code = code;
         while let Some(instr) = self.code.get(ip - CODE) {
-            //ip < self.code.len() + CODE {
             if cfg!(debug_assertions) && debug {
                 eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
                 eprint!("IP: 0x{:08x}:  ", ip);
@@ -460,7 +459,7 @@ impl Evaluator {
                 }
                 MachineOperation::BoolNot => match reg {
                     Value::Bool(ref mut aa) => *aa = 1 - *aa,
-                    a => unreachable!("Trying to apply binop !{:?}", a),
+                    a => unreachable!("Trying to apply unop !{:?}", a),
                 },
                 MachineOperation::BitNot => {
                     do_unop!(!, Int, Char);
