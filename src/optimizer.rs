@@ -75,15 +75,21 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                         CallKnownSize(ip, c)
                     }
                 }
+                (Push(Value::Uninitialized), Save, Pop) => {
+                    code[i] = Nop;
+                    code[i + 1] = Nop;
+                    code[i + 2] = Nop;
+                }
+                (Store, Save, Pop) => {
+                    code[i] = Nop;
+                    code[i + 1] = Nop;
+                    code[i + 2] = FastStore;
+                }
                 _ => (),
             }
         }
         match (code[i], code[i + 1]) {
             (Push(_), Pop) => {
-                code[i] = Nop;
-                code[i + 1] = Nop;
-            }
-            (Push(Value::Uninitialized), PopAndSave) => {
                 code[i] = Nop;
                 code[i + 1] = Nop;
             }
@@ -119,12 +125,6 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                 code[i] = Nop;
                 code[i + 1] = Nop;
             }
-            // out.push(JumpRel(o));
-            // i += 1;
-            // }
-            // (Push(Value::Bool(0)), JumpRelIf(_)) => {
-            // i += 1;
-            // }
             _ => (),
         }
         i += 1;

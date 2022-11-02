@@ -85,7 +85,7 @@ fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
         }
     }
     mem::forget(f);
-    Value::Null
+    Value::Uninitialized
 }
 
 fn alloc(eval: &mut Evaluator, first: usize, count: usize) -> Value {

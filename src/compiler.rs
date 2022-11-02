@@ -39,7 +39,6 @@ pub struct Compiler {
     continues: Vec<usize>,
     current_null: Option<usize>,
     extra_args: usize,
-    is_final_statement: bool,
 }
 
 impl Compiler {
@@ -70,7 +69,6 @@ impl Compiler {
             continues: Vec::new(),
             current_null: None,
             extra_args: 0,
-            is_final_statement: false,
         }
     }
 
@@ -86,11 +84,7 @@ impl Compiler {
             self.code.reserve(p.globals.unwrap() - self.scopes[1].len());
         }
         for (i, statement) in p.statements.iter().enumerate() {
-            if i == p.statements.len() - 1 {
-                self.is_final_statement = true;
-            }
-            self.statement(statement, true);
-            self.is_final_statement = false;
+            self.statement(statement, true, i == p.statements.len() - 1);
         }
         let entry = self.code.close_function();
         self.types = None;
@@ -172,16 +166,15 @@ impl Compiler {
         *self.strings.entry(string).or_insert(len)
     }
 
-    fn statement(&mut self, s: &Statement, pop: bool) {
+    fn statement(&mut self, s: &Statement, pop: bool, save: bool) {
         match s {
             Statement::Expr(e) => {
                 self.expr(e);
                 if pop {
-                    self.code.emit(if self.is_final_statement {
-                        MachineOperation::PopAndSave
-                    } else {
-                        MachineOperation::Pop
-                    });
+                    if save {
+                        self.code.emit(MachineOperation::Save);
+                    }
+                    self.code.emit(MachineOperation::Pop);
                 }
             }
             Statement::ClassDecl(c) => self.classdecl(c),
@@ -469,16 +462,13 @@ impl Compiler {
 
     fn block(&mut self, b: &BlockExpr) {
         let mut first = true;
-        let is_final = self.is_final_statement;
-        self.is_final_statement = false;
         for statement in b.statements.iter() {
             if !first {
                 first = false;
                 self.code.pop();
             }
-            self.statement(statement, false);
+            self.statement(statement, false, false);
         }
-        self.is_final_statement = is_final;
     }
 
     fn whileexpr(&mut self, w: &While) {

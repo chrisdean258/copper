@@ -128,8 +128,8 @@ impl Evaluator {
                 MachineOperation::Pop => {
                     reg = self.memory.pop();
                 }
-                MachineOperation::PopAndSave => {
-                    retval = pop!();
+                MachineOperation::Save => {
+                    retval = reg;
                 }
                 MachineOperation::Load => {
                     let addr = inplace!(Value::Ptr);

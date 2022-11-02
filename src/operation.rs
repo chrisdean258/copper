@@ -53,7 +53,7 @@ pub enum MachineOperation {
     Push(Value),
     Inplace(Value),
     Pop,
-    PopAndSave,
+    Save,
     Dup,
     Store,
     FastStore,
@@ -271,7 +271,7 @@ impl Display for MachineOperation {
             MachineOperation::Push(v) => return f.write_fmt(format_args!("push ({:?})", v)),
             MachineOperation::Inplace(v) => return f.write_fmt(format_args!("inplace ({:?})", v)),
             MachineOperation::Pop => "pop",
-            MachineOperation::PopAndSave => "popandsave",
+            MachineOperation::Save => "save",
             MachineOperation::Dup => "dup",
             MachineOperation::Load => "load",
             MachineOperation::LoadLocal(n) => {

@@ -152,3 +152,23 @@ newline
 
 The current builtins are `write`, `alloc`, and `len` however these functions
 should likely not be used yet except for `write`
+
+## To Do
+
+### Near Future
+
+- Return values from eval
+- Methods and method calls
+
+### Slightly Less near future
+
+- Lists 
+- For loops
+- Optional value interactions with `&&` and `||` operators
+- Moving to a span based system for locating tokens/expressions
+
+### Aspirational
+
+- Stdlib classes such as hashmap/dicts
+- Enums / Algebraic Type system
+- JSON support
