@@ -249,6 +249,10 @@ impl TypeChecker {
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
+            ExpressionType::PossibleMethodCall(m) => {
+                e.etype = self.possible_method_call(m.clone())?;
+                self.expr(e)
+            }
         }?;
         e.derived_type = Some(rv);
         if rv == UNKNOWN_RETURN {
@@ -568,6 +572,50 @@ impl TypeChecker {
         Ok(STR)
     }
 
+    fn possible_method_call(
+        &mut self,
+        mut m: PossibleMethodCall,
+    ) -> Result<ExpressionType, TypeError> {
+        let lhs = self.expr(m.lhs.as_mut())?;
+        let lhs = self.system.class_underlying(lhs);
+        if let Some(classdecl) = self.type_to_class.get(&lhs).cloned() {
+            if classdecl.borrow().methods.contains_key(&m.method_name) {
+                Ok(ExpressionType::CallExpr(CallExpr {
+                    function: m.lhs,
+                    args: m.args,
+                    alloc_before_call: None,
+                    method_name: Some(m.method_name),
+                }))
+            } else if classdecl.borrow().fields.contains_key(&m.method_name) {
+                Ok(ExpressionType::CallExpr(CallExpr {
+                    function: Box::new(Expression {
+                        etype: ExpressionType::DottedLookup(DottedLookup {
+                            lhs: m.lhs,
+                            rhs: m.method_name,
+                            index: None,
+                        }),
+                        derived_type: None,
+                        location: m.location,
+                    }),
+                    args: m.args,
+                    alloc_before_call: None,
+                    method_name: None,
+                }))
+            } else {
+                Err(self.error(format!(
+                    "LHS is of type `{}` which has no field or method named `{}`",
+                    self.system.typename(lhs),
+                    m.method_name
+                )))
+            }
+        } else {
+            Err(self.error(format!(
+                "LHS is of type `{}` you cannot use a dotted lookup on",
+                self.system.typename(lhs)
+            )))
+        }
+    }
+
     fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
         macro_rules! mangle {
             ($c:ident, $args:ident, $out:expr) => {
@@ -594,11 +642,13 @@ impl TypeChecker {
         let mut override_return = None;
         if self.system.is_class(functype) {
             let classdecl = self.type_to_class.get_mut(&functype).unwrap().clone();
-            c.is_init = Some(classdecl.borrow().fields.len());
+            c.alloc_before_call = Some(classdecl.borrow().fields.len());
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
                     match &mut init.etype {
-                        ExpressionType::Function(f) => f.borrow_mut().is_init = c.is_init,
+                        ExpressionType::Function(f) => {
+                            f.borrow_mut().alloc_before_call = c.alloc_before_call
+                        }
                         _ => unreachable!(),
                     }
                     funcloc = init.location.clone();
@@ -614,6 +664,11 @@ impl TypeChecker {
                     ))]);
                 }
             };
+        } else if let Some(name) = &c.method_name {
+            let clstype = self.system.class_underlying(functype);
+            let classdecl = self.type_to_class.get_mut(&clstype).unwrap().clone();
+            args.push(functype);
+            functype = self.expr(classdecl.borrow_mut().methods.get_mut(name).unwrap())?;
         }
 
         if !self.system.is_function(functype) {

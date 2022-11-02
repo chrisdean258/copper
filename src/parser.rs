@@ -29,6 +29,7 @@ pub enum ExpressionType {
     For(For),
     If(If),
     CallExpr(CallExpr),
+    PossibleMethodCall(PossibleMethodCall),
     RefExpr(RefExpr),
     Immediate(Immediate),
     BlockExpr(BlockExpr),
@@ -111,7 +112,17 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-    pub is_init: Option<usize>,
+    pub alloc_before_call: Option<usize>,
+    pub method_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PossibleMethodCall {
+    pub lhs: Box<Expression>,
+    pub method_name: String,
+    pub args: Vec<Expression>,
+    pub alloc_before_call: Option<usize>,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -187,7 +198,7 @@ pub struct Function {
     pub name: Option<String>,
     pub default_args: Vec<Expression>,
     pub locals: Option<usize>,
-    pub is_init: Option<usize>,
+    pub alloc_before_call: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -802,7 +813,8 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
-                            is_init: None,
+                            alloc_before_call: None,
+                            method_name: None,
                         }),
                     }
                 }
@@ -909,7 +921,7 @@ impl ParseTree {
                 name,
                 default_args,
                 locals: None,
-                is_init: None,
+                alloc_before_call: None,
             }))),
         })
     }
@@ -1060,14 +1072,31 @@ impl ParseTree {
     ) -> Result<Expression, Error> {
         let location = expect!(lexer, TokenType::Dot).location;
         let rhs = expect_val!(lexer, TokenType::Identifier);
-        Ok(Expression {
-            derived_type: None,
-            location,
-            etype: ExpressionType::DottedLookup(DottedLookup {
-                lhs: Box::new(lhs),
-                rhs,
-                index: None,
-            }),
+        Ok(match lexer.peek() {
+            Some(Token {
+                token_type: TokenType::OpenParen,
+                location: l,
+                ..
+            }) => Expression {
+                derived_type: None,
+                location: l.clone(),
+                etype: ExpressionType::PossibleMethodCall(PossibleMethodCall {
+                    lhs: Box::new(lhs),
+                    method_name: rhs,
+                    args: self.parse_paren_cse(lexer)?,
+                    alloc_before_call: None,
+                    location,
+                }),
+            },
+            _ => Expression {
+                derived_type: None,
+                location,
+                etype: ExpressionType::DottedLookup(DottedLookup {
+                    lhs: Box::new(lhs),
+                    rhs,
+                    index: None,
+                }),
+            },
         })
     }
 

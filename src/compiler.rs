@@ -246,6 +246,7 @@ impl Compiler {
             ExpressionType::Str(s) => self.string(s),
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(e.derived_type.unwrap()),
+            ExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
         }
     }
 
@@ -622,7 +623,12 @@ impl Compiler {
         }
     }
 
-    fn single_function(&mut self, f: &Function, sig: &Signature, _is_init: bool) -> usize {
+    fn single_function(
+        &mut self,
+        f: &Function,
+        sig: &Signature,
+        _alloc_before_call: bool,
+    ) -> usize {
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.argnames.len(),
             "{:#?}\n-------------------\n{:#?}",
@@ -645,13 +651,13 @@ impl Compiler {
         if f.locals.unwrap() > f.argnames.len() {
             self.code.reserve(f.locals.unwrap() - f.argnames.len());
         }
-        if let Some(size) = f.is_init {
+        if let Some(size) = f.alloc_before_call {
             self.code.local_ref(0);
             self.code.alloc(size);
             self.code.store_fast();
         }
         self.expr(f.body.as_ref());
-        if f.is_init.is_some() {
+        if f.alloc_before_call.is_some() {
             self.code.local_ref(0);
             self.code.load();
         }
@@ -698,16 +704,17 @@ impl Compiler {
     fn call(&mut self, c: &CallExpr) {
         let save_extra = self.extra_args;
         self.extra_args = 0;
-        let mut is_init_num = 0;
-        if c.is_init.is_some() {
+        let mut alloc_before_call_num = 0;
+        if c.alloc_before_call.is_some() {
             self.code.push(Value::Uninitialized);
-            is_init_num = 1;
+            alloc_before_call_num = 1;
         }
         for arg in c.args.iter() {
             self.expr(arg);
         }
-        self.code
-            .push(Value::Count(c.args.len() + self.extra_args + is_init_num));
+        self.code.push(Value::Count(
+            c.args.len() + self.extra_args + alloc_before_call_num,
+        ));
         self.extra_args = save_extra;
 
         let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
