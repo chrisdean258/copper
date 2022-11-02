@@ -60,7 +60,6 @@ impl Expression {
 pub struct ParseTree {
     pub statements: Vec<Statement>,
     max_arg: Vec<usize>,
-    loop_count: usize,
     repeated_arg: Option<String>,
     pub globals: Option<usize>,
 }
@@ -362,7 +361,6 @@ impl ParseTree {
         ParseTree {
             statements: Vec::new(),
             max_arg: Vec::new(),
-            loop_count: 0,
             repeated_arg: None,
             globals: None,
         }
@@ -404,9 +402,6 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, Error> {
         let location = expect!(lexer, TokenType::Continue).location;
-        if self.loop_count == 0 {
-            return Err(Error::ContinueNotAllowed(location));
-        }
         Ok(Statement::Continue(Continue { location }))
     }
 
@@ -428,9 +423,6 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Statement, Error> {
         let location = expect!(lexer, TokenType::Break).location;
-        if self.loop_count == 0 {
-            return Err(Error::BreakNotAllowed(location));
-        }
         Ok(Statement::Break(Break { location }))
     }
 
@@ -546,9 +538,7 @@ impl ParseTree {
         let reference = Box::new(self.parse_ref(lexer)?);
         expect!(lexer, TokenType::In);
         let items = Box::new(self.parse_expr(lexer)?);
-        self.loop_count += 1;
         let body = Box::new(self.parse_expr(lexer)?);
-        self.loop_count -= 1;
 
         Ok(Expression {
             derived_type: None,
@@ -567,9 +557,7 @@ impl ParseTree {
     ) -> Result<Expression, Error> {
         let location = expect!(lexer, TokenType::While).location;
         let condition = Box::new(self.parse_expr(lexer)?);
-        self.loop_count += 1;
         let body = Box::new(self.parse_expr(lexer)?);
-        self.loop_count -= 1;
 
         Ok(Expression {
             derived_type: None,
@@ -842,18 +830,6 @@ impl ParseTree {
         lexer: &mut Peekable<Lexer<T>>,
         must_be_named: bool,
     ) -> Result<Expression, Error> {
-        let save_loop = self.loop_count;
-        self.loop_count = 0;
-        let rv = self.parse_function_impl(lexer, must_be_named);
-        self.loop_count = save_loop;
-        rv
-    }
-
-    fn parse_function_impl<T: Iterator<Item = String>>(
-        &mut self,
-        lexer: &mut Peekable<Lexer<T>>,
-        must_be_named: bool,
-    ) -> Result<Expression, Error> {
         let loctoken = expect!(lexer, TokenType::Function);
         let token = lexer.peek().ok_or(Error::UnexpectedEOF)?;
         let name = match &token.token_type {
@@ -930,10 +906,7 @@ impl ParseTree {
         &mut self,
         lexer: &mut Peekable<Lexer<T>>,
     ) -> Result<Expression, Error> {
-        let save_loop = self.loop_count;
-        self.loop_count = 0;
         let rv = self.parse_lambda_impl(lexer);
-        self.loop_count = save_loop;
         rv
     }
 

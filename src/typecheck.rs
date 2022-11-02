@@ -2,7 +2,32 @@ use crate::{
     builtins::BuiltinFunction, location::Location, parser, parser::ParseTree, parser::*,
     typesystem, typesystem::*, value::Value,
 };
-use std::{cell::RefCell, collections::HashMap, mem::swap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    mem::{swap, take},
+    rc::Rc,
+};
+
+#[derive(Debug, Clone)]
+pub enum Error {
+    CannotReturnTypeFromNonFunction(String),
+    MismatchedReturnType(String, String),
+}
+
+impl std::error::Error for Error {}
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::CannotReturnTypeFromNonFunction(t) => f.write_fmt(format_args!(
+                "Cannot return type `{t}` from outside a function"
+            )),
+            Self::MismatchedReturnType(t1, t2) => f.write_fmt(format_args!(
+                "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",
+            )),
+        }
+    }
+}
 
 pub struct TypeChecker {
     pub system: TypeSystem,
@@ -22,15 +47,63 @@ pub struct TypeChecker {
     func_returns: Vec<Option<Type>>,
     need_recheck: bool,
     repeated_arg: Option<(String, Type)>,
+    errors: Vec<Error>,
 }
 
-type TypeError = Vec<String>;
-macro_rules! check_err {
-    ( $name:ident ) => {
-        if $name.len() > 0 {
-            return Err($name);
-        }
-    };
+#[derive(Debug, Clone)]
+pub struct TypedParseTree {
+    pub statements: Vec<TypedStatement>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypedStatement {
+    Expr(TypedExpression),
+    ClassDecl(Rc<RefCell<ClassDecl>>),
+    Import(Import),
+    FromImport(FromImport),
+    Break,
+    Continue,
+    Return(TypedReturn),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedExpression {
+    pub etype: TypedExpressionType,
+    pub location: Location,
+    pub derived_type: Type,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypedExpressionType {
+    While(While),
+    For(For),
+    If(If),
+    CallExpr(CallExpr),
+    PossibleMethodCall(PossibleMethodCall),
+    RefExpr(RefExpr),
+    Immediate(Immediate),
+    BlockExpr(BlockExpr),
+    BinOp(BinOp),
+    PreUnOp(PreUnOp),
+    PostUnOp(PostUnOp),
+    AssignExpr(AssignExpr),
+    Function(Rc<RefCell<parser::Function>>),
+    Lambda(Rc<RefCell<Lambda>>),
+    List(List),
+    Str(Str),
+    IndexExpr(IndexExpr),
+    DottedLookup(DottedLookup),
+    LambdaArg(LambdaArg),
+    FuncRefExpr(FuncRefExpr),
+    RepeatedArg,
+    Null,
+}
+
+#[derive(Debug, Clone)]
+struct TypedReturn {
+    location: Location,
+    body: Option<TypedExpression>,
+    typ: Type,
 }
 
 impl TypeChecker {
@@ -51,6 +124,7 @@ impl TypeChecker {
             func_returns: Vec::new(),
             need_recheck: false,
             repeated_arg: None,
+            errors: Vec::new(),
         };
         rv.openscope();
         for f in BuiltinFunction::get_table(&mut rv.system) {
@@ -60,29 +134,34 @@ impl TypeChecker {
         rv
     }
 
-    fn errmsg(&self, msg: String) -> String {
-        debug_assert!(self.location.is_some());
-        format!("{}: Type Error: {}", self.location.clone().unwrap(), msg)
-    }
-
-    fn error(&self, msg: String) -> TypeError {
-        vec![self.errmsg(msg)]
-    }
-
-    pub fn typecheck(&mut self, p: &mut ParseTree) -> Result<(), String> {
-        let mut results = Vec::new();
-        for statement in p.statements.iter_mut() {
-            match self.statement(statement) {
-                Ok(_) => (),
-                Err(mut s) => results.append(&mut s),
-            }
-        }
+    pub fn typecheck(&mut self, p: ParseTree) -> Result<TypedParseTree, Vec<Error>> {
+        let results = match self.typecheck_vec_of_statement(p.statements) {
+            Ok(types) => types,
+            Err(()) => return Err(take(&mut self.errors)),
+        };
         self.globals += self.scopes[1].borrow().len();
         p.globals = Some(self.scopes[1].borrow().len());
-        if results.is_empty() {
-            Ok(())
+
+        todo!()
+    }
+
+    pub fn typecheck_vec_of_statement(
+        &mut self,
+        statements: Vec<Statement>,
+    ) -> Result<Vec<TypedStatement>, ()> {
+        let types = Vec::new();
+        let mut has_err = false;
+
+        for statement in statements {
+            match self.statement(statement) {
+                Ok(t) => types.push(t),
+                Err(mut s) => has_err = true,
+            }
+        }
+        if has_err {
+            Ok(types)
         } else {
-            Err(results.join("\n"))
+            Err(())
         }
     }
 
@@ -163,50 +242,56 @@ impl TypeChecker {
         rv
     }
 
-    fn statement(&mut self, s: &mut Statement) -> Result<Type, TypeError> {
+    fn statement(&mut self, s: Statement) -> Result<TypedStatement, ()> {
         match s {
-            Statement::Expr(e) => self.expr(e),
+            Statement::Expr(e) => TypedStatement::Expr(self.expr(e)?),
             Statement::ClassDecl(c) => self.classdecl(c.clone()),
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
-            Statement::Continue(_) => Ok(UNIT),
-            Statement::Break(_) => Ok(UNIT),
+            // These were moved out of parsing as parsing can only report one error right now
+            Statement::Continue(c) => todo!("{:?}", c), // make sure the continue is allowed in the context
+            Statement::Break(b) => todo!("{:?}", b), // make sure the continue is allowed in the context
             Statement::Return(r) => self.return_(r),
         }
     }
 
-    fn return_(&mut self, r: &mut Return) -> Result<Type, TypeError> {
-        let rv = match &mut r.body {
-            Some(e) => self.expr(e.as_mut())?,
-            None => UNIT,
+    fn return_(&mut self, r: Return) -> Result<TypedStatement, ()> {
+        let body = match r.body {
+            Some(e) => Some(self.expr(e)?),
+            None => None,
         };
+        let typ = body.map(|b| b.typ).unwrap_or(UNIT);
 
         // This is an Option<Option<Type>>
         // if outer option is none then we are at global scope
         // if inner is None we havent derived a type yet
         match self.func_returns.last() {
-            None if rv == UNIT || rv == INT => (),
+            None if typ == UNIT || typ == INT => (),
             None => {
-                return Err(self.error(format!(
-                    "Cannot return type {} from non function",
-                    self.system.typename(rv)
-                )))
+                self.errors.push(Error::CannotReturnTypeFromNonFunction(
+                    self.system.typename(typ),
+                ));
+                return Err(());
             }
             Some(None) => {
                 let last_idx = self.func_returns.len() - 1;
-                self.func_returns[last_idx] = Some(rv);
+                self.func_returns[last_idx] = Some(typ);
             }
-            Some(Some(v)) if *v == rv => (),
+            Some(Some(v)) if *v == typ => (),
             Some(Some(v)) => {
-                return Err(self.error(format!(
-                    "Cannot return type {} from function. Return type already encountered is {}",
-                    self.system.typename(rv),
+                self.errors.push(Error::MismatchedReturnType(
+                    self.system.typename(typ),
                     self.system.typename(*v),
-                )))
+                ));
+                return Err(());
             }
         }
 
-        Ok(rv)
+        Ok(TypedStatement::Return(TypedReturn {
+            body,
+            location: r.location,
+            typ,
+        }))
     }
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, TypeError> {
@@ -220,13 +305,8 @@ impl TypeChecker {
         Ok(typ)
     }
 
-    fn expr(&mut self, e: &mut Expression) -> Result<Type, TypeError> {
+    fn expr(&mut self, e: Expression) -> Result<TypedExpression, ()> {
         self.location = Some(e.location.clone());
-        if let Some(typ) = e.derived_type {
-            if typ != UNKNOWN_RETURN {
-                return Ok(typ);
-            }
-        }
         let rv = match &mut e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
@@ -258,7 +338,7 @@ impl TypeChecker {
         if rv == UNKNOWN_RETURN {
             self.need_recheck = true;
         }
-        Ok(rv)
+        todo!()
     }
 
     fn null(&mut self) -> Result<Type, TypeError> {
