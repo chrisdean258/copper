@@ -27,7 +27,9 @@ pub enum ErrorType {
     CannotAssignUnit,
     CannotAssignType(String, Operation, String),
     EmptyBlock,
-    LoopConditionNotBool,
+    LoopConditionNotBool(String),
+    IfConditionNotBool(String),
+    ListTypeMismatch(String, String),
 }
 
 impl std::error::Error for Error {}
@@ -64,7 +66,11 @@ impl std::fmt::Display for ErrorType {
                 "Cannot assign `{t1}` {op} `{t2}`",
             )),
             Self::EmptyBlock => f.write_str("Empty Block Expressions are not allowed (yet)"),
-            Self::LoopConditionNotBool => f.write_str("While loop condition must be bool"),
+            Self::LoopConditionNotBool(t) => f.write_str("While loop condition must be bool. This one is `{t}`"),
+            Self::IfConditionNotBool(t) => f.write_str("if condition must be bool. This one is `{t}`"),
+            Self::ListTypeMismatch(t1, t2) => f.write_fmt(format_args!(
+                "List established to contain type `{t1}` but this element was of type `{t2}`",
+            )),
         }
     }
 }
@@ -117,7 +123,7 @@ pub struct TypedExpression {
 pub enum TypedExpressionType {
     While(TypedWhile),
     For(For),
-    If(If),
+    If(TypedIf),
     CallExpr(CallExpr),
     PossibleMethodCall(PossibleMethodCall),
     VarRefExpr(TypedVarRefExpr),
@@ -131,7 +137,7 @@ pub enum TypedExpressionType {
     AssignExpr(TypedAssignExpr),
     Function(Rc<RefCell<parser::Function>>),
     Lambda(Rc<RefCell<Lambda>>),
-    List(List),
+    List(TypedList),
     Str(Str),
     IndexExpr(IndexExpr),
     DottedLookup(DottedLookup),
@@ -205,6 +211,20 @@ pub struct TypedWhile {
     pub body: Box<TypedExpression>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TypedIf {
+    pub condition: Box<TypedExpression>,
+    pub body: Box<TypedExpression>,
+    pub and_bodies: Vec<((TypedIf, Type), Location)>,
+    pub else_body: Option<Box<TypedExpression>>,
+    pub makes_option: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedList {
+    pub exprs: Vec<TypedExpression>,
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         let mut rv = Self {
@@ -248,20 +268,10 @@ impl TypeChecker {
         &mut self,
         statements: Vec<Statement>,
     ) -> Result<Vec<TypedStatement>, ()> {
-        let types = Vec::new();
-        let mut has_err = false;
-
-        for statement in statements {
-            match self.statement(statement) {
-                Ok(t) => types.push(t),
-                Err(mut s) => has_err = true,
-            }
-        }
-        if has_err {
-            Ok(types)
-        } else {
-            Err(())
-        }
+        statements
+            .into_iter()
+            .map(|s| self.statement(s))
+            .collect::<Result<Vec<TypedStatement>, ()>>()
     }
 
     fn error(&mut self, err: ErrorType) -> Result<(TypedExpressionType, Type), ()> {
@@ -352,13 +362,13 @@ impl TypeChecker {
     fn statement(&mut self, s: Statement) -> Result<TypedStatement, ()> {
         Ok(match s {
             Statement::Expr(e) => TypedStatement::Expr(self.expr(e)?),
-            Statement::ClassDecl(c) => self.classdecl(c.clone()),
+            Statement::ClassDecl(c) => todo!(), //self.classdecl(c.clone())?,
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
             // These were moved out of parsing as parsing can only report one error right now
             Statement::Continue(c) => todo!("{:?}", c), // make sure the continue is allowed in the context
             Statement::Break(b) => todo!("{:?}", b), // make sure the continue is allowed in the context
-            Statement::Return(r) => self.return_(r),
+            Statement::Return(r) => self.return_(r)?,
         })
     }
 
@@ -409,7 +419,7 @@ impl TypeChecker {
 
     fn expr(&mut self, e: Expression) -> Result<TypedExpression, ()> {
         self.location = Some(e.location.clone());
-        let (typedexpressiontype, typ) = match &mut e.etype {
+        let (typedexpressiontype, typ) = match e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
             ExpressionType::If(i) => self.ifexpr(i),
@@ -638,7 +648,7 @@ impl TypeChecker {
         let cond = self.expr(*w.condition);
         match cond {
             Ok(t) if t.typ != BOOL => {
-                self.error(ErrorType::LoopConditionNotBool);
+                self.error(ErrorType::LoopConditionNotBool(self.system.typename(t.typ)));
             }
             _ => (),
         }
@@ -655,95 +665,108 @@ impl TypeChecker {
         todo!("Havent worked out the details of iteration yet")
     }
 
-    fn ifexpr(&mut self, i: &mut If) -> Result<Type, TypeError> {
-        self.ifexpr_int(i, false)
+    fn ifexpr(&mut self, i: If) -> Result<(TypedExpressionType, Type), ()> {
+        let (tet, typ) = self.ifexpr_int(i, false)?;
+        Ok((TypedExpressionType::If(tet), typ))
     }
 
-    fn ifexpr_int(&mut self, i: &mut If, is_and_if: bool) -> Result<Type, TypeError> {
-        let mut errors: TypeError = Vec::new();
-        let mut rv = UNIT;
+    fn ifexpr_int(&mut self, i: If, is_and_if: bool) -> Result<(TypedIf, Type), ()> {
+        let mut rvtyp = UNIT;
         let mut make_option = false;
         let mut return_unit = false;
-        match self.expr(i.condition.as_mut()) {
-            Ok(t) if t == BOOL => (),
-            Ok(t) if t == UNKNOWN_RETURN => (),
-            Ok(t) => errors.push(format!(
-                "{}: if conditionals must be `bool` not `{}`",
-                i.condition.as_mut().location,
-                self.system.typename(t)
-            )),
-            Err(mut s) => errors.append(&mut s),
+        let cond = self.expr(*i.condition);
+        match cond {
+            Ok(t) if t.typ != BOOL && t.typ != UNKNOWN_RETURN => {
+                self.error(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
+            }
+            _ => (),
         }
 
-        match self.expr(i.body.as_mut()) {
-            Ok(t) => rv = t,
-            Err(mut s) => errors.append(&mut s),
-        }
+        let body = self.expr(*i.body);
+        let and_bodies_res: Vec<(_, Location)> = i
+            .and_bodies
+            .into_iter()
+            .map(|b| (self.ifexpr_int(b.0, true), b.1))
+            .collect();
 
-        for body in i.and_bodies.iter_mut() {
-            match self.ifexpr_int(&mut body.0, true) {
-                Ok(t) if t == rv => (),
-                Ok(NULL) => make_option = true,
-                Ok(t) if rv == NULL => {
-                    rv = t;
-                    make_option = true;
-                }
-                Ok(t) if t == UNKNOWN_RETURN => (),
-                Ok(t) if rv == UNKNOWN_RETURN => rv = t,
-                Ok(_) => return_unit = true,
-                Err(mut s) => errors.append(&mut s),
+        let else_body = if let Some(b) = i.else_body {
+            Some(self.expr(*b)?)
+        } else {
+            return_unit = true;
+            None
+        };
+
+        let and_bodies = Vec::new();
+        for (b, l) in and_bodies_res {
+            and_bodies.push((b?, l));
+        }
+        let body = body?;
+        let cond = cond?;
+
+        for ((body, typ), location) in and_bodies.iter() {
+            if *typ == NULL {
+                make_option = true;
+            } else if rvtyp == NULL {
+                rvtyp = *typ;
+                make_option = true;
+            } else if rvtyp == UNKNOWN_RETURN {
+                rvtyp = *typ;
+            } else if rvtyp != *typ {
+                return_unit = true;
             }
         }
 
-        match &mut i.else_body {
-            Some(b) => match self.expr(b.as_mut()) {
-                Ok(t) if t == rv => (),
-                Ok(UNKNOWN_RETURN) => (),
-                Ok(NULL) => make_option = true,
-                Ok(t) if rv == NULL => {
-                    rv = t;
-                    make_option = true;
-                }
-                Ok(t) if rv == UNKNOWN_RETURN => rv = t,
-                Ok(_) => return_unit = true,
-                Err(mut s) => errors.append(&mut s),
-            },
-            None => return_unit = !is_and_if,
+        if let Some(typ) = else_body.map(|b| b.typ) {
+            if typ == NULL {
+                make_option = true;
+            } else if rvtyp == NULL {
+                rvtyp = typ;
+                make_option = true;
+            } else if rvtyp == UNKNOWN_RETURN {
+                rvtyp = typ;
+            } else if rvtyp != typ {
+                return_unit = true;
+            }
         }
 
-        check_err!(errors);
+        let ti = TypedIf {
+            condition: Box::new(cond),
+            body: Box::new(body),
+            and_bodies,
+            else_body: else_body.map(|b| Box::new(b)),
+            makes_option: None,
+        };
+
         if return_unit {
-            return Ok(UNIT);
+            rvtyp = UNIT;
+        } else if make_option {
+            rvtyp = self.system.option_type(rvtyp);
+            ti.makes_option = Some(rvtyp);
         }
-        if make_option {
-            rv = self.system.option_type(rv);
-            i.makes_option = Some(rv);
-        }
-        Ok(rv)
+        Ok((ti, rvtyp))
     }
 
-    fn list(&mut self, l: &mut List) -> Result<Type, TypeError> {
-        let mut errors: TypeError = Vec::new();
+    fn list(&mut self, l: &mut List) -> Result<(TypedExpressionType, Type), ()> {
         let mut interior_type = UNIT;
-        for expr in l.exprs.iter_mut() {
-            match self.expr(expr) {
-                Ok(t) if (interior_type == UNIT) ^ (t == interior_type) => {
-                    interior_type = t;
-                }
-                Ok(t) => {
-                    errors.push(format!(
-                        "{}: Type mismatch in list item. Expected `{}` found `{}`",
-                        expr.location,
-                        self.system.typename(interior_type),
-                        self.system.typename(t)
-                    ));
-                }
-                Err(mut s) => errors.append(&mut s),
+        let exprs = l
+            .exprs
+            .into_iter()
+            .map(|e| self.expr(e))
+            .collect::<Result<Vec<_>, ()>>()?;
+
+        for te in exprs.iter() {
+            if interior_type == UNIT {
+                interior_type = te.typ;
+            } else if te.typ != interior_type {
+                self.error(ErrorType::ListTypeMismatch(
+                    self.system.typename(interior_type),
+                    self.system.typename(te.typ),
+                ));
             }
         }
+        let rvtyp = self.system.list_type(interior_type);
 
-        check_err!(errors);
-        Ok(self.system.list_type(interior_type))
+        Ok((TypedExpressionType::List(TypedList { exprs }), rvtyp))
     }
 
     fn index(&mut self, i: &mut IndexExpr) -> Result<Type, TypeError> {
