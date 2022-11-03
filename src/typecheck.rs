@@ -1,6 +1,6 @@
 use crate::{
-    builtins::BuiltinFunction, location::Location, parser, parser::ParseTree, parser::*,
-    typesystem, typesystem::*, value::Value,
+    builtins::BuiltinFunction, location::Location, operation::Operation, parser, parser::ParseTree,
+    parser::*, typesystem, typesystem::*, value::Value,
 };
 use std::{
     cell::RefCell,
@@ -10,13 +10,34 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub enum Error {
+pub struct Error {
+    loc: Location,
+    err: ErrorType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ErrorType {
     CannotReturnTypeFromNonFunction(String),
     MismatchedReturnType(String, String),
+    NoDefinedBinOp(String, Operation, String),
+    NoDefinedUnOp(String, Operation),
+    NoSuchNameInScope(String),
+    FuncTypeUnknown(String),
+    NotAssignable,
+    CannotAssignUnit,
+    CannotAssignType(String, Operation, String),
+    EmptyBlock,
+    LoopConditionNotBool,
 }
 
 impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}: {}", self.loc, self.err))
+    }
+}
+
+impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::CannotReturnTypeFromNonFunction(t) => f.write_fmt(format_args!(
@@ -25,6 +46,25 @@ impl std::fmt::Display for Error {
             Self::MismatchedReturnType(t1, t2) => f.write_fmt(format_args!(
                 "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",
             )),
+            Self::NoDefinedBinOp(t1, op, t2) => f.write_fmt(format_args!(
+                "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",
+            )),
+            Self::NoDefinedUnOp(t, op) => f.write_fmt(format_args!(
+                "Cannot apply binary operation {op} to `{t}`. No operation has been defined",
+            )),
+            Self::NoSuchNameInScope(s) => f.write_fmt(format_args!(
+                "`no name `{s}` in scope",
+            )),
+            Self::FuncTypeUnknown(func) => f.write_fmt(format_args!(
+                "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",
+            )),
+            Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
+            Self::CannotAssignUnit => f.write_str("Cannot assign unit value"),
+            Self::CannotAssignType(t1, op, t2) => f.write_fmt(format_args!(
+                "Cannot assign `{t1}` {op} `{t2}`",
+            )),
+            Self::EmptyBlock => f.write_str("Empty Block Expressions are not allowed (yet)"),
+            Self::LoopConditionNotBool => f.write_str("While loop condition must be bool"),
         }
     }
 }
@@ -70,23 +110,25 @@ pub enum TypedStatement {
 pub struct TypedExpression {
     pub etype: TypedExpressionType,
     pub location: Location,
-    pub derived_type: Type,
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
 pub enum TypedExpressionType {
-    While(While),
+    While(TypedWhile),
     For(For),
     If(If),
     CallExpr(CallExpr),
     PossibleMethodCall(PossibleMethodCall),
-    RefExpr(RefExpr),
-    Immediate(Immediate),
-    BlockExpr(BlockExpr),
-    BinOp(BinOp),
-    PreUnOp(PreUnOp),
-    PostUnOp(PostUnOp),
-    AssignExpr(AssignExpr),
+    VarRefExpr(TypedVarRefExpr),
+    ClassRefExpr(TypedClassRefExpr),
+    FuncRefExpr(TypedFuncRefExpr),
+    Immediate(TypedImmediate),
+    BlockExpr(TypedBlockExpr),
+    BinOp(TypedBinOp),
+    PreUnOp(TypedPreUnOp),
+    PostUnOp(TypedPostUnOp),
+    AssignExpr(TypedAssignExpr),
     Function(Rc<RefCell<parser::Function>>),
     Lambda(Rc<RefCell<Lambda>>),
     List(List),
@@ -94,16 +136,73 @@ pub enum TypedExpressionType {
     IndexExpr(IndexExpr),
     DottedLookup(DottedLookup),
     LambdaArg(LambdaArg),
-    FuncRefExpr(FuncRefExpr),
+    // FuncRefExpr(FuncRefExpr),
     RepeatedArg,
     Null,
 }
 
 #[derive(Debug, Clone)]
 struct TypedReturn {
-    location: Location,
     body: Option<TypedExpression>,
-    typ: Type,
+}
+
+#[derive(Debug, Clone)]
+struct TypedBinOp {
+    pub lhs: Box<TypedExpression>,
+    pub op: Operation,
+    pub rhs: Box<TypedExpression>,
+}
+
+#[derive(Debug, Clone)]
+struct TypedPreUnOp {
+    pub op: Operation,
+    pub rhs: Box<TypedExpression>,
+}
+
+#[derive(Debug, Clone)]
+struct TypedPostUnOp {
+    pub lhs: Box<TypedExpression>,
+    pub op: Operation,
+}
+
+#[derive(Debug, Clone)]
+struct TypedVarRefExpr {
+    pub name: String,
+    pub is_decl: bool,
+}
+
+#[derive(Debug, Clone)]
+struct TypedClassRefExpr {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+struct TypedFuncRefExpr {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedAssignExpr {
+    pub lhs: Box<TypedExpression>,
+    pub op: Operation,
+    pub rhs: Box<TypedExpression>,
+    pub allow_decl: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedImmediate {
+    pub value: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedBlockExpr {
+    pub statements: Vec<TypedStatement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedWhile {
+    pub condition: Box<TypedExpression>,
+    pub body: Box<TypedExpression>,
 }
 
 impl TypeChecker {
@@ -163,6 +262,14 @@ impl TypeChecker {
         } else {
             Err(())
         }
+    }
+
+    fn error(&mut self, err: ErrorType) -> Result<(TypedExpressionType, Type), ()> {
+        self.errors.push(Error {
+            err,
+            loc: self.location.clone().unwrap(),
+        });
+        Err(())
     }
 
     fn scope_lookup_general(
@@ -243,7 +350,7 @@ impl TypeChecker {
     }
 
     fn statement(&mut self, s: Statement) -> Result<TypedStatement, ()> {
-        match s {
+        Ok(match s {
             Statement::Expr(e) => TypedStatement::Expr(self.expr(e)?),
             Statement::ClassDecl(c) => self.classdecl(c.clone()),
             Statement::Import(i) => todo!("{:?}", i),
@@ -252,12 +359,12 @@ impl TypeChecker {
             Statement::Continue(c) => todo!("{:?}", c), // make sure the continue is allowed in the context
             Statement::Break(b) => todo!("{:?}", b), // make sure the continue is allowed in the context
             Statement::Return(r) => self.return_(r),
-        }
+        })
     }
 
     fn return_(&mut self, r: Return) -> Result<TypedStatement, ()> {
         let body = match r.body {
-            Some(e) => Some(self.expr(e)?),
+            Some(e) => Some(self.expr(*e)?),
             None => None,
         };
         let typ = body.map(|b| b.typ).unwrap_or(UNIT);
@@ -268,10 +375,9 @@ impl TypeChecker {
         match self.func_returns.last() {
             None if typ == UNIT || typ == INT => (),
             None => {
-                self.errors.push(Error::CannotReturnTypeFromNonFunction(
+                self.error(ErrorType::CannotReturnTypeFromNonFunction(
                     self.system.typename(typ),
-                ));
-                return Err(());
+                ))?;
             }
             Some(None) => {
                 let last_idx = self.func_returns.len() - 1;
@@ -279,7 +385,7 @@ impl TypeChecker {
             }
             Some(Some(v)) if *v == typ => (),
             Some(Some(v)) => {
-                self.errors.push(Error::MismatchedReturnType(
+                self.error(ErrorType::MismatchedReturnType(
                     self.system.typename(typ),
                     self.system.typename(*v),
                 ));
@@ -287,14 +393,10 @@ impl TypeChecker {
             }
         }
 
-        Ok(TypedStatement::Return(TypedReturn {
-            body,
-            location: r.location,
-            typ,
-        }))
+        Ok(TypedStatement::Return(TypedReturn { body }))
     }
 
-    fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, TypeError> {
+    fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, ()> {
         let cc = c.borrow();
         let typ = self
             .system
@@ -307,7 +409,7 @@ impl TypeChecker {
 
     fn expr(&mut self, e: Expression) -> Result<TypedExpression, ()> {
         self.location = Some(e.location.clone());
-        let rv = match &mut e.etype {
+        let (typedexpressiontype, typ) = match &mut e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
             ExpressionType::For(f) => self.forexpr(f),
             ExpressionType::If(i) => self.ifexpr(i),
@@ -334,169 +436,222 @@ impl TypeChecker {
                 self.expr(e)
             }
         }?;
-        e.derived_type = Some(rv);
-        if rv == UNKNOWN_RETURN {
-            self.need_recheck = true;
-        }
-        todo!()
-    }
-
-    fn null(&mut self) -> Result<Type, TypeError> {
-        Ok(NULL)
-    }
-
-    fn repeated_arg(&mut self) -> Result<Type, TypeError> {
-        Ok(self.repeated_arg.clone().unwrap().1)
-    }
-
-    fn binop(&mut self, b: &mut BinOp) -> Result<Type, TypeError> {
-        let mut ltype = self.expr(b.lhs.as_mut())?;
-        let mut rtype = self.expr(b.rhs.as_mut())?;
-        if self.system.is_option(ltype) && rtype == NULL {
-            b.rhs.as_mut().derived_type = Some(ltype);
-            rtype = ltype;
-        }
-        if self.system.is_option(rtype) && ltype == NULL {
-            b.lhs.as_mut().derived_type = Some(rtype);
-            ltype = rtype;
-        }
-        let rv = self.system.lookup_binop(b.op, ltype, rtype).ok_or_else(||
-            self.error(format!(
-                    "Cannot apply binary operation `{}` {} `{}`. No operation has been defined between these types",
-                    self.system.typename(ltype),
-                    b.op,
-                    self.system.typename(rtype)
-               ))
-        )?;
-
-        Ok(rv)
-    }
-
-    fn preunop(&mut self, p: &mut PreUnOp) -> Result<Type, TypeError> {
-        let rhstype = self.expr(p.rhs.as_mut())?;
-        let rv = self.system.lookup_preunop(p.op, rhstype).ok_or_else(|| {
-            self.error(format!(
-                "Cannot apply unary operation `{}` to `{}`.",
-                p.op,
-                self.system.typename(rhstype)
-            ))
-        })?;
-        Ok(rv)
-    }
-
-    fn postunop(&mut self, p: &mut PostUnOp) -> Result<Type, TypeError> {
-        let lhstype = self.expr(p.lhs.as_mut())?;
-        let rv = self.system.lookup_postunop(p.op, lhstype).ok_or_else(|| {
-            self.error(format!(
-                "Cannot apply unary operation `{}` to `{}`.",
-                p.op,
-                self.system.typename(lhstype)
-            ))
-        })?;
-        Ok(rv)
-    }
-
-    fn refexpr(&mut self, r: &mut RefExpr) -> Result<Type, TypeError> {
-        match self.scope_lookup(&r.name) {
-            Some(t) => return Ok(t),
-            None if self.allow_insert.is_some() => {
-                let typ = self.allow_insert.unwrap();
-                r.is_decl = true;
-                self.insert_scope(&r.name, typ);
-                return Ok(typ);
-            }
-            None => (),
-        }
-        if let Some(t) = self.scope_lookup_class(&r.name) {
-            return Ok(t);
-        }
-        match self.scope_lookup_func(&r.name) {
-            Some(t) if self.allow_raw_func => Ok(t),
-            Some(_) => Err(self.error(format!(
-                "`{}` is a function whose types cannot be determined. Try wrapping it in a lambda",
-                r.name
-            ))),
-            None => Err(self.error(format!("`{}` no such variable in scope", r.name))),
-        }
-    }
-
-    fn funcrefexpr(&mut self, r: &mut FuncRefExpr) -> Result<Type, TypeError> {
-        let name = self.system.mangle(&r.name, &r.sig);
-        match self.scope_lookup(&name) {
-            Some(t) => Ok(t),
-            None => unreachable!("Could not find {:?} in scope", r),
-        }
-    }
-
-    fn assignment(&mut self, a: &mut AssignExpr) -> Result<Type, TypeError> {
-        if !a.lhs.is_lval() {
-            return Err(self.error("lhs of assignment is not assignable".to_string()));
-        }
-        let rhstype = self.expr(a.rhs.as_mut())?;
-        if rhstype == UNIT {
-            return Err(self.error("Cannot assign unit value".to_string()));
-        }
-        self.allow_insert = Some(rhstype);
-        let lhstype = self.expr(a.lhs.as_mut())?;
-        self.allow_insert = None;
-        self.system
-            .lookup_assign(a.op, lhstype, rhstype)
-            .ok_or_else(|| {
-                self.error(format!(
-                    "Cannot assign type `{}` {} `{}`",
-                    self.system.typename(lhstype),
-                    a.op,
-                    self.system.typename(rhstype)
-                ))
-            })
-    }
-
-    fn immediate(&mut self, i: &mut Immediate) -> Result<Type, TypeError> {
-        Ok(match i.value {
-            Value::Null => typesystem::NULL,
-            Value::Bool(_) => typesystem::BOOL,
-            Value::Char(_) => typesystem::CHAR,
-            Value::Int(_) => typesystem::INT,
-            Value::Float(_) => typesystem::FLOAT,
-            _ => unreachable!(),
-            // Value::Str(_) => typesystem::STR,
+        // if rv == UNKNOWN_RETURN {
+        // self.need_recheck = true;
+        // }
+        Ok(TypedExpression {
+            typ,
+            etype: typedexpressiontype,
+            location: e.location,
         })
     }
 
-    fn block(&mut self, b: &mut BlockExpr) -> Result<Type, TypeError> {
-        let mut errors = Vec::new();
-        let mut return_type = UNIT;
-        for statement in b.statements.iter_mut() {
-            match self.statement(statement) {
-                Ok(t) => return_type = t,
-                Err(mut e) => errors.append(&mut e),
-            }
-        }
-        check_err!(errors);
-        Ok(return_type)
+    fn null(&mut self) -> Result<(TypedExpressionType, Type), ()> {
+        Ok((TypedExpressionType::Null, NULL))
     }
 
-    fn whileexpr(&mut self, w: &mut While) -> Result<Type, TypeError> {
-        let mut errors = Vec::new();
-        match self.expr(w.condition.as_mut()) {
-            Ok(t) if t == BOOL => (),
-            Ok(t) => errors.push(format!(
-                "{}: while loop conditionals must be `bool` not `{}`",
-                w.condition.as_mut().location,
-                self.system.typename(t)
+    fn repeated_arg(&mut self) -> Result<(TypedExpressionType, Type), ()> {
+        Ok((
+            TypedExpressionType::RepeatedArg,
+            self.repeated_arg.clone().unwrap().1,
+        ))
+    }
+
+    fn binop(&mut self, b: BinOp) -> Result<(TypedExpressionType, Type), ()> {
+        let mut lhs = self.expr(*b.lhs)?;
+        let mut rhs = self.expr(*b.rhs)?;
+        if self.system.is_option(lhs.typ) && rhs.typ == NULL {
+            rhs.typ = lhs.typ;
+        } else if self.system.is_option(rhs.typ) && lhs.typ == NULL {
+            lhs.typ = rhs.typ;
+        }
+        match self.system.lookup_binop(b.op, lhs.typ, rhs.typ) {
+            None => self.error(ErrorType::NoDefinedBinOp(
+                self.system.typename(lhs.typ),
+                b.op,
+                self.system.typename(rhs.typ),
             )),
-            Err(mut s) => errors.append(&mut s),
+            Some(typ) => Ok((
+                TypedExpressionType::BinOp(TypedBinOp {
+                    lhs: Box::new(lhs),
+                    op: b.op,
+                    rhs: Box::new(rhs),
+                }),
+                typ,
+            )),
         }
-        match self.expr(w.body.as_mut()) {
-            Ok(_) => (), // This is currently discarded but would be used with `break`
-            Err(mut s) => errors.append(&mut s),
-        }
-
-        check_err!(errors);
-        Ok(UNIT)
     }
 
-    fn forexpr(&mut self, _w: &mut For) -> Result<Type, TypeError> {
+    fn preunop(&mut self, p: PreUnOp) -> Result<(TypedExpressionType, Type), ()> {
+        let rhs = self.expr(*p.rhs)?;
+        match self.system.lookup_preunop(p.op, rhs.typ) {
+            None => self.error(ErrorType::NoDefinedUnOp(
+                self.system.typename(rhs.typ),
+                p.op,
+            )),
+            Some(typ) => Ok((
+                TypedExpressionType::PreUnOp(TypedPreUnOp {
+                    rhs: Box::new(rhs),
+                    op: p.op,
+                }),
+                typ,
+            )),
+        }
+    }
+
+    fn postunop(&mut self, p: PostUnOp) -> Result<(TypedExpressionType, Type), ()> {
+        let lhs = self.expr(*p.lhs)?;
+        match self.system.lookup_postunop(p.op, lhs.typ) {
+            None => self.error(ErrorType::NoDefinedUnOp(
+                self.system.typename(lhs.typ),
+                p.op,
+            )),
+            Some(typ) => Ok((
+                TypedExpressionType::PostUnOp(TypedPostUnOp {
+                    lhs: Box::new(lhs),
+                    op: p.op,
+                }),
+                typ,
+            )),
+        }
+    }
+
+    fn refexpr(&mut self, r: RefExpr) -> Result<(TypedExpressionType, Type), ()> {
+        match (self.scope_lookup(&r.name), self.allow_insert) {
+            (Some(t), _) => {
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: r.is_decl,
+                    }),
+                    t,
+                ));
+            }
+            (None, Some(typ)) => {
+                self.insert_scope(&r.name, typ);
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: true,
+                    }),
+                    typ,
+                ));
+            }
+            (None, None) => (),
+        }
+        if let Some(typ) = self.scope_lookup_class(&r.name) {
+            return Ok((
+                TypedExpressionType::ClassRefExpr(TypedClassRefExpr { name: r.name }),
+                typ,
+            ));
+        }
+        match self.scope_lookup_func(&r.name) {
+            Some(typ) if self.allow_raw_func => Ok((
+                TypedExpressionType::FuncRefExpr(TypedFuncRefExpr { name: r.name }),
+                typ,
+            )),
+            Some(_) => self.error(ErrorType::FuncTypeUnknown(r.name)),
+            None => self.error(ErrorType::NoSuchNameInScope(r.name)),
+        }
+    }
+
+    // fn funcrefexpr(&mut self, r: &mut FuncRefExpr) -> Result<(TypedExpressionType, Type), ()> {
+    // let name = self.system.mangle(&r.name, &r.sig);
+    // match self.scope_lookup(&name) {
+    // Some(t) => Ok(t),
+    // None => unreachable!("Could not find {:?} in scope", r),
+    // }
+    // }
+
+    fn assignment(&mut self, a: AssignExpr) -> Result<(TypedExpressionType, Type), ()> {
+        if !a.lhs.is_lval() {
+            return self.error(ErrorType::NotAssignable);
+        }
+        let rhs = self.expr(*a.rhs)?;
+        if rhs.typ == UNIT {
+            return self.error(ErrorType::CannotAssignUnit);
+        }
+        self.allow_insert = Some(rhs.typ);
+        let lhs = self.expr(*a.lhs)?;
+        self.allow_insert = None;
+        match self.system.lookup_assign(a.op, lhs.typ, rhs.typ) {
+            Some(typ) => Ok((
+                TypedExpressionType::AssignExpr(TypedAssignExpr {
+                    lhs: Box::new(lhs),
+                    op: a.op,
+                    rhs: Box::new(rhs),
+                    allow_decl: a.allow_decl,
+                }),
+                typ,
+            )),
+            None => self.error(ErrorType::CannotAssignType(
+                self.system.typename(lhs.typ),
+                a.op,
+                self.system.typename(rhs.typ),
+            )),
+        }
+    }
+
+    fn immediate(&mut self, i: Immediate) -> Result<(TypedExpressionType, Type), ()> {
+        Ok(match i.value {
+            Value::Null => (
+                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
+                typesystem::NULL,
+            ),
+            Value::Bool(_) => (
+                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
+                typesystem::BOOL,
+            ),
+            Value::Char(_) => (
+                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
+                typesystem::CHAR,
+            ),
+            Value::Int(_) => (
+                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
+                typesystem::INT,
+            ),
+            Value::Float(_) => (
+                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
+                typesystem::FLOAT,
+            ),
+            i => unreachable!("Found {i:?}"),
+        })
+    }
+
+    fn block(&mut self, b: BlockExpr) -> Result<(TypedExpressionType, Type), ()> {
+        if b.statements.is_empty() {
+            return self.error(ErrorType::EmptyBlock);
+        }
+        let statements = self.typecheck_vec_of_statement(b.statements)?;
+        let typ = match statements.last().unwrap() {
+            TypedStatement::Expr(e) => e.typ,
+            _ => typesystem::UNIT,
+        };
+
+        Ok((
+            TypedExpressionType::BlockExpr(TypedBlockExpr { statements }),
+            typ,
+        ))
+    }
+
+    fn whileexpr(&mut self, w: While) -> Result<(TypedExpressionType, Type), ()> {
+        let cond = self.expr(*w.condition);
+        match cond {
+            Ok(t) if t.typ != BOOL => {
+                self.error(ErrorType::LoopConditionNotBool);
+            }
+            _ => (),
+        }
+        let body = Box::new(self.expr(*w.body)?);
+        let condition = Box::new(cond?);
+
+        Ok((
+            TypedExpressionType::While(TypedWhile { condition, body }),
+            UNIT,
+        ))
+    }
+
+    fn forexpr(&mut self, _w: &mut For) -> Result<(TypedExpressionType, Type), ()> {
         todo!("Havent worked out the details of iteration yet")
     }
 
