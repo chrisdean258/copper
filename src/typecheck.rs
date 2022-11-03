@@ -32,6 +32,7 @@ pub enum ErrorType {
     ListTypeMismatch(String, String),
     CannotIndexType(String),
     IndexNotInt,
+    ClassHasNoFieldOrMethod(String, String),
 }
 
 impl std::error::Error for Error {}
@@ -79,6 +80,9 @@ impl std::fmt::Display for ErrorType {
             Self::IndexNotInt => f.write_str(
                 "Index expression requires 1 argument of type `int`"
             ),
+            Self::ClassHasNoFieldOrMethod(t, fm) => f.write_fmt(format_args!(
+                "Class `{t}` has no field or method `{fm}`",
+            )),
         }
     }
 }
@@ -132,7 +136,8 @@ pub enum TypedExpressionType {
     While(TypedWhile),
     For(For),
     If(TypedIf),
-    CallExpr(CallExpr),
+    CallExpr(TypedCallExpr),
+    MethodCallExpr(TypedMethodCallExpr),
     PossibleMethodCall(PossibleMethodCall),
     VarRefExpr(TypedVarRefExpr),
     ClassRefExpr(TypedClassRefExpr),
@@ -148,7 +153,7 @@ pub enum TypedExpressionType {
     Function,
     Lambda,
     List(TypedList),
-    Str(Str),
+    Str(TypedStr),
     IndexExpr(TypedIndexExpr),
     DottedLookup(DottedLookup),
     LambdaArg(TypedLambdaArg),
@@ -244,6 +249,25 @@ pub struct TypedIndexExpr {
 #[derive(Debug, Clone)]
 pub struct TypedLambdaArg {
     pub number: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedStr {
+    pub string: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedCallExpr {
+    pub function: Box<TypedExpression>,
+    pub args: Vec<TypedExpression>,
+    pub alloc_before_call: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedMethodCallExpr {
+    pub obj: Box<TypedExpression>,
+    pub args: Vec<TypedExpression>,
+    pub method_name: String,
 }
 
 impl TypeChecker {
@@ -837,27 +861,23 @@ impl TypeChecker {
         ))
     }
 
-    fn string(&mut self, _s: &mut Str) -> Result<Type, TypeError> {
-        Ok(STR)
+    fn string(&mut self, s: Str) -> Result<(TypedExpressionType, Type), ()> {
+        Ok((TypedExpressionType::Str(TypedStr { string: s.string }), STR))
     }
 
     fn possible_method_call(
         &mut self,
         mut m: PossibleMethodCall,
-    ) -> Result<ExpressionType, TypeError> {
-        let lhs = self.expr(m.lhs.as_mut())?;
-        let lhs = self.system.class_underlying(lhs);
+    ) -> Result<(TypedExpressionType, Type), ()> {
+        let lhs = self.expr(*m.lhs)?;
+        let lhs = self.system.class_underlying(lhs.typ);
         if let Some(classdecl) = self.type_to_class.get(&lhs).cloned() {
-            if classdecl.borrow().methods.contains_key(&m.method_name) {
-                Ok(ExpressionType::CallExpr(CallExpr {
-                    function: m.lhs,
-                    args: m.args,
-                    alloc_before_call: None,
-                    method_name: Some(m.method_name),
-                }))
-            } else if classdecl.borrow().fields.contains_key(&m.method_name) {
-                Ok(ExpressionType::CallExpr(CallExpr {
-                    function: Box::new(Expression {
+            let (function, method_name) = if classdecl.borrow().methods.contains_key(&m.method_name)
+            {
+                (m.lhs, Some(m.method_name))
+            } else {
+                (
+                    Box::new(Expression {
                         etype: ExpressionType::DottedLookup(DottedLookup {
                             lhs: m.lhs,
                             rhs: m.method_name,
@@ -866,26 +886,24 @@ impl TypeChecker {
                         derived_type: None,
                         location: m.location,
                     }),
-                    args: m.args,
-                    alloc_before_call: None,
-                    method_name: None,
-                }))
-            } else {
-                Err(self.error(format!(
-                    "LHS is of type `{}` which has no field or method named `{}`",
-                    self.system.typename(lhs),
-                    m.method_name
-                )))
-            }
+                    None,
+                )
+            };
+            self.call(CallExpr {
+                function,
+                args: m.args,
+                alloc_before_call: None,
+                method_name,
+            })
         } else {
-            Err(self.error(format!(
-                "LHS is of type `{}` you cannot use a dotted lookup on",
-                self.system.typename(lhs)
-            )))
+            self.error(ErrorType::ClassHasNoFieldOrMethod(
+                self.system.typename(lhs),
+                m.method_name,
+            ))
         }
     }
 
-    fn call(&mut self, c: &mut CallExpr) -> Result<Type, TypeError> {
+    fn call(&mut self, c: CallExpr) -> Result<(TypedExpressionType, Type), ()> {
         macro_rules! mangle {
             ($c:ident, $args:ident, $out:expr) => {
                 match &$c.function.as_ref().etype {
@@ -903,14 +921,15 @@ impl TypeChecker {
         }
         let save = self.allow_raw_func;
         self.allow_raw_func = true;
-        let mut functype = self.expr(c.function.as_mut())?;
+        let mut functype = self.expr(*c.function);
         self.allow_raw_func = save;
         let mut funcloc = c.function.location.clone();
-        let mut args = Vec::new();
+        let mut args = self.vec_of_exprs(c.args)?;
+        let subject = functype?;
 
         let mut override_return = None;
-        if self.system.is_class(functype) {
-            let classdecl = self.type_to_class.get_mut(&functype).unwrap().clone();
+        if self.system.is_class(subject.typ) {
+            let classdecl = self.type_to_class.get(&subject.typ).unwrap().clone();
             c.alloc_before_call = Some(classdecl.borrow().fields.len());
             match classdecl.borrow_mut().methods.get_mut("__init__") {
                 Some(init) => {
