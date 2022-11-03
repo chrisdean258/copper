@@ -30,6 +30,8 @@ pub enum ErrorType {
     LoopConditionNotBool(String),
     IfConditionNotBool(String),
     ListTypeMismatch(String, String),
+    CannotIndexType(String),
+    IndexNotInt,
 }
 
 impl std::error::Error for Error {}
@@ -71,6 +73,12 @@ impl std::fmt::Display for ErrorType {
             Self::ListTypeMismatch(t1, t2) => f.write_fmt(format_args!(
                 "List established to contain type `{t1}` but this element was of type `{t2}`",
             )),
+            Self::CannotIndexType(t) => f.write_fmt(format_args!(
+                "Cannot index into type `{t}`"
+            )),
+            Self::IndexNotInt => f.write_str(
+                "Index expression requires 1 argument of type `int`"
+            ),
         }
     }
 }
@@ -135,13 +143,15 @@ pub enum TypedExpressionType {
     PreUnOp(TypedPreUnOp),
     PostUnOp(TypedPostUnOp),
     AssignExpr(TypedAssignExpr),
-    Function(Rc<RefCell<parser::Function>>),
-    Lambda(Rc<RefCell<Lambda>>),
+    // Functions/lambdas fundamentally don't have types until they are called
+    // So this requires looking in the scope table
+    Function,
+    Lambda,
     List(TypedList),
     Str(Str),
-    IndexExpr(IndexExpr),
+    IndexExpr(TypedIndexExpr),
     DottedLookup(DottedLookup),
-    LambdaArg(LambdaArg),
+    LambdaArg(TypedLambdaArg),
     // FuncRefExpr(FuncRefExpr),
     RepeatedArg,
     Null,
@@ -225,6 +235,17 @@ pub struct TypedList {
     pub exprs: Vec<TypedExpression>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TypedIndexExpr {
+    pub obj: Box<TypedExpression>,
+    pub args: Vec<TypedExpression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedLambdaArg {
+    pub number: usize,
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         let mut rv = Self {
@@ -254,7 +275,7 @@ impl TypeChecker {
     }
 
     pub fn typecheck(&mut self, p: ParseTree) -> Result<TypedParseTree, Vec<Error>> {
-        let results = match self.typecheck_vec_of_statement(p.statements) {
+        let results = match self.vec_of_statement(p.statements) {
             Ok(types) => types,
             Err(()) => return Err(take(&mut self.errors)),
         };
@@ -264,14 +285,12 @@ impl TypeChecker {
         todo!()
     }
 
-    pub fn typecheck_vec_of_statement(
-        &mut self,
-        statements: Vec<Statement>,
-    ) -> Result<Vec<TypedStatement>, ()> {
-        statements
-            .into_iter()
-            .map(|s| self.statement(s))
-            .collect::<Result<Vec<TypedStatement>, ()>>()
+    pub fn vec_of_statement(&mut self, stats: Vec<Statement>) -> Result<Vec<TypedStatement>, ()> {
+        stats.into_iter().map(|s| self.statement(s)).collect()
+    }
+
+    pub fn vec_of_exprs(&mut self, exprs: Vec<Expression>) -> Result<Vec<TypedExpression>, ()> {
+        exprs.into_iter().map(|s| self.expr(s)).collect()
     }
 
     fn error(&mut self, err: ErrorType) -> Result<(TypedExpressionType, Type), ()> {
@@ -632,7 +651,7 @@ impl TypeChecker {
         if b.statements.is_empty() {
             return self.error(ErrorType::EmptyBlock);
         }
-        let statements = self.typecheck_vec_of_statement(b.statements)?;
+        let statements = self.vec_of_statement(b.statements)?;
         let typ = match statements.last().unwrap() {
             TypedStatement::Expr(e) => e.typ,
             _ => typesystem::UNIT,
@@ -746,13 +765,9 @@ impl TypeChecker {
         Ok((ti, rvtyp))
     }
 
-    fn list(&mut self, l: &mut List) -> Result<(TypedExpressionType, Type), ()> {
+    fn list(&mut self, l: List) -> Result<(TypedExpressionType, Type), ()> {
         let mut interior_type = UNIT;
-        let exprs = l
-            .exprs
-            .into_iter()
-            .map(|e| self.expr(e))
-            .collect::<Result<Vec<_>, ()>>()?;
+        let exprs = self.vec_of_exprs(l.exprs)?;
 
         for te in exprs.iter() {
             if interior_type == UNIT {
@@ -769,61 +784,57 @@ impl TypeChecker {
         Ok((TypedExpressionType::List(TypedList { exprs }), rvtyp))
     }
 
-    fn index(&mut self, i: &mut IndexExpr) -> Result<Type, TypeError> {
-        let obj_type = self.expr(i.obj.as_mut())?;
+    fn index(&mut self, i: IndexExpr) -> Result<(TypedExpressionType, Type), ()> {
+        let obj = self.expr(*i.obj)?;
         // in the future there may be objects that are indexable so there will be an addition check
-        let return_type = match self.system.underlying_type(obj_type) {
+        let return_type = match self.system.underlying_type(obj.typ) {
             None => {
-                return Err(self.error(format!(
-                    "Cannot index into type `{}`",
-                    self.system.typename(obj_type)
-                )))
+                return self.error(ErrorType::CannotIndexType(self.system.typename(obj.typ)));
             }
             Some(t) => t,
         };
-        if i.args.len() != 1 {
-            return Err(
-                self.error("Index expression requires 1 argument of type `int`".to_string())
-            );
+        let args = self.vec_of_exprs(i.args)?;
+        if args.len() != 1 || args[0].typ != INT {
+            return self.error(ErrorType::IndexNotInt);
         }
-        let idx_type = self.expr(&mut i.args[0])?;
-        if idx_type != INT {
-            return Err(vec![format!(
-                "{}: Expected `int` found `{}`",
-                i.args[0].location,
-                self.system.typename(idx_type)
-            )]);
-        }
-        Ok(return_type)
+        Ok((
+            TypedExpressionType::IndexExpr(TypedIndexExpr {
+                obj: Box::new(obj),
+                args,
+            }),
+            return_type,
+        ))
     }
 
-    fn function(&mut self, f: &mut Rc<RefCell<parser::Function>>) -> Result<Type, TypeError> {
-        let typ = match f.borrow().name.clone() {
-            Some(s) => {
-                let rv = self.system.function_type(s.clone());
-                self.insert_func_scope(&s, rv);
-                rv
-            }
-            None => self
-                .system
-                .function_type("<anonymous function>".to_string()),
-        };
+    fn function(
+        &mut self,
+        f: Rc<RefCell<parser::Function>>,
+    ) -> Result<(TypedExpressionType, Type), ()> {
+        let name = f.borrow().name.clone();
+        let default = "<anonymous function>".to_owned();
+        let typ = self.system.function_type(name.clone().unwrap_or(default));
+        if let Some(s) = name {
+            self.insert_func_scope(&s, typ);
+        }
         self.type_to_func.insert(typ, f.clone());
-        Ok(typ)
+        Ok((TypedExpressionType::Function, typ))
     }
 
-    fn lambda(&mut self, l: &mut Rc<RefCell<Lambda>>) -> Result<Type, TypeError> {
+    fn lambda(&mut self, l: Rc<RefCell<Lambda>>) -> Result<(TypedExpressionType, Type), ()> {
         let typ = self.system.function_type("<lambda>".to_string());
         self.type_to_lambda.insert(typ, l.clone());
-        Ok(typ)
+        Ok((TypedExpressionType::Lambda, typ))
     }
 
-    fn lambdaarg(&mut self, l: &mut LambdaArg) -> Result<Type, TypeError> {
+    fn lambdaarg(&mut self, l: LambdaArg) -> Result<(TypedExpressionType, Type), ()> {
         debug_assert!(
             !self.lambda_args.is_empty(),
             "Trying to derive type of lambda arg in non lambda. This is a bug"
         );
-        Ok(self.lambda_args[l.number])
+        Ok((
+            TypedExpressionType::LambdaArg(TypedLambdaArg { number: l.number }),
+            self.lambda_args[l.number],
+        ))
     }
 
     fn string(&mut self, _s: &mut Str) -> Result<Type, TypeError> {
