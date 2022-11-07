@@ -65,4 +65,28 @@ impl<T: Iterator<Item = String>> CharIter<T> {
         self.peeked = Some(Some(self.cur_line.as_ref()?[self.col_no - 1]));
         self.peeked.unwrap()
     }
+
+    pub fn next_if<F>(&mut self, func: F) -> Option<char>
+    where
+        F: FnOnce(char) -> bool,
+    {
+        let c = self.peek()?;
+        if func(c) {
+            self.next();
+            Some(c)
+        } else {
+            None
+        }
+    }
+
+    pub fn takewhile<F>(&mut self, func: F) -> String
+    where
+        F: Fn(char) -> bool,
+    {
+        let mut rv = String::new();
+        while let Some(c) = self.next_if(&func) {
+            rv.push(c);
+        }
+        rv
+    }
 }

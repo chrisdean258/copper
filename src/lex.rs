@@ -85,7 +85,7 @@ pub enum TokenType {
     BoolNot,
     BitShiftRight,
     BitShiftLeft,
-    ErrChar(char),
+    ErrChar(char, Option<&'static str>),
     UnexpectedEOF(Option<&'static str>),
 }
 
@@ -160,7 +160,10 @@ impl Display for TokenType {
             BoolNot => f.write_str("!"),
             BitShiftRight => f.write_str(">>"),
             BitShiftLeft => f.write_str("<<"),
-            ErrChar(c) => f.write_fmt(format_args!("error: {}", c)),
+            ErrChar(c, s) => f.write_fmt(format_args!(
+                "Unexpected character '{c}'{}",
+                s.map(|c| format!(" while lexing {c}")).unwrap_or_default()
+            )),
             UnexpectedEOF(s) => f.write_fmt(format_args!(
                 "Unexpected EOF{}",
                 s.map(|c| format!(" while lexing {c}")).unwrap_or_default()
@@ -199,39 +202,22 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         Location::new(self.label.clone(), row, col)
     }
 
-    fn expect<F>(&mut self, func: F) -> char
-    where
-        F: FnOnce(&char) -> bool,
-    {
-        debug_assert!(func(&self.chars.peek().unwrap()));
-        self.chars.next().unwrap()
+    fn expect_char(&mut self, c: char) -> bool {
+        self.chars.next_if(|ch| ch == c).is_some()
     }
 
-    fn expect_char(&mut self, c: char) -> char {
-        self.expect(|ch| ch == &c)
+    fn string_of_digits(&mut self, radix: u32) -> String {
+        self.chars.takewhile(|c| c.is_digit(radix))
     }
 
-    fn string_of_digits(&mut self) -> String {
-        let mut string = String::new();
-        while let Some(c) = self.chars.peek() {
-            match c {
-                '0'..='9' => string.push(c),
-                _ => break,
-            }
-            self.chars.next();
-        }
-        string
-    }
-
-    fn num(&mut self) -> TokenType {
+    fn num(&mut self, radix: u32) -> TokenType {
         use TokenType::{Float, Int};
-        let mut string = self.string_of_digits();
-        let Some('.') = self.chars.peek() else {
-            return Int(string.parse().unwrap());
+        let mut string = self.string_of_digits(radix);
+        if !self.expect_char('.') || radix != 10 {
+            return Int(i64::from_str_radix(&string, radix).unwrap());
         };
-        self.chars.next();
         string.push('.');
-        string.push_str(&self.string_of_digits());
+        string.push_str(&self.string_of_digits(radix));
         Float(string.parse().unwrap())
     }
 
@@ -298,7 +284,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
     fn chr(&mut self) -> TokenType {
         use TokenType::Char;
-        self.expect_char('\'');
+        let v = self.expect_char('\'');
+        debug_assert!(v);
         let Some(c) = self.single_char() else {
             return TokenType::UnexpectedEOF(Some("char"));
         };
@@ -307,7 +294,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     }
 
     fn str(&mut self) -> TokenType {
-        self.expect_char('"');
+        let v = self.expect_char('"');
+        debug_assert!(v);
         let mut string = String::new();
         while let Some(c) = self.single_char() {
             if c == '"' {
@@ -330,8 +318,9 @@ impl<T: Iterator<Item = String>> Lexer<T> {
     }
 
     fn lambda_arg(&mut self) -> TokenType {
-        self.expect_char('\\');
-        let chars = self.string_of_digits();
+        let v = self.expect_char('\\');
+        debug_assert!(v);
+        let chars = self.string_of_digits(10);
         if chars.is_empty() {
             TokenType::Lambda
         } else {
@@ -348,11 +337,8 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                     self.chars.next();
                 }
                 '#' => {
-                    for c in self.chars.by_ref() {
-                        if c == '\n' {
-                            break;
-                        }
-                    }
+                    self.chars.takewhile(|c| c != '\n');
+                    self.chars.next_if(|c| c == '\n');
                 }
                 _ => break,
             }
@@ -374,7 +360,24 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 '_' => self.identifier(),
                 '"' => self.str(),
                 '\'' => self.chr(),
-                '0'..='9' => self.num(),
+                '0' => match self.eat_peek() {
+                    Some('x' | 'X') => {
+                        self.chars.next();
+                        self.num(16)
+                    }
+                    Some('b' | 'B') => {
+                        self.chars.next();
+                        self.num(2)
+                    }
+                    Some('o' | 'O') => {
+                        self.chars.next();
+                        self.num(8)
+                    }
+                    Some('0'..='9') => self.num(10), // Ok because leading 0
+                    Some('.') => self.num(10),
+                    _ => Int(0),
+                },
+                '1'..='9' => self.num(10),
                 '\\' => self.lambda_arg(),
                 '=' => match self.eat_peek() {
                     Some('=') => self.eat_ret(CmpEq),
@@ -444,7 +447,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 },
                 '~' => self.eat_ret(BitNot),
 
-                _ => ErrChar(self.chars.next()?),
+                _ => ErrChar(self.chars.next()?, None),
             },
         })
     }
