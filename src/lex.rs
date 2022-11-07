@@ -86,6 +86,7 @@ pub enum TokenType {
     BitShiftRight,
     BitShiftLeft,
     ErrChar(char),
+    UnexpectedEOF(Option<&'static str>),
 }
 
 impl Display for TokenType {
@@ -160,6 +161,10 @@ impl Display for TokenType {
             BitShiftRight => f.write_str(">>"),
             BitShiftLeft => f.write_str("<<"),
             ErrChar(c) => f.write_fmt(format_args!("error: {}", c)),
+            UnexpectedEOF(s) => f.write_fmt(format_args!(
+                "Unexpected EOF{}",
+                s.map(|c| format!(" while lexing {c}")).unwrap_or_default()
+            )),
         }
     }
 }
@@ -206,48 +211,49 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         self.expect(|ch| ch == &c)
     }
 
+    fn string_of_digits(&mut self) -> String {
+        let mut string = String::new();
+        while let Some(c) = self.chars.peek() {
+            match c {
+                '0'..='9' => string.push(c),
+                _ => break,
+            }
+            self.chars.next();
+        }
+        string
+    }
+
     fn num(&mut self) -> TokenType {
         use TokenType::{Float, Int};
-        let mut chars = Vec::new();
-        while let Some(c) = self.chars.peek() {
-            match c {
-                '0'..='9' => chars.push(self.chars.next().unwrap()),
-                _ => break,
-            }
-        }
-        if self.chars.peek() != Some('.') {
-            let s: String = chars.into_iter().collect();
-            return Int(s.parse().unwrap());
-        }
+        let mut string = self.string_of_digits();
+        let Some('.') = self.chars.peek() else {
+            return Int(string.parse().unwrap());
+        };
         self.chars.next();
-        chars.push('.');
-        while let Some(c) = self.chars.peek() {
-            match c {
-                '0'..='9' => chars.push(self.chars.next().unwrap()),
-                _ => break,
-            }
-        }
-        let s: String = chars.into_iter().collect();
-        Float(s.parse().unwrap())
+        string.push('.');
+        string.push_str(&self.string_of_digits());
+        Float(string.parse().unwrap())
     }
 
     fn identifier(&mut self) -> TokenType {
         use TokenType::Identifier;
         let mut chars = String::new();
+        // have to assume first character is valid or is this is a bug and we want to crash
         match self.chars.peek().unwrap() {
             'a'..='z' => chars.push(self.chars.next().unwrap()),
             'A'..='Z' => chars.push(self.chars.next().unwrap()),
             '_' => chars.push(self.chars.next().unwrap()),
             _ => unreachable!(),
         }
-        loop {
-            match self.chars.peek().unwrap() {
-                '0'..='9' => chars.push(self.chars.next().unwrap()),
-                'a'..='z' => chars.push(self.chars.next().unwrap()),
-                'A'..='Z' => chars.push(self.chars.next().unwrap()),
-                '_' => chars.push(self.chars.next().unwrap()),
+        while let Some(c) = self.chars.peek() {
+            match c {
+                '0'..='9' => chars.push(c),
+                'a'..='z' => chars.push(c),
+                'A'..='Z' => chars.push(c),
+                '_' => chars.push(c),
                 _ => break,
             }
+            self.chars.next();
         }
 
         match &chars[..] {
@@ -273,43 +279,44 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         }
     }
 
+    fn escaped_char_decode(&mut self) -> Option<char> {
+        Some(match self.chars.next()? {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '0' => '\0',
+            a => a,
+        })
+    }
+
+    fn single_char(&mut self) -> Option<char> {
+        match self.chars.next() {
+            Some('\\') => self.escaped_char_decode(),
+            a => a,
+        }
+    }
+
     fn chr(&mut self) -> TokenType {
         use TokenType::Char;
         self.expect_char('\'');
-        let mut c = self.chars.next().expect("Unexpected EOF (a)");
-        if c == '\\' {
-            c = match self.chars.next().expect("Unexpected EOF (b)") {
-                'n' => '\n',
-                't' => '\t',
-                'r' => '\r',
-                '0' => '\0',
-                ch => ch,
-            }
+        let Some(c) = self.single_char() else {
+            return TokenType::UnexpectedEOF(Some("char"));
         };
         self.expect_char('\'');
         Char(c)
     }
 
     fn str(&mut self) -> TokenType {
-        use TokenType::Str;
         self.expect_char('"');
-        let mut chars: Vec<char> = Vec::new();
-        while let Some(c) = self.chars.next() {
-            chars.push(if c == '\\' {
-                match self.chars.next().expect("Unexpected EOF (c)") {
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    '0' => '\0',
-                    ch => ch,
-                }
-            } else if c == '"' {
-                break;
+        let mut string = String::new();
+        while let Some(c) = self.single_char() {
+            if c == '"' {
+                return TokenType::Str(string);
             } else {
-                c
-            });
+                string.push(c)
+            }
         }
-        Str(String::from_iter(chars))
+        TokenType::UnexpectedEOF(Some("string"))
     }
 
     fn eat_ret<F>(&mut self, rtn: F) -> F {
@@ -324,19 +331,12 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
     fn lambda_arg(&mut self) -> TokenType {
         self.expect_char('\\');
-
-        let mut chars = String::new();
-
-        while let Some(c) = self.chars.peek() {
-            match c {
-                '0'..='9' => chars.push(self.chars.next().unwrap()),
-                _ => break,
-            }
-        }
+        let chars = self.string_of_digits();
         if chars.is_empty() {
             TokenType::Lambda
         } else {
-            TokenType::LambdaArg(chars.parse().expect("Expected integer"))
+            // unwrap is OK because of return from string_of_digits
+            TokenType::LambdaArg(chars.parse().unwrap())
         }
     }
 
