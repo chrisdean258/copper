@@ -17,22 +17,25 @@ pub struct Error {
 
 #[derive(Debug, Clone)]
 pub enum ErrorType {
+    CannotAssignType(String, Operation, String),
+    CannotAssignUnit,
+    CannotDeriveReturnType,
+    CannotIndexType(String),
     CannotReturnTypeFromNonFunction(String),
-    MismatchedReturnType(String, String),
+    ClassHasNoFieldOrMethod(String, String),
+    ClassLacksInit(String),
+    EmptyBlock,
+    FuncTypeUnknown(String),
+    IfConditionNotBool(String),
+    IndexNotInt,
+    ListTypeMismatch(String, String),
+    LoopConditionNotBool(String),
+    MismatchedReturnTypes(String, String),
     NoDefinedBinOp(String, Operation, String),
     NoDefinedUnOp(String, Operation),
     NoSuchNameInScope(String),
-    FuncTypeUnknown(String),
     NotAssignable,
-    CannotAssignUnit,
-    CannotAssignType(String, Operation, String),
-    EmptyBlock,
-    LoopConditionNotBool(String),
-    IfConditionNotBool(String),
-    ListTypeMismatch(String, String),
-    CannotIndexType(String),
-    IndexNotInt,
-    ClassHasNoFieldOrMethod(String, String),
+    Originating,
 }
 
 impl std::error::Error for Error {}
@@ -45,44 +48,24 @@ impl std::fmt::Display for Error {
 impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::CannotReturnTypeFromNonFunction(t) => f.write_fmt(format_args!(
-                "Cannot return type `{t}` from outside a function"
-            )),
-            Self::MismatchedReturnType(t1, t2) => f.write_fmt(format_args!(
-                "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",
-            )),
-            Self::NoDefinedBinOp(t1, op, t2) => f.write_fmt(format_args!(
-                "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",
-            )),
-            Self::NoDefinedUnOp(t, op) => f.write_fmt(format_args!(
-                "Cannot apply binary operation {op} to `{t}`. No operation has been defined",
-            )),
-            Self::NoSuchNameInScope(s) => f.write_fmt(format_args!(
-                "`no name `{s}` in scope",
-            )),
-            Self::FuncTypeUnknown(func) => f.write_fmt(format_args!(
-                "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",
-            )),
-            Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
+            Self::CannotAssignType(t1, op, t2) => f.write_fmt(format_args!( "Cannot assign `{t1}` {op} `{t2}`",)),
             Self::CannotAssignUnit => f.write_str("Cannot assign unit value"),
-            Self::CannotAssignType(t1, op, t2) => f.write_fmt(format_args!(
-                "Cannot assign `{t1}` {op} `{t2}`",
-            )),
+            Self::CannotIndexType(t) => f.write_fmt(format_args!( "Cannot index into type `{t}`")),
+            Self::CannotReturnTypeFromNonFunction(t) => f.write_fmt(format_args!( "Cannot return type `{t}` from outside a function")),
+            Self::ClassHasNoFieldOrMethod(t, fm) => f.write_fmt(format_args!( "Class `{t}` has no field or method `{fm}`",)),
+            Self::ClassLacksInit(t) => f.write_fmt(format_args!( "class `{t}` lacks the `__init__` method and cannot be constructed")),
             Self::EmptyBlock => f.write_str("Empty Block Expressions are not allowed (yet)"),
-            Self::LoopConditionNotBool(t) => f.write_str("While loop condition must be bool. This one is `{t}`"),
+            Self::FuncTypeUnknown(func) => f.write_fmt(format_args!( "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",)),
             Self::IfConditionNotBool(t) => f.write_str("if condition must be bool. This one is `{t}`"),
-            Self::ListTypeMismatch(t1, t2) => f.write_fmt(format_args!(
-                "List established to contain type `{t1}` but this element was of type `{t2}`",
-            )),
-            Self::CannotIndexType(t) => f.write_fmt(format_args!(
-                "Cannot index into type `{t}`"
-            )),
-            Self::IndexNotInt => f.write_str(
-                "Index expression requires 1 argument of type `int`"
-            ),
-            Self::ClassHasNoFieldOrMethod(t, fm) => f.write_fmt(format_args!(
-                "Class `{t}` has no field or method `{fm}`",
-            )),
+            Self::IndexNotInt => f.write_str( "Index expression requires 1 argument of type `int`"),
+            Self::ListTypeMismatch(t1, t2) => f.write_fmt(format_args!( "List established to contain type `{t1}` but this element was of type `{t2}`",)),
+            Self::LoopConditionNotBool(t) => f.write_str("While loop condition must be bool. This one is `{t}`"),
+            Self::MismatchedReturnTypes(t1, t2) => f.write_fmt(format_args!( "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",)),
+            Self::NoDefinedBinOp(t1, op, t2) => f.write_fmt(format_args!( "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",)),
+            Self::NoDefinedUnOp(t, op) => f.write_fmt(format_args!( "Cannot apply binary operation {op} to `{t}`. No operation has been defined",)),
+            Self::NoSuchNameInScope(s) => f.write_fmt(format_args!( "`no name `{s}` in scope",)),
+            Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
+            Self::Originating => f.write_str("Originating here"),
         }
     }
 }
@@ -137,6 +120,7 @@ pub enum TypedExpressionType {
     For(For),
     If(TypedIf),
     CallExpr(TypedCallExpr),
+    InitCallExpr(TypedInitCallExpr),
     MethodCallExpr(TypedMethodCallExpr),
     PossibleMethodCall(PossibleMethodCall),
     VarRefExpr(TypedVarRefExpr),
@@ -160,6 +144,7 @@ pub enum TypedExpressionType {
     // FuncRefExpr(FuncRefExpr),
     RepeatedArg,
     Null,
+    UnknownReturn,
 }
 
 #[derive(Debug, Clone)]
@@ -260,7 +245,6 @@ pub struct TypedStr {
 pub struct TypedCallExpr {
     pub function: Box<TypedExpression>,
     pub args: Vec<TypedExpression>,
-    pub alloc_before_call: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -268,6 +252,13 @@ pub struct TypedMethodCallExpr {
     pub obj: Box<TypedExpression>,
     pub args: Vec<TypedExpression>,
     pub method_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedInitCallExpr {
+    pub obj: Box<TypedExpression>,
+    pub args: Vec<TypedExpression>,
+    pub alloc_before_call: usize,
 }
 
 impl TypeChecker {
@@ -317,11 +308,25 @@ impl TypeChecker {
         exprs.into_iter().map(|s| self.expr(s)).collect()
     }
 
-    fn error(&mut self, err: ErrorType) -> Result<(TypedExpressionType, Type), ()> {
+    fn error<T>(&mut self, err: ErrorType) -> Result<T, ()> {
         self.errors.push(Error {
             err,
             loc: self.location.clone().unwrap(),
         });
+        Err(())
+    }
+
+    fn error_add_origin<T>(&mut self, origin: Location) -> Result<T, ()> {
+        self.errors.push(Error {
+            err: ErrorType::Originating,
+            loc: origin,
+        });
+        Err(())
+    }
+
+    fn error_with_origin<T>(&mut self, err: ErrorType, origin: Location) -> Result<T, ()> {
+        self.error(err);
+        self.error_add_origin(origin);
         Err(())
     }
 
@@ -437,13 +442,10 @@ impl TypeChecker {
                 self.func_returns[last_idx] = Some(typ);
             }
             Some(Some(v)) if *v == typ => (),
-            Some(Some(v)) => {
-                self.error(ErrorType::MismatchedReturnType(
-                    self.system.typename(typ),
-                    self.system.typename(*v),
-                ));
-                return Err(());
-            }
+            Some(Some(v)) => self.error(ErrorType::MismatchedReturnTypes(
+                self.system.typename(typ),
+                self.system.typename(*v),
+            ))?,
         }
 
         Ok(TypedStatement::Return(TypedReturn { body }))
@@ -464,7 +466,7 @@ impl TypeChecker {
         self.location = Some(e.location.clone());
         let (typedexpressiontype, typ) = match e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
-            ExpressionType::For(f) => self.forexpr(f),
+            ExpressionType::For(f) => todo!("{f:?}"),
             ExpressionType::If(i) => self.ifexpr(i),
             ExpressionType::CallExpr(c) => self.call(c),
             ExpressionType::RefExpr(r) => self.refexpr(r),
@@ -484,10 +486,7 @@ impl TypeChecker {
             ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
-            ExpressionType::PossibleMethodCall(m) => {
-                e.etype = self.possible_method_call(m.clone())?;
-                self.expr(e)
-            }
+            ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m)?,
         }?;
         // if rv == UNKNOWN_RETURN {
         // self.need_recheck = true;
@@ -691,7 +690,7 @@ impl TypeChecker {
         let cond = self.expr(*w.condition);
         match cond {
             Ok(t) if t.typ != BOOL => {
-                self.error(ErrorType::LoopConditionNotBool(self.system.typename(t.typ)));
+                self.error::<()>(ErrorType::LoopConditionNotBool(self.system.typename(t.typ)));
             }
             _ => (),
         }
@@ -720,7 +719,7 @@ impl TypeChecker {
         let cond = self.expr(*i.condition);
         match cond {
             Ok(t) if t.typ != BOOL && t.typ != UNKNOWN_RETURN => {
-                self.error(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
+                self.error::<()>(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
             }
             _ => (),
         }
@@ -797,7 +796,7 @@ impl TypeChecker {
             if interior_type == UNIT {
                 interior_type = te.typ;
             } else if te.typ != interior_type {
-                self.error(ErrorType::ListTypeMismatch(
+                self.error::<()>(ErrorType::ListTypeMismatch(
                     self.system.typename(interior_type),
                     self.system.typename(te.typ),
                 ));
@@ -904,73 +903,68 @@ impl TypeChecker {
     }
 
     fn call(&mut self, c: CallExpr) -> Result<(TypedExpressionType, Type), ()> {
-        macro_rules! mangle {
-            ($c:ident, $args:ident, $out:expr) => {
-                match &$c.function.as_ref().etype {
-                    ExpressionType::RefExpr(r) => {
-                        if self.scope_lookup_func(&r.name).is_some() {
-                            $c.function.as_mut().etype = ExpressionType::FuncRefExpr(FuncRefExpr {
-                                name: r.name.clone(),
-                                sig: Signature::new($args.clone(), None, $out),
-                            })
-                        }
-                    }
-                    _ => (),
-                }
-            };
-        }
         let save = self.allow_raw_func;
         self.allow_raw_func = true;
         let mut functype = self.expr(*c.function);
         self.allow_raw_func = save;
         let mut funcloc = c.function.location.clone();
-        let mut args = self.vec_of_exprs(c.args)?;
+        let args = self.vec_of_exprs(c.args)?;
+        let argtypes: Vec<Type> = args.iter().map(|e| e.typ).collect();
         let subject = functype?;
 
         let mut override_return = None;
         if self.system.is_class(subject.typ) {
+            debug_assert!(
+                !c.method_name.is_some(),
+                "Class fields/static methods not supported yet"
+            );
             let classdecl = self.type_to_class.get(&subject.typ).unwrap().clone();
-            c.alloc_before_call = Some(classdecl.borrow().fields.len());
-            match classdecl.borrow_mut().methods.get_mut("__init__") {
-                Some(init) => {
-                    match &mut init.etype {
-                        ExpressionType::Function(f) => {
-                            f.borrow_mut().alloc_before_call = c.alloc_before_call
-                        }
-                        _ => unreachable!(),
-                    }
-                    funcloc = init.location.clone();
-                    let unresolved = self.system.class_new_unresolved(functype);
-                    args.push(unresolved);
-                    functype = self.expr(init)?;
-                    override_return = Some(unresolved);
+            let alloc_before_call = classdecl.borrow().fields.len();
+            c.alloc_before_call = Some(alloc_before_call);
+            if let Some(init) = classdecl.borrow_mut().methods.get_mut("__init__") {
+                if let ExpressionType::Function(f) = &mut init.etype {
+                    f.borrow_mut().alloc_before_call = c.alloc_before_call;
                 }
-                _ => {
-                    return Err(vec![funcloc.errfmt(format_args!(
-                        "class {} contains no __init__ method",
-                        self.system.typename(functype)
-                    ))]);
-                }
-            };
-        } else if let Some(name) = &c.method_name {
-            let clstype = self.system.class_underlying(functype);
+                let unresolved = self.system.class_new_unresolved(subject.typ);
+                argtypes.insert(0, unresolved);
+                let init_func = self.expr(init.clone())?;
+                return Ok((
+                    TypedExpressionType::InitCallExpr(TypedInitCallExpr {
+                        obj: Box::new(subject),
+                        args,
+                        alloc_before_call,
+                    }),
+                    unresolved,
+                ));
+            } else {
+                return self.error(ErrorType::ClassLacksInit(self.system.typename(subject.typ)));
+            }
+        } else if let Some(name) = c.method_name {
+            let clstype = self.system.class_underlying(subject.typ);
             let classdecl = self.type_to_class.get_mut(&clstype).unwrap().clone();
-            args.push(functype);
+            if let Some(method) = classdecl.borrow_mut().methods.get_mut(&name) {
+                args.insert(0, subject);
+                let method_func = self.expr(method.clone())?;
+                return Ok((
+                    TypedExpressionType::MethodCallExpr(TypedMethodCallExpr {
+                        obj: Box::new(subject),
+                        args,
+                        method_name: name,
+                    }),
+                    unresolved,
+                ));
+            } else {
+                return self.error(ErrorType::ClassHasNoFieldOrMethod(
+                    self.system.typename(subject.typ),
+                    name,
+                ));
+            }
             functype = self.expr(classdecl.borrow_mut().methods.get_mut(name).unwrap())?;
         }
 
         if !self.system.is_function(functype) {
             return Err(self.error("Trying to call value that is not callable".to_string()));
         }
-
-        let mut errs: TypeError = Vec::new();
-        for arg in c.args.iter_mut() {
-            match self.expr(arg) {
-                Ok(t) => args.push(t),
-                Err(mut s) => errs.append(&mut s),
-            }
-        }
-        check_err!(errs);
 
         if functype == BUILTIN_FUNCTION {
             let funcname = match &c.function.as_ref().etype {
@@ -1015,10 +1009,16 @@ impl TypeChecker {
         args: Vec<Type>,
         funcloc: Location,
         c: &mut CallExpr,
-    ) -> Result<Type, TypeError> {
+    ) -> Result<TypedExpression, ()> {
         match function.try_borrow_mut() {
             Ok(_) => (),
-            Err(_) => return Ok(UNKNOWN_RETURN),
+            Err(_) => {
+                return Ok(TypedExpression {
+                    etype: TypedExpressionType::UnknownReturn,
+                    location: self.location.clone().unwrap(),
+                    typ: UNKNOWN_RETURN,
+                })
+            }
         }
         let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
         if let Some(name) = &function.borrow().name {
@@ -1046,8 +1046,8 @@ impl TypeChecker {
         &mut self,
         function: &Rc<RefCell<parser::Function>>,
         args: &[Type],
-        funcloc: &Location,
-    ) -> Result<(Type, usize), TypeError> {
+        calling_location: &Location,
+    ) -> Result<(TypedExpression, usize), ()> {
         self.openscope();
         if let Some(name) = function.borrow().repeated.clone() {
             if args.len() > function.borrow().argnames.len() {
@@ -1059,39 +1059,38 @@ impl TypeChecker {
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
             self.insert_scope(name, *typ);
         }
-        let rv = self.call_single_check(function.borrow_mut().body.as_mut(), funcloc)?;
+        let rv = self.call_single_check(*function.borrow_mut().body.clone(), calling_location)?;
         Ok((rv, self.closescope()))
     }
 
     fn call_single_check(
         &mut self,
-        function: &mut Expression,
-        funcloc: &Location,
-    ) -> Result<Type, TypeError> {
+        function: Expression,
+        calling_location: &Location,
+    ) -> Result<TypedExpression, ()> {
         self.func_returns.push(None);
         let save_repeated = self.repeated_arg.clone();
         let rv = match self.expr(function) {
-            Ok(t) if t == UNKNOWN_RETURN => {
-                return Err(vec![
-                    format!("{}: Could not determine return type. This is probably an infinite recursion bug", funcloc),
-                    self.errmsg("Originating with this function call".to_string())
-                ]);
+            Ok(t) if t.typ == UNKNOWN_RETURN => {
+                self.error_with_origin(
+                    ErrorType::CannotDeriveReturnType,
+                    calling_location.clone(),
+                )?;
+                return Err(());
+            }
+            Err(()) => {
+                return self.error_add_origin(calling_location.clone());
             }
             Ok(t) => t,
-            Err(mut s) => {
-                s.push(self.errmsg("Originating with this function call".to_string()));
-                return Err(s);
-            }
         };
         self.repeated_arg = save_repeated;
         let derived = self.func_returns.pop().unwrap();
         match derived {
-            Some(t) if t != rv => {
-                return Err(self.error(format!(
-                    "Cannot return type {} from function. Return type already encountered is {}",
-                    self.system.typename(rv),
+            Some(t) if t != rv.typ => {
+                return self.error(ErrorType::MismatchedReturnTypes(
+                    self.system.typename(rv.typ),
                     self.system.typename(t),
-                )))
+                ));
             }
             _ => (),
         }
@@ -1192,7 +1191,7 @@ impl TypeChecker {
 
         self.openscope();
         self.func_returns.push(None);
-        let rv = self.call_single_check(lambda.borrow_mut().body.as_mut(), &funcloc)?;
+        let rv = self.call_single_check(*lambda.borrow_mut().body.clone(), &funcloc)?;
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
         swap(&mut self.lambda_args, &mut args);
         let rftyp = self
@@ -1202,7 +1201,7 @@ impl TypeChecker {
         Ok(rv)
     }
 
-    fn dotted_lookup(&mut self, d: &mut DottedLookup) -> Result<Type, TypeError> {
+    fn dotted_lookup(&mut self, d: DottedLookup) -> Result<Type, TypeError> {
         let lhs_typ = self.expr(d.lhs.as_mut())?;
         let classdecltyp = self.system.class_underlying(lhs_typ);
         let classdecl = self.type_to_class.get(&classdecltyp).unwrap();
