@@ -36,6 +36,7 @@ pub enum ErrorType {
     NoSuchNameInScope(String),
     NotAssignable,
     Originating,
+    UninitializedAssignment,
 }
 
 impl std::error::Error for Error {}
@@ -66,6 +67,7 @@ impl std::fmt::Display for ErrorType {
             Self::NoSuchNameInScope(s) => f.write_fmt(format_args!( "`no name `{s}` in scope",)),
             Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
             Self::Originating => f.write_str("Originating here"),
+            Self::UninitializedAssignment => f.write_str("Trying to assign to variable with uninitialized type. This might be a bug"),
         }
     }
 }
@@ -139,7 +141,7 @@ pub enum TypedExpressionType {
     List(TypedList),
     Str(TypedStr),
     IndexExpr(TypedIndexExpr),
-    DottedLookup(DottedLookup),
+    DottedLookup(TypedDottedLookup),
     LambdaArg(TypedLambdaArg),
     // FuncRefExpr(FuncRefExpr),
     RepeatedArg,
@@ -259,6 +261,12 @@ pub struct TypedInitCallExpr {
     pub obj: Box<TypedExpression>,
     pub args: Vec<TypedExpression>,
     pub alloc_before_call: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedDottedLookup {
+    pub lhs: Box<TypedExpression>,
+    pub rhs: String,
 }
 
 impl TypeChecker {
@@ -1182,10 +1190,14 @@ impl TypeChecker {
         mut args: Vec<Type>,
         funcloc: Location,
         c: &mut CallExpr,
-    ) -> Result<Type, TypeError> {
-        if let Some(t) = self.system.match_signature(functype, &args) {
-            return Ok(t);
-        }
+    ) -> Result<TypedExpression, ()> {
+        // There may be a systen where we can cache the results of these expressions
+        // But currently I'm not 100% sure on the relationship between functions and types
+        // And it seems like I should move the the resolved/unresolved system I use for classes
+        // But this should work
+        // if let Some(t) = self.system.match_signature(functype, &args) {
+        // return Ok(t);
+        // }
 
         swap(&mut self.lambda_args, &mut args);
 
@@ -1196,27 +1208,34 @@ impl TypeChecker {
         swap(&mut self.lambda_args, &mut args);
         let rftyp = self
             .system
-            .add_function_signature(functype, Signature::new(args, None, rv));
+            .add_function_signature(functype, Signature::new(args, None, rv.typ));
         c.function.as_mut().derived_type = Some(rftyp);
         Ok(rv)
     }
 
-    fn dotted_lookup(&mut self, d: DottedLookup) -> Result<Type, TypeError> {
-        let lhs_typ = self.expr(d.lhs.as_mut())?;
-        let classdecltyp = self.system.class_underlying(lhs_typ);
+    fn dotted_lookup(&mut self, d: DottedLookup) -> Result<(TypedExpressionType, Type), ()> {
+        let lhs = self.expr(*d.lhs)?;
+        let classdecltyp = self.system.class_underlying(lhs.typ);
         let classdecl = self.type_to_class.get(&classdecltyp).unwrap();
         let idx = *classdecl.borrow().fields.get(&d.rhs).unwrap();
         d.index = Some(idx);
-        let field_type = self.system.class_query_field(lhs_typ, idx);
-        match (field_type, self.allow_insert) {
-            (Some(ft), _) => Ok(ft),
+        let field_type = self.system.class_query_field(lhs.typ, idx);
+        let typ = match (field_type, self.allow_insert) {
+            (Some(ft), _) => ft,
             (None, Some(ai)) => {
-                self.system.set_field_type(lhs_typ, idx, ai);
-                Ok(ai)
+                self.system.set_field_type(lhs.typ, idx, ai);
+                ai
             }
             (None, None) => {
-                Err(self.error("Trying to assign with an uninitialized type".to_string()))
+                return self.error(ErrorType::UninitializedAssignment);
             }
-        }
+        };
+        Ok((
+            TypedExpressionType::DottedLookup(TypedDottedLookup {
+                lhs: Box::new(lhs),
+                rhs: d.rhs,
+            }),
+            typ,
+        ))
     }
 }
