@@ -37,6 +37,8 @@ pub enum ErrorType {
     NotAssignable,
     Originating,
     UninitializedAssignment,
+    WrongNumberOfArguments(usize, usize),
+    WrongNumberOfArgumentsWithDefault(usize, usize, usize),
 }
 
 impl std::error::Error for Error {}
@@ -68,6 +70,8 @@ impl std::fmt::Display for ErrorType {
             Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
             Self::Originating => f.write_str("Originating here"),
             Self::UninitializedAssignment => f.write_str("Trying to assign to variable with uninitialized type. This might be a bug"),
+            Self::WrongNumberOfArguments(e, t) => f.write_fmt(format_args!( "Wrong number of arguments. Expected {e} found {t}",)),
+            Self::WrongNumberOfArgumentsWithDefault(a, d, t) => f.write_fmt(format_args!( "Wrong number of arguments. Found {a} arguemnts with {d} defaults. Expected a total of {t}",)),
         }
     }
 }
@@ -81,6 +85,8 @@ pub struct TypeChecker {
     type_to_func: HashMap<Type, Rc<RefCell<parser::Function>>>,
     type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
     type_to_class: HashMap<Type, Rc<RefCell<ClassDecl>>>,
+
+    type_to_resolved_func: HashMap<Type, TypedExpression>,
 
     allow_insert: Option<Type>,
     lambda_args: Vec<Type>,
@@ -279,6 +285,7 @@ impl TypeChecker {
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
             type_to_class: HashMap::new(),
+            type_to_resolved_func: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
             location: None,
@@ -1112,28 +1119,23 @@ impl TypeChecker {
         mut args: Vec<Type>,
         funcloc: Location,
         c: &mut CallExpr,
-    ) -> Result<Type, TypeError> {
+    ) -> Result<TypedExpression, ()> {
         let num_default_needed = if function.borrow().repeated.is_some() {
             0
         } else {
             let argnamelen = function.borrow().argnames.len();
             if argnamelen < args.len() {
-                return Err(self.error(format!(
-                    "Too many arguments. Expected {} found {}",
-                    argnamelen,
-                    args.len()
-                )));
+                return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
             }
             argnamelen - args.len()
         };
 
         if num_default_needed > function.borrow().default_args.len() {
-            return Err(self.error(format!(
-                "Trying to call function with {} args + {} default args. Expected {} total",
+            return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
                 args.len(),
                 function.borrow().default_args.len(),
                 function.borrow().argnames.len(),
-            )));
+            ));
         }
 
         let first_default = function.borrow().default_args.len() - num_default_needed;
@@ -1147,8 +1149,8 @@ impl TypeChecker {
 
         //check if we have already memoized a matching signature
         if let Some(t) = self.system.function_get_resolved(functype, &args) {
-            c.function.as_mut().derived_type = Some(t);
-            return Ok(t);
+            let expr = self.type_to_resolved_func.get(&t).unwrap().clone();
+            return Ok(expr);
         }
 
         let save = self.need_recheck;
@@ -1167,11 +1169,13 @@ impl TypeChecker {
         };
         let rftyp = self.system.add_function_signature(functype, func_sig);
         c.function.as_mut().derived_type = Some(rftyp);
+        self.type_to_resolved_func.insert(rv.typ, rv.clone());
 
         if self.need_recheck {
             let (new_rv, num_locals) =
                 self.call_function_single_check(&function, &args, &funcloc)?;
             if new_rv.typ != rv.typ {
+                self.type_to_resolved_func.remove(&rv.typ);
                 return self.error_with_origin(
                     ErrorType::MismatchedReturnTypes(
                         self.system.typename(new_rv.typ),
@@ -1180,11 +1184,14 @@ impl TypeChecker {
                     funcloc,
                 );
             }
+            self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
             debug_assert_eq!(function.borrow_mut().locals.unwrap(), num_locals);
+            self.need_recheck = save;
+            Ok(new_rv)
+        } else {
+            self.need_recheck = save;
+            Ok(rv)
         }
-        self.need_recheck = save;
-        Ok(rv);
-        todo!();
     }
 
     fn call_lambda(
