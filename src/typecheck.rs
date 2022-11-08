@@ -333,8 +333,8 @@ impl TypeChecker {
     }
 
     fn error_with_origin<T>(&mut self, err: ErrorType, origin: Location) -> Result<T, ()> {
-        self.error(err);
-        self.error_add_origin(origin);
+        self.error::<()>(err);
+        self.error_add_origin::<()>(origin);
         Err(())
     }
 
@@ -491,10 +491,10 @@ impl TypeChecker {
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
-            ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+            ExpressionType::FuncRefExpr(r) => todo!(), //self.funcrefexpr(r),
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
-            ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m)?,
+            ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m),
         }?;
         // if rv == UNKNOWN_RETURN {
         // self.need_recheck = true;
@@ -1140,9 +1140,9 @@ impl TypeChecker {
 
         for i in 0..num_default_needed {
             let mut expr = function.borrow().default_args[i + first_default].clone();
-            let typ = self.expr(&mut expr)?;
+            let typ = self.expr(expr)?;
             c.args.push(expr);
-            args.push(typ);
+            args.push(typ.typ);
         }
 
         //check if we have already memoized a matching signature
@@ -1156,13 +1156,13 @@ impl TypeChecker {
         let (rv, num_locals) = self.call_function_single_check(&function, &args, &funcloc)?;
         function.borrow_mut().locals = Some(num_locals);
         let func_sig = if function.borrow().repeated.is_none() {
-            Signature::new(args.clone(), None, rv)
+            Signature::new(args.clone(), None, rv.typ)
         } else {
             let num = function.borrow().argnames.len();
             Signature::new(
                 args.iter().take(num).cloned().collect(),
                 args.last().cloned(),
-                rv,
+                rv.typ,
             )
         };
         let rftyp = self.system.add_function_signature(functype, func_sig);
@@ -1171,16 +1171,20 @@ impl TypeChecker {
         if self.need_recheck {
             let (new_rv, num_locals) =
                 self.call_function_single_check(&function, &args, &funcloc)?;
-            if new_rv != rv {
-                return Err(vec![format!(
-                            "{}: Could not determine return type. Derived both `{}` and `{}` as return types.",
-                            funcloc, self.system.typename(new_rv), self.system.typename(rv)),
-                        self.errmsg("Originating with this function call".to_string()) ]);
+            if new_rv.typ != rv.typ {
+                return self.error_with_origin(
+                    ErrorType::MismatchedReturnTypes(
+                        self.system.typename(new_rv.typ),
+                        self.system.typename(rv.typ),
+                    ),
+                    funcloc,
+                );
             }
             debug_assert_eq!(function.borrow_mut().locals.unwrap(), num_locals);
         }
         self.need_recheck = save;
-        Ok(rv)
+        Ok(rv);
+        todo!();
     }
 
     fn call_lambda(
