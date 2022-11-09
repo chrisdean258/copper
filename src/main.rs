@@ -2,6 +2,7 @@ mod allocator;
 mod builtins;
 mod code_builder;
 mod compiler;
+mod error;
 mod eval;
 mod interpretter;
 mod lex;

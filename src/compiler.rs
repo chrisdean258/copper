@@ -3,6 +3,7 @@ use crate::{
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
     parser::*,
+    typecheck::TypedParseTree,
     typesystem::{Signature, Type, TypeSystem, NULL},
     value::Value,
 };
@@ -75,7 +76,7 @@ impl Compiler {
     pub fn compile(
         &mut self,
         name: String,
-        p: &ParseTree,
+        p: &TypedParseTree,
         types: &TypeSystem,
     ) -> (Vec<MachineOperation>, Vec<String>, usize) {
         self.types = Some(types.clone());

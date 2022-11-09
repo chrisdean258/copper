@@ -62,14 +62,14 @@ impl Interpretter {
         label: String,
         lexer: Lexer<T>,
     ) -> Result<Value, Box<dyn std::error::Error>> {
-        let mut tree = parser::parse(lexer)?;
-        self.typechecker.typecheck(&mut tree)?;
+        let tree = parser::parse(lexer)?;
+        let typedtree = self.typechecker.typecheck(tree)?;
         if self.typecheck_only {
             return Ok(Value::Uninitialized);
         }
-        let (code, strings, entry) = self
-            .compiler
-            .compile(label, &tree, &self.typechecker.system);
+        let (code, strings, entry) =
+            self.compiler
+                .compile(label, &typedtree, &self.typechecker.system);
         if cfg!(debug_assertions) && self.debug {
             self.print_code(&code);
         }
