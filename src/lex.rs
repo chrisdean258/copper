@@ -5,9 +5,9 @@ mod chariter;
 use chariter::CharIter;
 use std::rc::Rc;
 
-pub struct Lexer<T: Iterator<Item = String>> {
+pub struct Lexer {
     label: Rc<String>,
-    chars: CharIter<T>,
+    chars: CharIter,
 }
 
 #[derive(Debug, Clone)]
@@ -167,7 +167,7 @@ impl Display for TokenType {
     }
 }
 
-impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
+impl Iterator for Lexer {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -175,15 +175,19 @@ impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
     }
 }
 
-impl<T: Iterator<Item = String>> Lexer<T> {
-    pub fn new(label: &str, lines: T) -> Lexer<T> {
+impl Lexer {
+    pub fn new<T: Iterator<Item = String>>(label: &str, lines: T) -> Lexer {
         Lexer {
             label: Rc::new(label.into()),
             chars: CharIter::new(lines),
         }
     }
 
-    pub fn new_with_lineno(label: &str, lines: T, lineno: usize) -> Lexer<T> {
+    pub fn new_with_lineno<T: Iterator<Item = String>>(
+        label: &str,
+        lines: T,
+        lineno: usize,
+    ) -> Lexer {
         Lexer {
             label: Rc::new(label.into()),
             chars: CharIter::new_with_lineno(lines, lineno),
@@ -192,7 +196,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
     #[allow(dead_code)]
     fn location(&self) -> Location {
-        let borrowed: &CharIter<T> = self.chars.borrow();
+        let borrowed: &CharIter = self.chars.borrow();
         let (row, col) = borrowed.location();
         Location::new(self.label.clone(), row, col)
     }

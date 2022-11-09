@@ -1,69 +1,68 @@
-pub struct CharIter<T: Iterator<Item = String>> {
-    lines: T,
-    cur_line: Option<Vec<char>>,
+pub struct CharIter {
+    chars: Vec<char>,
     line_no: usize,
     col_no: usize,
-    peeked: Option<Option<char>>,
+    prev_line_no: usize,
+    prev_col_no: usize,
+    idx: usize,
 }
 
-impl<T: Iterator<Item = String>> Iterator for CharIter<T> {
+impl Iterator for CharIter {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(rv) = self.peeked {
-            self.peeked = None;
-            rv
-        } else if let Some(rv) = self.peek() {
-            self.peeked = None;
-            Some(rv)
-        } else {
-            None
-        }
-    }
-}
-
-impl<T: Iterator<Item = String>> CharIter<T> {
-    pub fn new(lines: T) -> Self {
-        CharIter {
-            lines,
-            cur_line: None,
-            line_no: 0,
-            col_no: 0,
-            peeked: None,
-        }
-    }
-
-    pub fn new_with_lineno(lines: T, lineno: usize) -> Self {
-        CharIter {
-            lines,
-            cur_line: None,
-            line_no: lineno - 1,
-            col_no: 0,
-            peeked: None,
-        }
-    }
-
-    pub fn location(&self) -> (usize, usize) {
-        (self.line_no, self.col_no)
-    }
-
-    pub fn peek(&mut self) -> Option<char> {
-        if self.peeked.is_some() {
-            return self.peeked.unwrap();
-        }
-        while self.cur_line.is_none() || self.col_no >= self.cur_line.as_ref()?.len() {
-            let line = self.lines.next()?;
-            self.cur_line = Some(line.chars().collect());
-            let len = self.cur_line.as_ref()?.len();
-            if len == 0 || self.cur_line.as_ref()?[len - 1] != '\n' {
-                self.cur_line.as_mut()?.push('\n');
-            }
+        let rv = self.chars.get(self.idx).cloned();
+        self.idx += 1;
+        self.prev_line_no = self.line_no;
+        self.prev_col_no = self.col_no;
+        if let Some('\n') = self.peek() {
             self.line_no += 1;
             self.col_no = 0;
         }
         self.col_no += 1;
-        self.peeked = Some(Some(self.cur_line.as_ref()?[self.col_no - 1]));
-        self.peeked.unwrap()
+        rv
+    }
+}
+
+impl CharIter {
+    pub fn new<T: Iterator<Item = String>>(lines: T) -> Self {
+        CharIter {
+            chars: lines
+                .flat_map(|s| {
+                    let mut c = s.chars().collect::<Vec<char>>();
+                    if c.is_empty() || c.last() != Some(&'\n') {
+                        c.push('\n');
+                    }
+                    c
+                })
+                .collect(),
+            line_no: 1,
+            col_no: 1,
+            prev_col_no: 1,
+            prev_line_no: 1,
+            idx: 0,
+        }
+    }
+
+    pub fn new_with_lineno<T: Iterator<Item = String>>(lines: T, lineno: usize) -> Self {
+        CharIter {
+            chars: lines
+                .flat_map(|s| s.chars().collect::<Vec<char>>())
+                .collect(),
+            line_no: lineno,
+            col_no: 0,
+            prev_col_no: 0,
+            prev_line_no: lineno,
+            idx: 0,
+        }
+    }
+
+    pub fn location(&self) -> (usize, usize) {
+        (self.prev_line_no, self.prev_col_no)
+    }
+
+    pub fn peek(&mut self) -> Option<char> {
+        self.chars.get(self.idx).cloned()
     }
 
     pub fn next_if<F>(&mut self, func: F) -> Option<char>
