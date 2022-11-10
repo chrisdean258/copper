@@ -2,17 +2,12 @@ use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
-    parser::{ClassDecl, Function},
+    parser::{ClassDecl, Function, Lambda},
     typecheck::*,
     typesystem::{Signature, Type, TypeSystem, NULL},
     value::Value,
 };
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    mem::{swap, take},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, mem::swap, rc::Rc};
 
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
@@ -215,10 +210,10 @@ impl Compiler {
     fn expr(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
-            TypedExpressionType::For(f) => self.forexpr(f),
+            TypedExpressionType::For(f) => todo!(), //self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
-            TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+            TypedExpressionType::FuncRefExpr(r) => todo!(), //self.funcrefexpr(r),
             TypedExpressionType::Immediate(i) => self.immediate(i),
             TypedExpressionType::BlockExpr(b) => self.block(b),
             TypedExpressionType::BinOp(b) => self.binop(b),
@@ -657,7 +652,10 @@ impl Compiler {
             self.code.alloc(size);
             self.code.store_fast();
         }
-        self.expr(f.body.as_ref());
+        if true {
+            todo!()
+        }
+        // self.expr(f.body.as_ref());
         if f.alloc_before_call.is_some() {
             self.code.local_ref(0);
             self.code.load();
@@ -690,7 +688,10 @@ impl Compiler {
         if l.locals.unwrap() > sig.inputs.len() {
             self.code.reserve(l.locals.unwrap() - sig.inputs.len());
         }
-        self.expr(l.body.as_ref());
+        if true {
+            todo!();
+        }
+        // self.expr(l.body.as_ref());
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
