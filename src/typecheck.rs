@@ -107,6 +107,7 @@ pub struct TypeChecker {
 #[derive(Debug, Clone)]
 pub struct TypedParseTree {
     pub statements: Vec<TypedStatement>,
+    pub globals: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -161,42 +162,42 @@ pub enum TypedExpressionType {
 }
 
 #[derive(Debug, Clone)]
-struct TypedReturn {
-    body: Option<TypedExpression>,
+pub struct TypedReturn {
+    pub body: Option<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
-struct TypedBinOp {
+pub struct TypedBinOp {
     pub lhs: Box<TypedExpression>,
     pub op: Operation,
     pub rhs: Box<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
-struct TypedPreUnOp {
+pub struct TypedPreUnOp {
     pub op: Operation,
     pub rhs: Box<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
-struct TypedPostUnOp {
+pub struct TypedPostUnOp {
     pub lhs: Box<TypedExpression>,
     pub op: Operation,
 }
 
 #[derive(Debug, Clone)]
-struct TypedVarRefExpr {
+pub struct TypedVarRefExpr {
     pub name: String,
     pub is_decl: bool,
 }
 
 #[derive(Debug, Clone)]
-struct TypedClassRefExpr {
+pub struct TypedClassRefExpr {
     pub name: String,
 }
 
 #[derive(Debug, Clone)]
-struct TypedFuncRefExpr {
+pub struct TypedFuncRefExpr {
     pub name: String,
 }
 
@@ -278,6 +279,7 @@ pub struct TypedInitCallExpr {
 pub struct TypedDottedLookup {
     pub lhs: Box<TypedExpression>,
     pub rhs: String,
+    pub index: usize,
 }
 
 impl TypeChecker {
@@ -313,14 +315,17 @@ impl TypeChecker {
         &mut self,
         mut p: ParseTree,
     ) -> Result<TypedParseTree, ErrorCollection<Error>> {
-        let _results = match self.vec_of_statement(p.statements) {
+        let results = match self.vec_of_statement(p.statements) {
             Ok(types) => types,
             Err(()) => return Err(take(&mut self.errors)),
         };
         self.globals += self.scopes[1].borrow().len();
         p.globals = Some(self.scopes[1].borrow().len());
 
-        todo!()
+        Ok(TypedParseTree {
+            statements: results,
+            globals: self.globals,
+        })
     }
 
     pub fn vec_of_statement(&mut self, stats: Vec<Statement>) -> Result<Vec<TypedStatement>, ()> {
@@ -1256,6 +1261,7 @@ impl TypeChecker {
             TypedExpressionType::DottedLookup(TypedDottedLookup {
                 lhs: Box::new(lhs),
                 rhs: d.rhs,
+                index: idx,
             }),
             typ,
         ))
