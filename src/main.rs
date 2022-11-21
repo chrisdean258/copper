@@ -33,9 +33,12 @@ fn real_main() -> i64 {
     let mut is_cmd = false;
     let mut use_stdin = false;
     let mut debug = false;
+    let mut use_stdlib = true;
     for arg in args[1..].iter() {
         if arg == "-t" || arg == "--typecheck" {
             typecheck_only = true;
+        } else if arg == "--no-stdlib" {
+            use_stdlib = false;
         } else if arg == "-d" || arg == "--debug" {
             if cfg!(debug_assertions) {
                 debug = true;
@@ -51,12 +54,14 @@ fn real_main() -> i64 {
         }
     }
 
-    let stdlib = find_stdlib();
-
     let mut intp = interpretter::Interpretter::new(typecheck_only, debug);
-    if let Err(s) = intp.interpret_file("__stdlib__".to_string(), &stdlib) {
-        eprintln!("{} (ERROR IN STDLIB)", s);
-        return 2;
+    if use_stdlib {
+        let stdlib = find_stdlib();
+
+        if let Err(s) = intp.interpret_file("__stdlib__".to_string(), &stdlib) {
+            eprintln!("{} (ERROR IN STDLIB)", s);
+            return 2;
+        }
     }
 
     let rv = match file_or_cmd {

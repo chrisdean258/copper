@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction, error::ErrorCollection, location::Location, operation::Operation,
     parser, parser::ParseTree, parser::*, typesystem, typesystem::*, value::Value,
@@ -185,6 +186,8 @@ pub struct TypedPostUnOp {
     pub op: Operation,
 }
 
+// TODO: Break this out into a separate struct that incapsulates declarations and variable
+// references separately
 #[derive(Debug, Clone)]
 pub struct TypedVarRefExpr {
     pub name: String,
@@ -353,8 +356,8 @@ impl TypeChecker {
     }
 
     fn error_with_origin<T>(&mut self, err: ErrorType, origin: Location) -> Result<T, ()> {
-        self.error::<()>(err);
-        self.error_add_origin::<()>(origin);
+        let _ = self.error::<()>(err);
+        let _ = self.error_add_origin::<()>(origin);
         Err(())
     }
 
@@ -511,7 +514,6 @@ impl TypeChecker {
             ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
             ExpressionType::LambdaArg(l) => self.lambdaarg(l),
             ExpressionType::Str(s) => self.string(s),
-            ExpressionType::FuncRefExpr(_r) => todo!(), //self.funcrefexpr(r),
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
             ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m),
@@ -718,7 +720,8 @@ impl TypeChecker {
         let cond = self.expr(*w.condition);
         match &cond {
             Ok(t) if t.typ != BOOL => {
-                self.error::<()>(ErrorType::LoopConditionNotBool(self.system.typename(t.typ)));
+                let _ =
+                    self.error::<()>(ErrorType::LoopConditionNotBool(self.system.typename(t.typ)));
             }
             _ => (),
         }
@@ -747,7 +750,8 @@ impl TypeChecker {
         let cond = self.expr(*i.condition);
         match &cond {
             Ok(t) if t.typ != BOOL && t.typ != UNKNOWN_RETURN => {
-                self.error::<()>(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
+                let _ =
+                    self.error::<()>(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
             }
             _ => (),
         }
@@ -805,7 +809,7 @@ impl TypeChecker {
             condition: Box::new(cond),
             body: Box::new(body),
             and_bodies,
-            else_body: else_body.map(|b| Box::new(b)),
+            else_body: else_body.map(Box::new),
             makes_option: None,
         };
 
@@ -826,7 +830,7 @@ impl TypeChecker {
             if interior_type == UNIT {
                 interior_type = te.typ;
             } else if te.typ != interior_type {
-                self.error::<()>(ErrorType::ListTypeMismatch(
+                let _ = self.error::<()>(ErrorType::ListTypeMismatch(
                     self.system.typename(interior_type),
                     self.system.typename(te.typ),
                 ));
@@ -869,13 +873,13 @@ impl TypeChecker {
         if let Some(s) = name {
             self.insert_func_scope(&s, typ);
         }
-        self.type_to_func.insert(typ, f.clone());
+        self.type_to_func.insert(typ, f);
         Ok((TypedExpressionType::Function, typ))
     }
 
     fn lambda(&mut self, l: Rc<RefCell<Lambda>>) -> Result<(TypedExpressionType, Type), ()> {
         let typ = self.system.function_type("<lambda>".to_string());
-        self.type_to_lambda.insert(typ, l.clone());
+        self.type_to_lambda.insert(typ, l);
         Ok((TypedExpressionType::Lambda, typ))
     }
 
@@ -946,7 +950,7 @@ impl TypeChecker {
         // let mut override_return = None;
         if self.system.is_class(subject.typ) {
             debug_assert!(
-                !c.method_name.is_some(),
+                c.method_name.is_none(),
                 "Class fields/static methods not supported yet"
             );
             let classdecl = self.type_to_class.get(&subject.typ).unwrap().clone();
@@ -959,7 +963,7 @@ impl TypeChecker {
                 let unresolved = self.system.class_new_unresolved(subject.typ);
                 argtypes.insert(0, unresolved);
                 let init_func = self.expr(init.clone())?;
-                (
+                let _ = (
                     TypedExpressionType::InitCallExpr(TypedInitCallExpr {
                         obj: Box::new(init_func),
                         args,
@@ -1031,6 +1035,7 @@ impl TypeChecker {
         // Ok(override_return.unwrap_or(rv)) // override return is for constructors
     }
 
+    #[allow(dead_code)]
     fn call_function(
         &mut self,
         function: Rc<RefCell<parser::Function>>,
@@ -1054,13 +1059,14 @@ impl TypeChecker {
             let func_sig = self
                 .system
                 .get_resolved_func_sig(c.function.derived_type.unwrap());
-            self.func_mangle_name_scope_insert(name, func_sig.clone());
+            self.func_mangle_name_scope_insert(name, func_sig);
             match &c.function.etype {
-                ExpressionType::RefExpr(r) => {
-                    c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
-                        name: r.name.clone(),
-                        sig: func_sig,
-                    })
+                ExpressionType::RefExpr(_r) => {
+                    todo!()
+                    // c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
+                    // name: r.name.clone(),
+                    // sig: func_sig,
+                    // })
                 }
                 ExpressionType::DottedLookup(_d) => {
                     todo!()
@@ -1210,6 +1216,7 @@ impl TypeChecker {
         }
     }
 
+    #[allow(dead_code)]
     fn call_lambda(
         &mut self,
         lambda: Rc<RefCell<Lambda>>,

@@ -242,7 +242,8 @@ impl Compiler {
             TypedExpressionType::RepeatedArg => self.repeated_arg(),
             TypedExpressionType::Null => self.null(e.typ),
             TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
-            _ => todo!(),
+            TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
+            e => todo!("{:?}", e),
         }
     }
 
@@ -358,30 +359,26 @@ impl Compiler {
         self.need_ref = save;
     }
 
-    // fn refexpr(&mut self, r: &TypedRefExpr) {
-    // let mem: MemoryLocation = if r.is_decl {
-    // let new_var = self.next_local();
-    // self.insert_scope(r.name.clone(), new_var);
-    // new_var
-    // } else {
-    // self.lookup_scope_local_or_global(&r.name)
-    // };
-    // match mem {
-    // MemoryLocation::BuiltinFunction(u) if !self.need_ref => {
-    // self.code.builtin_ref(u);
-    // return;
-    // }
-    // MemoryLocation::BuiltinFunction(u) => panic!("Cannot write to builtin function {}", u),
-    // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
-    // MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
-    // MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
-    // MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
-    // MemoryLocation::CurrentFunction => panic!("UNKNOWN"),
-    // };
-    // if !self.need_ref {
-    // self.code.load();
-    // }
-    // }
+    fn varrefexpr(&mut self, r: &TypedVarRefExpr) {
+        let mem: MemoryLocation = if r.is_decl {
+            let new_var = self.next_local();
+            self.insert_scope(r.name.clone(), new_var);
+            new_var
+        } else {
+            self.lookup_scope_local_or_global(&r.name)
+        };
+        match mem {
+            MemoryLocation::BuiltinFunction(u) => panic!("Should have been a funcrefexpr {}", u),
+            // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
+            MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
+            MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
+            MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+            MemoryLocation::CurrentFunction => panic!("UNKNOWN"),
+        };
+        if !self.need_ref {
+            self.code.load();
+        }
+    }
 
     fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
         for scope in table.iter().rev() {

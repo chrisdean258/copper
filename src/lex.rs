@@ -5,9 +5,9 @@ mod chariter;
 use chariter::CharIter;
 use std::rc::Rc;
 
-pub struct Lexer<T: Iterator<Item = String>> {
+pub struct Lexer {
     label: Rc<String>,
-    chars: CharIter<T>,
+    chars: CharIter,
 }
 
 #[derive(Debug, Clone)]
@@ -85,94 +85,89 @@ pub enum TokenType {
     BoolNot,
     BitShiftRight,
     BitShiftLeft,
-    ErrChar(char, Option<&'static str>),
-    UnexpectedEOF(Option<&'static str>),
+    ErrChar(char, &'static str),
+    UnexpectedEOF(&'static str),
 }
 
 impl Display for TokenType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        use TokenType::*;
         match self {
-            Identifier(s) => f.write_fmt(format_args!("{}", s)),
-            LambdaArg(u) => f.write_fmt(format_args!("{}", u)),
-            Str(s) => f.write_fmt(format_args!("\"{}\"", s)),
-            Int(i) => f.write_fmt(format_args!("{}", i)),
-            Float(d) => f.write_fmt(format_args!("{}", d)),
-            Bool(u) => f.write_fmt(format_args!("{}", u)),
-            Char(c) => f.write_fmt(format_args!("{}", c)),
-            Import => f.write_str("import"),
-            As => f.write_str("as"),
-            From => f.write_str("from"),
-            If => f.write_str("if"),
-            Else => f.write_str("else"),
-            And => f.write_str("and"),
-            While => f.write_str("while"),
-            For => f.write_str("for"),
-            In => f.write_str("in"),
-            Break => f.write_str("break"),
-            Continue => f.write_str("continue"),
-            Return => f.write_str("return"),
-            Function => f.write_str("fn"),
-            Lambda => f.write_str("\\"),
-            Class => f.write_str("class"),
-            Field => f.write_str("field"),
-            Null => f.write_str("null"),
-            OpenParen => f.write_str("("),
-            CloseParen => f.write_str(")"),
-            Comma => f.write_str(","),
-            Dot => f.write_str("."),
-            Equal => f.write_str("="),
-            AndEq => f.write_str("&="),
-            XorEq => f.write_str("^="),
-            OrEq => f.write_str("|="),
-            PlusEq => f.write_str("+="),
-            MinusEq => f.write_str("-="),
-            TimesEq => f.write_str("*="),
-            DivEq => f.write_str("/="),
-            ModEq => f.write_str("%="),
-            Plus => f.write_str("+"),
-            Minus => f.write_str("-"),
-            Times => f.write_str("*"),
-            Div => f.write_str("/"),
-            Mod => f.write_str("%"),
-            Inc => f.write_str("++"),
-            Dec => f.write_str("--"),
-            BitShiftRightEq => f.write_str(">>="),
-            BitShiftLeftEq => f.write_str("<<="),
-            Semicolon => f.write_str(";"),
-            OpenBrace => f.write_str("{"),
-            CloseBrace => f.write_str("}"),
-            OpenBracket => f.write_str("["),
-            CloseBracket => f.write_str("]"),
-            CmpEq => f.write_str("=="),
-            CmpNotEq => f.write_str("!="),
-            CmpGE => f.write_str(">="),
-            CmpGT => f.write_str(">"),
-            CmpLE => f.write_str("<="),
-            CmpLT => f.write_str("<"),
-            BitOr => f.write_str("|"),
-            BoolOr => f.write_str("||"),
-            BitAnd => f.write_str("&"),
-            BoolAnd => f.write_str("&&"),
-            BitNot => f.write_str("~"),
-            BitXor => f.write_str("^"),
-            BoolXor => f.write_str("^^"),
-            BoolNot => f.write_str("!"),
-            BitShiftRight => f.write_str(">>"),
-            BitShiftLeft => f.write_str("<<"),
-            ErrChar(c, s) => f.write_fmt(format_args!(
-                "Unexpected character '{c}'{}",
-                s.map(|c| format!(" while lexing {c}")).unwrap_or_default()
-            )),
-            UnexpectedEOF(s) => f.write_fmt(format_args!(
-                "Unexpected EOF{}",
-                s.map(|c| format!(" while lexing {c}")).unwrap_or_default()
-            )),
+            Self::Identifier(s) => f.write_fmt(format_args!("{}", s)),
+            Self::LambdaArg(u) => f.write_fmt(format_args!("{}", u)),
+            Self::Str(s) => f.write_fmt(format_args!("\"{}\"", s)),
+            Self::Int(i) => f.write_fmt(format_args!("{}", i)),
+            Self::Float(d) => f.write_fmt(format_args!("{}", d)),
+            Self::Bool(u) => f.write_fmt(format_args!("{}", u)),
+            Self::Char(c) => f.write_fmt(format_args!("{}", c)),
+            Self::Import => f.write_str("import"),
+            Self::As => f.write_str("as"),
+            Self::From => f.write_str("from"),
+            Self::If => f.write_str("if"),
+            Self::Else => f.write_str("else"),
+            Self::And => f.write_str("and"),
+            Self::While => f.write_str("while"),
+            Self::For => f.write_str("for"),
+            Self::In => f.write_str("in"),
+            Self::Break => f.write_str("break"),
+            Self::Continue => f.write_str("continue"),
+            Self::Return => f.write_str("return"),
+            Self::Function => f.write_str("fn"),
+            Self::Lambda => f.write_str("\\"),
+            Self::Class => f.write_str("class"),
+            Self::Field => f.write_str("field"),
+            Self::Null => f.write_str("null"),
+            Self::OpenParen => f.write_str("("),
+            Self::CloseParen => f.write_str(")"),
+            Self::Comma => f.write_str(","),
+            Self::Dot => f.write_str("."),
+            Self::Equal => f.write_str("="),
+            Self::AndEq => f.write_str("&="),
+            Self::XorEq => f.write_str("^="),
+            Self::OrEq => f.write_str("|="),
+            Self::PlusEq => f.write_str("+="),
+            Self::MinusEq => f.write_str("-="),
+            Self::TimesEq => f.write_str("*="),
+            Self::DivEq => f.write_str("/="),
+            Self::ModEq => f.write_str("%="),
+            Self::Plus => f.write_str("+"),
+            Self::Minus => f.write_str("-"),
+            Self::Times => f.write_str("*"),
+            Self::Div => f.write_str("/"),
+            Self::Mod => f.write_str("%"),
+            Self::Inc => f.write_str("++"),
+            Self::Dec => f.write_str("--"),
+            Self::BitShiftRightEq => f.write_str(">>="),
+            Self::BitShiftLeftEq => f.write_str("<<="),
+            Self::Semicolon => f.write_str(";"),
+            Self::OpenBrace => f.write_str("{"),
+            Self::CloseBrace => f.write_str("}"),
+            Self::OpenBracket => f.write_str("["),
+            Self::CloseBracket => f.write_str("]"),
+            Self::CmpEq => f.write_str("=="),
+            Self::CmpNotEq => f.write_str("!="),
+            Self::CmpGE => f.write_str(">="),
+            Self::CmpGT => f.write_str(">"),
+            Self::CmpLE => f.write_str("<="),
+            Self::CmpLT => f.write_str("<"),
+            Self::BitOr => f.write_str("|"),
+            Self::BoolOr => f.write_str("||"),
+            Self::BitAnd => f.write_str("&"),
+            Self::BoolAnd => f.write_str("&&"),
+            Self::BitNot => f.write_str("~"),
+            Self::BitXor => f.write_str("^"),
+            Self::BoolXor => f.write_str("^^"),
+            Self::BoolNot => f.write_str("!"),
+            Self::BitShiftRight => f.write_str(">>"),
+            Self::BitShiftLeft => f.write_str("<<"),
+            Self::ErrChar(c, s) => {
+                f.write_fmt(format_args!("Unexpected character '{c}' while lexing {s}",))
+            }
+            Self::UnexpectedEOF(s) => f.write_fmt(format_args!("Unexpected EOF while lexing {s}",)),
         }
     }
 }
 
-impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
+impl Iterator for Lexer {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -180,15 +175,19 @@ impl<T: Iterator<Item = String>> Iterator for Lexer<T> {
     }
 }
 
-impl<T: Iterator<Item = String>> Lexer<T> {
-    pub fn new(label: &str, lines: T) -> Lexer<T> {
+impl Lexer {
+    pub fn new<T: Iterator<Item = String>>(label: &str, lines: T) -> Lexer {
         Lexer {
             label: Rc::new(label.into()),
             chars: CharIter::new(lines),
         }
     }
 
-    pub fn new_with_lineno(label: &str, lines: T, lineno: usize) -> Lexer<T> {
+    pub fn new_with_lineno<T: Iterator<Item = String>>(
+        label: &str,
+        lines: T,
+        lineno: usize,
+    ) -> Lexer {
         Lexer {
             label: Rc::new(label.into()),
             chars: CharIter::new_with_lineno(lines, lineno),
@@ -197,7 +196,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
 
     #[allow(dead_code)]
     fn location(&self) -> Location {
-        let borrowed: &CharIter<T> = self.chars.borrow();
+        let borrowed: &CharIter = self.chars.borrow();
         let (row, col) = borrowed.location();
         Location::new(self.label.clone(), row, col)
     }
@@ -225,21 +224,19 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         use TokenType::Identifier;
         let mut chars = String::new();
         // have to assume first character is valid or is this is a bug and we want to crash
-        match self.chars.peek().unwrap() {
-            'a'..='z' => chars.push(self.chars.next().unwrap()),
-            'A'..='Z' => chars.push(self.chars.next().unwrap()),
-            '_' => chars.push(self.chars.next().unwrap()),
-            _ => unreachable!(),
+        if let Some(c) = self.chars.next_if(|c| c.is_ascii_alphabetic() || c == '_') {
+            chars.push(c)
+        } else {
+            unreachable!(
+                "Called identifier without a ascii alphabetic character or underscore leading"
+            );
         }
-        while let Some(c) = self.chars.peek() {
-            match c {
-                '0'..='9' => chars.push(c),
-                'a'..='z' => chars.push(c),
-                'A'..='Z' => chars.push(c),
-                '_' => chars.push(c),
-                _ => break,
-            }
-            self.chars.next();
+
+        while let Some(c) = self
+            .chars
+            .next_if(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            chars.push(c)
         }
 
         match &chars[..] {
@@ -287,7 +284,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
         let v = self.expect_char('\'');
         debug_assert!(v);
         let Some(c) = self.single_char() else {
-            return TokenType::UnexpectedEOF(Some("char"));
+            return TokenType::UnexpectedEOF("char");
         };
         self.expect_char('\'');
         Char(c)
@@ -304,7 +301,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 string.push(c)
             }
         }
-        TokenType::UnexpectedEOF(Some("string"))
+        TokenType::UnexpectedEOF("string")
     }
 
     fn eat_ret<F>(&mut self, rtn: F) -> F {
@@ -447,7 +444,7 @@ impl<T: Iterator<Item = String>> Lexer<T> {
                 },
                 '~' => self.eat_ret(BitNot),
 
-                _ => ErrChar(self.chars.next()?, None),
+                _ => ErrChar(self.chars.next()?, "token"),
             },
         })
     }
