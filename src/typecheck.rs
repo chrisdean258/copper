@@ -165,6 +165,7 @@ pub enum TypedExpressionType {
 #[derive(Debug, Clone)]
 pub struct TypedReturn {
     pub body: Option<TypedExpression>,
+    pub from_function: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -461,6 +462,7 @@ impl TypeChecker {
         // This is an Option<Option<Type>>
         // if outer option is none then we are at global scope
         // if inner is None we havent derived a type yet
+        let from_function = !self.func_returns.is_empty();
         match self.func_returns.last() {
             None if typ == UNIT || typ == INT => (),
             None => {
@@ -479,7 +481,10 @@ impl TypeChecker {
             ))?,
         }
 
-        Ok(TypedStatement::Return(TypedReturn { body }))
+        Ok(TypedStatement::Return(TypedReturn {
+            body,
+            from_function,
+        }))
     }
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, ()> {

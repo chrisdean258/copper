@@ -232,6 +232,7 @@ impl Evaluator {
                         continue;
                     }
                 }
+                MachineOperation::ExitWith => return Ok(self.reg),
                 MachineOperation::Return => {
                     self.memory.truncate_stack(self.bp);
                     (self.bp, ip) = retstack.pop().unwrap();

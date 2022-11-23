@@ -75,6 +75,7 @@ pub enum MachineOperation {
     CallKnown(usize),
     CallBuiltinSize(usize, usize),
     CallKnownSize(usize, usize),
+    ExitWith,
     Return,
     BoolOr,
     BoolXor,
@@ -311,6 +312,7 @@ impl Display for MachineOperation {
             MachineOperation::CallKnownSize(addr, num_args) => {
                 return f.write_fmt(format_args!("callknown (0x{:x}, {})", addr, num_args))
             }
+            MachineOperation::ExitWith => "exit_with",
             MachineOperation::Return => "ret",
             MachineOperation::BoolOr => "||",
             MachineOperation::BoolXor => "^^",

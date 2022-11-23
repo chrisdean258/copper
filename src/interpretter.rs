@@ -57,6 +57,14 @@ impl Interpretter {
         self.evaluator.memory.strings[idx].clone()
     }
 
+    pub fn print_value(&self, value: Value) {
+        match value {
+            Value::Uninitialized => (),
+            Value::Str(idx) => println!("{}", self.get_string(idx)),
+            _ => println!("{}", value),
+        }
+    }
+
     pub fn interpret_lexer(
         &mut self,
         label: String,
@@ -78,15 +86,18 @@ impl Interpretter {
 
     pub fn interpret_stdin(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
-        self.interpret_lexer("__main__".to_string(), Lexer::new("<stdin>", &mut lines))
+        self.interpret_lexer(
+            "__main__".to_string(),
+            Lexer::from_lines("<stdin>".into(), &mut lines),
+        )
     }
 
     pub fn interpret_file(
         &mut self,
         label: String,
-        filename: &str,
+        filename: String,
     ) -> Result<Value, Box<dyn std::error::Error>> {
-        let file = File::open(filename).map_err(|e| format!("{}: {}", filename, e))?;
+        let file = File::open(&filename).map_err(|e| format!("{}: {}", filename, e))?;
         let md = file
             .metadata()
             .map_err(|e| format!("{}: {}", filename, e))?;
@@ -94,16 +105,15 @@ impl Interpretter {
             Err(format!("{}: Is a directory", filename))?;
         }
         let mut lines = io::BufReader::new(file).lines().map(|s| s.unwrap());
-        self.interpret_lexer(label, Lexer::new(filename, &mut lines))
+        self.interpret_lexer(label, Lexer::from_lines(filename, &mut lines))
     }
 
     pub fn interpret_cmd(
         &mut self,
         label: String,
-        cmd: &str,
+        cmd: String,
     ) -> Result<Value, Box<dyn std::error::Error>> {
-        let mut lines = vec![cmd.into()].into_iter();
-        let lexer = Lexer::new("<cmdline>", &mut lines);
+        let lexer = Lexer::new("<cmdline>".into(), cmd);
         self.interpret_lexer(label, lexer)
     }
 }

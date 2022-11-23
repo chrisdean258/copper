@@ -160,6 +160,10 @@ impl CodeBuilder {
         self.emit(MachineOperation::Return)
     }
 
+    pub fn exit_with(&mut self) -> usize {
+        self.emit(MachineOperation::ExitWith)
+    }
+
     pub fn alloc(&mut self, size: usize) -> usize {
         self.push(Value::Count(size));
         self.emit(MachineOperation::Alloc)
