@@ -18,6 +18,11 @@ pub struct Evaluator {
     bp: usize,
 }
 
+pub enum ReturnState {
+    Exited,
+    Evaluated,
+}
+
 impl Evaluator {
     pub fn new(types: &mut TypeSystem) -> Self {
         Self {
@@ -37,7 +42,7 @@ impl Evaluator {
         mut strings: Vec<String>,
         mut ip: usize,
         debug: bool,
-    ) -> Result<Value, String> {
+    ) -> Result<(Value, ReturnState), String> {
         self.memory.add_strings(&mut strings);
         let mut reg = self.reg;
         let mut retstack = Vec::new();
@@ -232,7 +237,7 @@ impl Evaluator {
                         continue;
                     }
                 }
-                MachineOperation::ExitWith => return Ok(self.reg),
+                MachineOperation::ExitWith => return Ok((self.reg, ReturnState::Exited)),
                 MachineOperation::Return => {
                     self.memory.truncate_stack(self.bp);
                     (self.bp, ip) = retstack.pop().unwrap();
@@ -477,6 +482,6 @@ impl Evaluator {
             ip += 1;
         }
         self.reg = reg;
-        Ok(retval)
+        Ok((retval, ReturnState::Evaluated))
     }
 }
