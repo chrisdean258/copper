@@ -257,28 +257,25 @@ impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::UnexpectedEOF => f.write_str("Unexpected EOF"),
+            Self::UnexpectedEOF => write!(f, "Unexpected EOF"),
             Self::UnexpectedToken(t, expt) => {
-                f.write_fmt(format_args!(
-                    "{}: Unexpected `{}`.",
-                    t.location, t.token_type
-                ))?;
+                write!(f, "{}: Unexpected `{}`.", t.location, t.token_type)?;
                 if let Some(expected) = expt {
-                    f.write_fmt(format_args!(" Expected `{}`.", expected))?;
+                    write!(f, " Expected `{}`.", expected)?;
                 }
                 Ok(())
             }
             Self::ContinueNotAllowed(l) => {
-                f.write_fmt(format_args!("{}: `continue` not allowed here", l))
+                write!(f, "{}: `continue` not allowed here", l)
             }
             Self::BreakNotAllowed(l) => {
-                f.write_fmt(format_args!("{}: `break` not allowed here", l))
+                write!(f, "{}: `break` not allowed here", l)
             }
             Self::MethodRedefinition(l, n) => {
-                f.write_fmt(format_args!("{}: Redefinition of method `{}`", l, n))
+                write!(f, "{}: Redefinition of method `{}`", l, n)
             }
             Self::FieldRedefinition(l, n) => {
-                f.write_fmt(format_args!("{}: Redefinition of field `{}`", l, n))
+                write!(f, "{}: Redefinition of field `{}`", l, n)
             }
         }
     }

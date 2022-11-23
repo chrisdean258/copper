@@ -265,76 +265,62 @@ fn hex(val: isize) -> String {
 
 impl Display for MachineOperation {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(match self {
-            MachineOperation::Nop => "nop",
-            MachineOperation::Crash => "CRASH",
-            MachineOperation::ConditionalFail => "ConditionalFail",
-            MachineOperation::Push(v) => return f.write_fmt(format_args!("push ({:?})", v)),
-            MachineOperation::Inplace(v) => return f.write_fmt(format_args!("inplace ({:?})", v)),
-            MachineOperation::Pop => "pop",
-            MachineOperation::Save => "save",
-            MachineOperation::Dup => "dup",
-            MachineOperation::Load => "load",
-            MachineOperation::LoadLocal(n) => {
-                return f.write_fmt(format_args!("loadlocal ({})", n))
-            }
-            MachineOperation::LoadN(n) => return f.write_fmt(format_args!("loadN ({})", n)),
-            MachineOperation::Store => "store",
-            MachineOperation::FastStore => "faststore",
-            MachineOperation::StoreN(n) => return f.write_fmt(format_args!("storeN ({})", n)),
-            MachineOperation::Alloc => "alloc",
-            MachineOperation::Rotate(n) => return f.write_fmt(format_args!("rotate ({})", n)),
-            MachineOperation::Swap => "swap",
-            MachineOperation::Reserve(n) => return f.write_fmt(format_args!("reserve ({})", n)),
-            MachineOperation::RefFrame(offset) => {
-                return f.write_fmt(format_args!("refframe ({})", hex(*offset)))
-            }
-            MachineOperation::Jump(ip) => return f.write_fmt(format_args!("jmp (+0x{:x})", ip)),
-            MachineOperation::JumpIf(ip) => {
-                return f.write_fmt(format_args!("jmpif (+0x{:x})", ip))
-            }
-            MachineOperation::JumpRel(offset) => {
-                return f.write_fmt(format_args!("jmprel ({})", hex(*offset)))
-            }
-            MachineOperation::JumpRelIf(offset) => {
-                return f.write_fmt(format_args!("jmprelif ({})", hex(*offset)))
-            }
-            MachineOperation::Call => "call",
-            MachineOperation::CallBuiltin(addr) => {
-                return f.write_fmt(format_args!("callbuiltin (0x{:x})", addr))
-            }
-            MachineOperation::CallKnown(addr) => {
-                return f.write_fmt(format_args!("callknown (0x{:x})", addr))
-            }
+        match self {
+            MachineOperation::Nop => write!(f, "nop"),
+            MachineOperation::Crash => write!(f, "CRASH"),
+            MachineOperation::ConditionalFail => write!(f, "ConditionalFail"),
+            MachineOperation::Push(v) => write!(f, "push ({:?})", v),
+            MachineOperation::Inplace(v) => write!(f, "inplace ({:?})", v),
+            MachineOperation::Pop => write!(f, "pop"),
+            MachineOperation::Save => write!(f, "save"),
+            MachineOperation::Dup => write!(f, "dup"),
+            MachineOperation::Load => write!(f, "load"),
+            MachineOperation::LoadLocal(n) => write!(f, "loadlocal ({})", n),
+            MachineOperation::LoadN(n) => write!(f, "loadN ({})", n),
+            MachineOperation::Store => write!(f, "store"),
+            MachineOperation::FastStore => write!(f, "faststore"),
+            MachineOperation::StoreN(n) => write!(f, "storeN ({})", n),
+            MachineOperation::Alloc => write!(f, "alloc"),
+            MachineOperation::Rotate(n) => write!(f, "rotate ({})", n),
+            MachineOperation::Swap => write!(f, "swap"),
+            MachineOperation::Reserve(n) => write!(f, "reserve ({})", n),
+            MachineOperation::RefFrame(offset) => write!(f, "refframe ({})", hex(*offset)),
+            MachineOperation::Jump(ip) => write!(f, "jmp (+0x{:x})", ip),
+            MachineOperation::JumpIf(ip) => write!(f, "jmpif (+0x{:x})", ip),
+            MachineOperation::JumpRel(offset) => write!(f, "jmprel ({})", hex(*offset)),
+            MachineOperation::JumpRelIf(offset) => write!(f, "jmprelif ({})", hex(*offset)),
+            MachineOperation::Call => write!(f, "call"),
+            MachineOperation::CallBuiltin(addr) => write!(f, "callbuiltin (0x{:x})", addr),
+            MachineOperation::CallKnown(addr) => write!(f, "callknown (0x{:x})", addr),
             MachineOperation::CallBuiltinSize(addr, num_args) => {
-                return f.write_fmt(format_args!("callbuiltin (0x{:x}, {})", addr, num_args))
+                write!(f, "callbuiltin (0x{:x}, {})", addr, num_args)
             }
             MachineOperation::CallKnownSize(addr, num_args) => {
-                return f.write_fmt(format_args!("callknown (0x{:x}, {})", addr, num_args))
+                write!(f, "callknown (0x{:x}, {})", addr, num_args)
             }
-            MachineOperation::ExitWith => "exit_with",
-            MachineOperation::Return => "ret",
-            MachineOperation::BoolOr => "||",
-            MachineOperation::BoolXor => "^^",
-            MachineOperation::BoolAnd => "&&",
-            MachineOperation::BitOr => "|",
-            MachineOperation::BitXor => "^",
-            MachineOperation::BitAnd => "&",
-            MachineOperation::CmpGE => ">=",
-            MachineOperation::CmpGT => ">",
-            MachineOperation::CmpLE => "<",
-            MachineOperation::CmpLT => "<=",
-            MachineOperation::CmpEq => "==",
-            MachineOperation::CmpNotEq => "!=",
-            MachineOperation::BitShiftLeft => "<<",
-            MachineOperation::BitShiftRight => ">>",
-            MachineOperation::Minus => "-",
-            MachineOperation::Plus => "+",
-            MachineOperation::Times => "*",
-            MachineOperation::Mod => "%",
-            MachineOperation::Div => "/",
-            MachineOperation::BoolNot => "!",
-            MachineOperation::BitNot => "~",
-        })
+            MachineOperation::ExitWith => write!(f, "exit_with"),
+            MachineOperation::Return => write!(f, "ret"),
+            MachineOperation::BoolOr => write!(f, "||"),
+            MachineOperation::BoolXor => write!(f, "^^"),
+            MachineOperation::BoolAnd => write!(f, "&&"),
+            MachineOperation::BitOr => write!(f, "|"),
+            MachineOperation::BitXor => write!(f, "^"),
+            MachineOperation::BitAnd => write!(f, "&"),
+            MachineOperation::CmpGE => write!(f, ">="),
+            MachineOperation::CmpGT => write!(f, ">"),
+            MachineOperation::CmpLE => write!(f, "<"),
+            MachineOperation::CmpLT => write!(f, "<="),
+            MachineOperation::CmpEq => write!(f, "=="),
+            MachineOperation::CmpNotEq => write!(f, "!="),
+            MachineOperation::BitShiftLeft => write!(f, "<<"),
+            MachineOperation::BitShiftRight => write!(f, ">>"),
+            MachineOperation::Minus => write!(f, "-"),
+            MachineOperation::Plus => write!(f, "+"),
+            MachineOperation::Times => write!(f, "*"),
+            MachineOperation::Mod => write!(f, "%"),
+            MachineOperation::Div => write!(f, "/"),
+            MachineOperation::BoolNot => write!(f, "!"),
+            MachineOperation::BitNot => write!(f, "~"),
+        }
     }
 }

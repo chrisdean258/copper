@@ -29,9 +29,9 @@ impl Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("{}:\n", self.name))?;
+        writeln!(f, "{}:", self.name)?;
         for instr in self.code.iter() {
-            f.write_fmt(format_args!("\t{}\n", instr))?;
+            writeln!(f, "\t{}", instr)?;
         }
         Ok(())
     }
