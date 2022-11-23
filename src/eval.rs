@@ -18,6 +18,7 @@ pub struct Evaluator {
     bp: usize,
 }
 
+#[derive(Clone, Debug)]
 pub enum ReturnState {
     Exited,
     Evaluated,
@@ -106,10 +107,17 @@ impl Evaluator {
                 }
             };
         }
+
+        macro_rules! print_stack {
+            () => {
+                eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
+            };
+        }
+
         self.code = code;
         while let Some(instr) = self.code.get(ip - CODE) {
             if cfg!(debug_assertions) && debug {
-                eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
+                print_stack!();
                 eprint!("IP: 0x{:08x}:  ", ip);
                 eprint!("{:23}  ", self.code[ip - CODE].to_string());
                 eprint!("BP: 0x{:08x}     ", self.bp);
@@ -237,7 +245,11 @@ impl Evaluator {
                         continue;
                     }
                 }
-                MachineOperation::ExitWith => return Ok((self.reg, ReturnState::Exited)),
+                MachineOperation::ExitWith => {
+                    self.reg = reg;
+                    return Ok((reg, ReturnState::Exited));
+                }
+
                 MachineOperation::Return => {
                     self.memory.truncate_stack(self.bp);
                     (self.bp, ip) = retstack.pop().unwrap();
