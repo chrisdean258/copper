@@ -2,7 +2,11 @@ use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
+<<<<<<< Updated upstream
     parser::{ClassDecl, Function, Lambda},
+=======
+    parser::{ClassDecl, Function},
+>>>>>>> Stashed changes
     typecheck::*,
     typesystem::{Signature, Type, TypeSystem, NULL},
     value::Value,
@@ -210,10 +214,17 @@ impl Compiler {
     fn expr(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
+<<<<<<< Updated upstream
             TypedExpressionType::For(f) => todo!(), //self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
             TypedExpressionType::FuncRefExpr(r) => todo!(), //self.funcrefexpr(r),
+=======
+            TypedExpressionType::For(f) => self.forexpr(f),
+            TypedExpressionType::If(i) => self.ifexpr(i),
+            TypedExpressionType::CallExpr(c) => self.call(c),
+            TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+>>>>>>> Stashed changes
             TypedExpressionType::Immediate(i) => self.immediate(i),
             TypedExpressionType::BlockExpr(b) => self.block(b),
             TypedExpressionType::BinOp(b) => self.binop(b),
@@ -242,8 +253,12 @@ impl Compiler {
             TypedExpressionType::RepeatedArg => self.repeated_arg(),
             TypedExpressionType::Null => self.null(e.typ),
             TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
+<<<<<<< Updated upstream
             TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
             e => todo!("{:?}", e),
+=======
+            _ => todo!(),
+>>>>>>> Stashed changes
         }
     }
 
@@ -359,6 +374,7 @@ impl Compiler {
         self.need_ref = save;
     }
 
+<<<<<<< Updated upstream
     fn varrefexpr(&mut self, r: &TypedVarRefExpr) {
         let mem: MemoryLocation = if r.is_decl {
             let new_var = self.next_local();
@@ -379,6 +395,32 @@ impl Compiler {
             self.code.load();
         }
     }
+=======
+    // fn refexpr(&mut self, r: &TypedRefExpr) {
+    // let mem: MemoryLocation = if r.is_decl {
+    // let new_var = self.next_local();
+    // self.insert_scope(r.name.clone(), new_var);
+    // new_var
+    // } else {
+    // self.lookup_scope_local_or_global(&r.name)
+    // };
+    // match mem {
+    // MemoryLocation::BuiltinFunction(u) if !self.need_ref => {
+    // self.code.builtin_ref(u);
+    // return;
+    // }
+    // MemoryLocation::BuiltinFunction(u) => panic!("Cannot write to builtin function {}", u),
+    // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
+    // MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
+    // MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
+    // MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+    // MemoryLocation::CurrentFunction => panic!("UNKNOWN"),
+    // };
+    // if !self.need_ref {
+    // self.code.load();
+    // }
+    // }
+>>>>>>> Stashed changes
 
     fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
         for scope in table.iter().rev() {
