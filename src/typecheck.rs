@@ -184,6 +184,7 @@ impl TypeChecker {
         // This is an Option<Option<Type>>
         // if outer option is none then we are at global scope
         // if inner is None we havent derived a type yet
+        r.from_function = !self.func_returns.is_empty();
         match self.func_returns.last() {
             None if rv == UNIT || rv == INT => (),
             None => {

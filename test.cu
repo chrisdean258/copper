@@ -1,3 +1,1 @@
-class test {
-	fn() 1
-}
+return 1

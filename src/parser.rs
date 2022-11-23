@@ -235,6 +235,7 @@ pub struct Break {
 pub struct Return {
     pub location: Location,
     pub body: Option<Box<Expression>>,
+    pub from_function: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -408,7 +409,11 @@ impl ParseTree {
         } else {
             Some(Box::new(self.parse_expr(lexer)?))
         };
-        Ok(Statement::Return(Return { location, body }))
+        Ok(Statement::Return(Return {
+            location,
+            body,
+            from_function: true,
+        }))
     }
 
     fn parse_break(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {

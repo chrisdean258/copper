@@ -200,7 +200,11 @@ impl Compiler {
                 self.code.push(Value::Uninitialized);
             }
         }
-        self.code.return_();
+        if r.from_function {
+            self.code.return_();
+        } else {
+            self.code.exit_with();
+        }
     }
 
     fn break_(&mut self, _b: &Break) {
