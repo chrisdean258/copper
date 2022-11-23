@@ -176,21 +176,35 @@ impl Iterator for Lexer {
 }
 
 impl Lexer {
-    pub fn new<T: Iterator<Item = String>>(label: &str, lines: T) -> Lexer {
+    pub fn new(label: String, line: String) -> Lexer {
         Lexer {
-            label: Rc::new(label.into()),
-            chars: CharIter::new(lines),
+            label: Rc::new(label),
+            chars: CharIter::new(line),
         }
     }
 
-    pub fn new_with_lineno<T: Iterator<Item = String>>(
-        label: &str,
+    pub fn new_with_lineno(label: String, line: String, lineno: usize) -> Lexer {
+        Lexer {
+            label: Rc::new(label),
+            chars: CharIter::new_with_lineno(line, lineno),
+        }
+    }
+
+    pub fn from_lines<T: Iterator<Item = String>>(label: String, lines: T) -> Lexer {
+        Lexer {
+            label: Rc::new(label),
+            chars: CharIter::from_lines(lines),
+        }
+    }
+
+    pub fn from_lines_with_lineno<T: Iterator<Item = String>>(
+        label: String,
         lines: T,
         lineno: usize,
     ) -> Lexer {
         Lexer {
-            label: Rc::new(label.into()),
-            chars: CharIter::new_with_lineno(lines, lineno),
+            label: Rc::new(label),
+            chars: CharIter::from_lines_with_lineno(lines, lineno),
         }
     }
 

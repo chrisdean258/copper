@@ -53,30 +53,31 @@ fn real_main() -> i64 {
     let stdlib = find_stdlib();
 
     let mut intp = interpretter::Interpretter::new(typecheck_only, debug);
-    if let Err(s) = intp.interpret_file("__stdlib__".to_string(), &stdlib) {
+    if let Err(s) = intp.interpret_file("__stdlib__".into(), stdlib) {
         eprintln!("{} (ERROR IN STDLIB)", s);
         return 2;
     }
 
     let rv = match file_or_cmd {
-        Some(cmd) if is_cmd => intp.interpret_cmd("__main__".to_string(), cmd),
-        Some(filename) => intp.interpret_file("__main__".to_string(), filename),
+        Some(cmd) if is_cmd => intp.interpret_cmd("__main__".into(), cmd.into()),
+        Some(filename) => intp.interpret_file("__main__".into(), filename.into()),
         None if use_stdin => intp.interpret_stdin(),
         None => {
             return repl(intp);
         }
     };
 
-    match rv {
+    let val = match rv {
         Err(s) => {
             eprintln!("{}", s);
-            1
+            return 1;
         }
-        Ok(v) => match v {
-            value::Value::Int(i) => i,
-            _ => 0,
-        },
-    }
+        Ok(v) => v,
+    };
+
+    intp.print_value(val);
+
+    0
 }
 
 fn repl(mut intp: interpretter::Interpretter) -> i64 {
@@ -88,12 +89,7 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
         match readline {
             Ok(mut line) => {
                 loop {
-                    let lexer = lex::Lexer::new_with_lineno(
-                        "<stdin>",
-                        // vec![format!("print({{ {} }})", line)].into_iter(),
-                        vec![line.clone()].into_iter(),
-                        lineno,
-                    );
+                    let lexer = lex::Lexer::new_with_lineno("<stdin>".into(), line.clone(), lineno);
                     match intp.interpret_lexer("__main__".to_string(), lexer) {
                         Ok(value::Value::Uninitialized) => (),
                         Ok(value::Value::Str(s)) => {

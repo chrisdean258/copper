@@ -25,30 +25,30 @@ impl Iterator for CharIter {
 }
 
 impl CharIter {
-    pub fn new<T: Iterator<Item = String>>(lines: T) -> Self {
-        CharIter {
-            chars: lines
-                .flat_map(|s| {
-                    let mut c = s.chars().collect::<Vec<char>>();
-                    if c.is_empty() || c.last() != Some(&'\n') {
-                        c.push('\n');
-                    }
-                    c
-                })
-                .collect(),
-            line_no: 1,
-            col_no: 1,
-            prev_col_no: 1,
-            prev_line_no: 1,
-            idx: 0,
-        }
+    pub fn from_lines<T: Iterator<Item = String>>(lines: T) -> Self {
+        Self::from_lines_with_lineno(lines, 1)
     }
 
-    pub fn new_with_lineno<T: Iterator<Item = String>>(lines: T, lineno: usize) -> Self {
+    pub fn from_lines_with_lineno<T: Iterator<Item = String>>(lines: T, lineno: usize) -> Self {
+        let string = lines
+            .flat_map(|s| {
+                let mut c = s.chars().collect::<Vec<char>>();
+                if c.is_empty() || c.last() != Some(&'\n') {
+                    c.push('\n');
+                }
+                c
+            })
+            .collect::<String>();
+        Self::new_with_lineno(string, lineno)
+    }
+
+    pub fn new(string: String) -> Self {
+        Self::new_with_lineno(string, 1)
+    }
+
+    pub fn new_with_lineno(string: String, lineno: usize) -> Self {
         CharIter {
-            chars: lines
-                .flat_map(|s| s.chars().collect::<Vec<char>>())
-                .collect(),
+            chars: string.chars().collect(),
             line_no: lineno,
             col_no: 0,
             prev_col_no: 0,
