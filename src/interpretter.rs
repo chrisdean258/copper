@@ -57,10 +57,10 @@ impl Interpretter {
         self.evaluator.memory.strings[idx].clone()
     }
 
-    pub fn interpret_lexer<T: Iterator<Item = String>>(
+    pub fn interpret_lexer(
         &mut self,
         label: String,
-        lexer: Lexer<T>,
+        lexer: Lexer,
     ) -> Result<Value, Box<dyn std::error::Error>> {
         let tree = parser::parse(lexer)?;
         let typedtree = self.typechecker.typecheck(tree)?;

@@ -2,17 +2,12 @@ use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
-    parser::*,
-    typecheck::TypedParseTree,
+    parser::{ClassDecl, Function, Lambda},
+    typecheck::*,
     typesystem::{Signature, Type, TypeSystem, NULL},
     value::Value,
 };
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    mem::{swap, take},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, mem::swap, rc::Rc};
 
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
@@ -81,8 +76,8 @@ impl Compiler {
     ) -> (Vec<MachineOperation>, Vec<String>, usize) {
         self.types = Some(types.clone());
         self.code.open_function(name);
-        if p.globals.unwrap() > 0 {
-            self.code.reserve(p.globals.unwrap() - self.scopes[1].len());
+        if p.globals > 0 {
+            self.code.reserve(p.globals - self.scopes[1].len());
         }
         for (i, statement) in p.statements.iter().enumerate() {
             self.statement(statement, true, i == p.statements.len() - 1);
@@ -167,9 +162,9 @@ impl Compiler {
         *self.strings.entry(string).or_insert(len)
     }
 
-    fn statement(&mut self, s: &Statement, pop: bool, save: bool) {
+    fn statement(&mut self, s: &TypedStatement, pop: bool, save: bool) {
         match s {
-            Statement::Expr(e) => {
+            TypedStatement::Expr(e) => {
                 self.expr(e);
                 if pop {
                     if save {
@@ -178,12 +173,12 @@ impl Compiler {
                     self.code.emit(MachineOperation::Pop);
                 }
             }
-            Statement::ClassDecl(c) => self.classdecl(c),
-            Statement::Import(i) => todo!("{:?}", i),
-            Statement::FromImport(f) => todo!("{:?}", f),
-            Statement::Continue(c) => self.continue_(c),
-            Statement::Break(b) => self.break_(b),
-            Statement::Return(r) => self.return_(r),
+            TypedStatement::ClassDecl(c) => self.classdecl(c),
+            TypedStatement::Import(i) => todo!("{:?}", i),
+            TypedStatement::FromImport(f) => todo!("{:?}", f),
+            TypedStatement::Continue => self.continue_(),
+            TypedStatement::Break => self.break_(),
+            TypedStatement::Return(r) => self.return_(r),
         }
     }
 
@@ -194,9 +189,9 @@ impl Compiler {
             .insert(c.borrow().name.clone(), c.clone());
     }
 
-    fn return_(&mut self, r: &Return) {
+    fn return_(&mut self, r: &TypedReturn) {
         match &r.body {
-            Some(e) => self.expr(e.as_ref()),
+            Some(e) => self.expr(e),
             None => {
                 self.code.push(Value::Uninitialized);
             }
@@ -204,54 +199,55 @@ impl Compiler {
         self.code.return_();
     }
 
-    fn break_(&mut self, _b: &Break) {
+    fn break_(&mut self) {
         self.breaks.push(self.code.jump_relative(0));
     }
 
-    fn continue_(&mut self, _c: &Continue) {
+    fn continue_(&mut self) {
         self.continues.push(self.code.jump_relative(0));
     }
 
-    fn expr(&mut self, e: &Expression) {
+    fn expr(&mut self, e: &TypedExpression) {
         match &e.etype {
-            ExpressionType::While(w) => self.whileexpr(w),
-            ExpressionType::For(f) => self.forexpr(f),
-            ExpressionType::If(i) => self.ifexpr(i),
-            ExpressionType::CallExpr(c) => self.call(c),
-            ExpressionType::RefExpr(r) => self.refexpr(r),
-            ExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
-            ExpressionType::Immediate(i) => self.immediate(i),
-            ExpressionType::BlockExpr(b) => self.block(b),
-            ExpressionType::BinOp(b) => self.binop(b),
-            ExpressionType::PreUnOp(p) => self.preunop(p),
-            ExpressionType::PostUnOp(p) => self.postunop(p),
-            ExpressionType::AssignExpr(a) => self.assignment(a),
-            ExpressionType::Function(f) => self.function(
-                f.clone(),
-                self.types
-                    .as_ref()
-                    .unwrap()
-                    .get_signatures_for_func(e.derived_type.unwrap()),
-            ),
-            ExpressionType::Lambda(l) => self.lambda(
-                l.clone(),
-                self.types
-                    .as_ref()
-                    .unwrap()
-                    .get_signatures_for_func(e.derived_type.unwrap()),
-            ),
-            ExpressionType::List(l) => self.list(l),
-            ExpressionType::IndexExpr(i) => self.index(i),
-            ExpressionType::DottedLookup(d) => self.dotted_lookup(d),
-            ExpressionType::LambdaArg(l) => self.lambdaarg(l),
-            ExpressionType::Str(s) => self.string(s),
-            ExpressionType::RepeatedArg => self.repeated_arg(),
-            ExpressionType::Null => self.null(e.derived_type.unwrap()),
-            ExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
+            TypedExpressionType::While(w) => self.whileexpr(w),
+            TypedExpressionType::For(f) => todo!(), //self.forexpr(f),
+            TypedExpressionType::If(i) => self.ifexpr(i),
+            TypedExpressionType::CallExpr(c) => self.call(c),
+            TypedExpressionType::FuncRefExpr(r) => todo!(), //self.funcrefexpr(r),
+            TypedExpressionType::Immediate(i) => self.immediate(i),
+            TypedExpressionType::BlockExpr(b) => self.block(b),
+            TypedExpressionType::BinOp(b) => self.binop(b),
+            TypedExpressionType::PreUnOp(p) => self.preunop(p),
+            TypedExpressionType::PostUnOp(p) => self.postunop(p),
+            TypedExpressionType::AssignExpr(a) => self.assignment(a),
+            // TypedExpressionType::Function(f) => self.function(
+            // f.clone(),
+            // self.types
+            // .as_ref()
+            // .unwrap()
+            // .get_signatures_for_func(e.derived_type.unwrap()),
+            // ),
+            // TypedExpressionType::Lambda(l) => self.lambda(
+            // l.clone(),
+            // self.types
+            // .as_ref()
+            // .unwrap()
+            // .get_signatures_for_func(e.derived_type.unwrap()),
+            // ),
+            TypedExpressionType::List(l) => self.list(l),
+            TypedExpressionType::IndexExpr(i) => self.index(i),
+            TypedExpressionType::DottedLookup(d) => self.dotted_lookup(d),
+            TypedExpressionType::LambdaArg(l) => self.lambdaarg(l),
+            TypedExpressionType::Str(s) => self.string(s),
+            TypedExpressionType::RepeatedArg => self.repeated_arg(),
+            TypedExpressionType::Null => self.null(e.typ),
+            TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
+            TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
+            e => todo!("{:?}", e),
         }
     }
 
-    fn binop(&mut self, b: &BinOp) {
+    fn binop(&mut self, b: &TypedBinOp) {
         self.expr(b.lhs.as_ref());
         //TODO option types
         if b.op == Operation::BoolOr {
@@ -275,7 +271,7 @@ impl Compiler {
         }
     }
 
-    fn preunop(&mut self, p: &PreUnOp) {
+    fn preunop(&mut self, p: &TypedPreUnOp) {
         match p.op {
             Operation::PreInc => {
                 self.get_ref(p.rhs.as_ref());
@@ -333,7 +329,7 @@ impl Compiler {
         }
     }
 
-    fn postunop(&mut self, p: &PostUnOp) {
+    fn postunop(&mut self, p: &TypedPostUnOp) {
         self.get_ref(p.lhs.as_ref());
         self.code.dup();
         self.code.load();
@@ -349,21 +345,21 @@ impl Compiler {
         self.code.pop();
     }
 
-    fn get_ref(&mut self, e: &Expression) {
+    fn get_ref(&mut self, e: &TypedExpression) {
         let save = self.need_ref;
         self.need_ref = true;
         self.expr(e);
         self.need_ref = save;
     }
 
-    fn get_no_ref(&mut self, e: &Expression) {
+    fn get_no_ref(&mut self, e: &TypedExpression) {
         let save = self.need_ref;
         self.need_ref = false;
         self.expr(e);
         self.need_ref = save;
     }
 
-    fn refexpr(&mut self, r: &RefExpr) {
+    fn varrefexpr(&mut self, r: &TypedVarRefExpr) {
         let mem: MemoryLocation = if r.is_decl {
             let new_var = self.next_local();
             self.insert_scope(r.name.clone(), new_var);
@@ -372,11 +368,7 @@ impl Compiler {
             self.lookup_scope_local_or_global(&r.name)
         };
         match mem {
-            MemoryLocation::BuiltinFunction(u) if !self.need_ref => {
-                self.code.builtin_ref(u);
-                return;
-            }
-            MemoryLocation::BuiltinFunction(u) => panic!("Cannot write to builtin function {}", u),
+            MemoryLocation::BuiltinFunction(u) => panic!("Should have been a funcrefexpr {}", u),
             // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
             MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
@@ -397,49 +389,49 @@ impl Compiler {
         None
     }
 
-    fn funcrefexpr(&mut self, r: &FuncRefExpr) {
-        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
-        if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
-            match val {
-                MemoryLocation::CodeLocation(a) => {
-                    self.code.push(Value::Ptr(a));
-                    return;
-                }
-                MemoryLocation::CurrentFunction => {
-                    self.recursive_calls.push(self.code.push(Value::Null));
-                    return;
-                }
-                t => unreachable!("Expected CodeLocation found {:?}", t),
-            }
-        }
-        let mut is_init = false;
-        let func = match self.scope_lookup(&r.name, &self.func_scopes) {
-            Some(f) => f,
-            None => match self.scope_lookup(&r.name, &self.class_scopes) {
-                None => panic!(
-                    "Could not find a func `{}` in func_scope or class_scope",
-                    r.name
-                ),
-                Some(c) => {
-                    is_init = true;
-                    match &c.borrow().methods.get("__init__").unwrap().etype {
-                        ExpressionType::Function(f) => f.clone(),
-                        _ => unreachable!(),
-                    }
-                }
-            },
-        };
+    // fn funcrefexpr(&mut self, r: &FuncRefExpr) {
+    // let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
+    // if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
+    // match val {
+    // MemoryLocation::CodeLocation(a) => {
+    // self.code.push(Value::Ptr(a));
+    // return;
+    // }
+    // MemoryLocation::CurrentFunction => {
+    // self.recursive_calls.push(self.code.push(Value::Null));
+    // return;
+    // }
+    // t => unreachable!("Expected CodeLocation found {:?}", t),
+    // }
+    // }
+    // let mut is_init = false;
+    // let func = match self.scope_lookup(&r.name, &self.func_scopes) {
+    // Some(f) => f,
+    // None => match self.scope_lookup(&r.name, &self.class_scopes) {
+    // None => panic!(
+    // "Could not find a func `{}` in func_scope or class_scope",
+    // r.name
+    // ),
+    // Some(c) => {
+    // is_init = true;
+    // match &c.borrow().methods.get("__init__").unwrap().etype {
+    // ExpressionType::Function(f) => f.clone(),
+    // _ => unreachable!(),
+    // }
+    // }
+    // },
+    // };
 
-        self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
+    // self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
-        let save_bp_list = take(&mut self.recursive_calls);
-        let addr = self.single_function(&func.borrow(), &r.sig, is_init);
-        self.recursive_calls = save_bp_list;
-        self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
-        self.code.push(Value::Ptr(addr));
-    }
+    // let save_bp_list = take(&mut self.recursive_calls);
+    // let addr = self.single_function(&func.borrow(), &r.sig, is_init);
+    // self.recursive_calls = save_bp_list;
+    // self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
+    // self.code.push(Value::Ptr(addr));
+    // }
 
-    fn assignment(&mut self, a: &AssignExpr) {
+    fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
         if a.op != Operation::Equal {
             self.code.dup();
@@ -449,8 +441,8 @@ impl Compiler {
         } else {
             let types = self.types.as_ref().unwrap();
             let save = self.current_null;
-            if types.is_option(a.lhs.derived_type.unwrap()) {
-                self.current_null = a.lhs.derived_type;
+            if types.is_option(a.lhs.typ) {
+                self.current_null = Some(a.lhs.typ);
             }
             self.expr(a.rhs.as_ref());
             self.current_null = save;
@@ -458,11 +450,11 @@ impl Compiler {
         self.code.store();
     }
 
-    fn immediate(&mut self, i: &Immediate) {
+    fn immediate(&mut self, i: &TypedImmediate) {
         self.code.push(i.value);
     }
 
-    fn block(&mut self, b: &BlockExpr) {
+    fn block(&mut self, b: &TypedBlockExpr) {
         let mut first = true;
         for statement in b.statements.iter() {
             if !first {
@@ -473,7 +465,7 @@ impl Compiler {
         }
     }
 
-    fn whileexpr(&mut self, w: &While) {
+    fn whileexpr(&mut self, w: &TypedWhile) {
         let start = self.code.jump_relative(0);
         let body = self.code.next_function_relative_addr();
         let mut breaks = Vec::new();
@@ -497,9 +489,9 @@ impl Compiler {
         }
     }
 
-    fn forexpr(&mut self, _f: &For) {}
+    // fn forexpr(&mut self, _f: &For) {}
 
-    fn ifexpr(&mut self, i: &If) {
+    fn ifexpr(&mut self, i: &TypedIf) {
         let save = self.current_null;
         if let Some(t) = i.makes_option {
             self.current_null = Some(t);
@@ -515,7 +507,7 @@ impl Compiler {
             self.code.swap();
             self.code.pop();
 
-            for (body, _) in i.and_bodies.iter() {
+            for ((body, _typ), _location) in i.and_bodies.iter() {
                 let loc = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(next_branch, loc as isize);
                 self.expr(body.condition.as_ref());
@@ -562,7 +554,7 @@ impl Compiler {
         self.current_null = save;
     }
 
-    fn string(&mut self, s: &Str) {
+    fn string(&mut self, s: &TypedStr) {
         let str_idx = self.entomb_string(s.string.clone());
         self.code.push(Value::Str(str_idx));
     }
@@ -576,7 +568,7 @@ impl Compiler {
         self.code.store_n(3);
     }
 
-    fn list(&mut self, l: &List) {
+    fn list(&mut self, l: &TypedList) {
         self.new_list_with_len(l.exprs.len());
         self.code.dup();
         self.code.load();
@@ -586,7 +578,7 @@ impl Compiler {
         self.code.store_n(l.exprs.len());
     }
 
-    fn index(&mut self, i: &IndexExpr) {
+    fn index(&mut self, i: &TypedIndexExpr) {
         self.get_no_ref(i.obj.as_ref());
         self.code.dup();
         self.code.push(Value::PtrOffset(1));
@@ -657,7 +649,10 @@ impl Compiler {
             self.code.alloc(size);
             self.code.store_fast();
         }
-        self.expr(f.body.as_ref());
+        if true {
+            todo!()
+        }
+        // self.expr(f.body.as_ref());
         if f.alloc_before_call.is_some() {
             self.code.local_ref(0);
             self.code.load();
@@ -690,26 +685,25 @@ impl Compiler {
         if l.locals.unwrap() > sig.inputs.len() {
             self.code.reserve(l.locals.unwrap() - sig.inputs.len());
         }
-        self.expr(l.body.as_ref());
+        if true {
+            todo!();
+        }
+        // self.expr(l.body.as_ref());
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
         self.code.close_function()
     }
 
-    fn lambdaarg(&mut self, l: &LambdaArg) {
+    fn lambdaarg(&mut self, l: &TypedLambdaArg) {
         self.code.local_ref(l.number as isize);
         self.code.load();
     }
 
-    fn call(&mut self, c: &CallExpr) {
+    fn call(&mut self, c: &TypedCallExpr) {
         let save_extra = self.extra_args;
         self.extra_args = 0;
         let mut alloc_before_call_num = 0;
-        if c.alloc_before_call.is_some() {
-            self.code.push(Value::Uninitialized);
-            alloc_before_call_num = 1;
-        }
         for arg in c.args.iter() {
             self.expr(arg);
         }
@@ -718,7 +712,7 @@ impl Compiler {
         ));
         self.extra_args = save_extra;
 
-        let mut arg_types = Some(c.args.iter().map(|a| a.derived_type.unwrap()).collect());
+        let mut arg_types = Some(c.args.iter().map(|a| a.typ).collect());
         swap(&mut arg_types, &mut self.arg_types);
         self.expr(c.function.as_ref());
         self.arg_types = arg_types;
@@ -726,9 +720,9 @@ impl Compiler {
         self.code.call();
     }
 
-    fn dotted_lookup(&mut self, d: &DottedLookup) {
+    fn dotted_lookup(&mut self, d: &TypedDottedLookup) {
         self.get_no_ref(d.lhs.as_ref());
-        self.code.push(Value::PtrOffset(d.index.unwrap() as isize));
+        self.code.push(Value::PtrOffset(d.index as isize));
         self.code.emit(MachineOperation::Plus);
         if !self.need_ref {
             self.code.load();
