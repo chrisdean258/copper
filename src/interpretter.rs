@@ -1,6 +1,12 @@
 use crate::{
-    compiler::Compiler, eval::Evaluator, lex::Lexer, memory::CODE, operation::MachineOperation,
-    parser, typecheck::TypeChecker, value::Value,
+    compiler::Compiler,
+    eval::{Evaluator, ReturnState},
+    lex::Lexer,
+    memory::CODE,
+    operation::MachineOperation,
+    parser,
+    typecheck::TypeChecker,
+    value::Value,
 };
 use std::{
     fs::File,
@@ -69,11 +75,11 @@ impl Interpretter {
         &mut self,
         label: String,
         lexer: Lexer,
-    ) -> Result<Value, Box<dyn std::error::Error>> {
-        let tree = parser::parse(lexer)?;
+    ) -> Result<(Value, ReturnState), Box<dyn std::error::Error>> {
+        let mut tree = parser::parse(lexer)?;
         let typedtree = self.typechecker.typecheck(tree)?;
         if self.typecheck_only {
-            return Ok(Value::Uninitialized);
+            return Ok((Value::Uninitialized, ReturnState::Evaluated));
         }
         let (code, strings, entry) =
             self.compiler
@@ -84,7 +90,7 @@ impl Interpretter {
         Ok(self.evaluator.eval(code, strings, entry, self.debug)?)
     }
 
-    pub fn interpret_stdin(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
+    pub fn interpret_stdin(&mut self) -> Result<(Value, ReturnState), Box<dyn std::error::Error>> {
         let mut lines = io::BufReader::new(io::stdin()).lines().map(|s| s.unwrap());
         self.interpret_lexer(
             "__main__".to_string(),
@@ -96,7 +102,7 @@ impl Interpretter {
         &mut self,
         label: String,
         filename: String,
-    ) -> Result<Value, Box<dyn std::error::Error>> {
+    ) -> Result<(Value, ReturnState), Box<dyn std::error::Error>> {
         let file = File::open(&filename).map_err(|e| format!("{}: {}", filename, e))?;
         let md = file
             .metadata()
@@ -112,7 +118,7 @@ impl Interpretter {
         &mut self,
         label: String,
         cmd: String,
-    ) -> Result<Value, Box<dyn std::error::Error>> {
+    ) -> Result<(Value, ReturnState), Box<dyn std::error::Error>> {
         let lexer = Lexer::new("<cmdline>".into(), cmd);
         self.interpret_lexer(label, lexer)
     }

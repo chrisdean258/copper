@@ -78,12 +78,13 @@ fn real_main() -> i64 {
             eprintln!("{}", s);
             return 1;
         }
-        Ok(v) => v,
-    };
-
-    intp.print_value(val);
-
-    0
+        Ok((v, eval::ReturnState::Evaluated)) => {
+            intp.print_value(v);
+            0
+        }
+        Ok((value::Value::Int(b), eval::ReturnState::Exited)) => b,
+        Ok((v, eval::ReturnState::Exited)) => unreachable!("{}", v),
+    }
 }
 
 fn repl(mut intp: interpretter::Interpretter) -> i64 {
@@ -97,11 +98,13 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
                 loop {
                     let lexer = lex::Lexer::new_with_lineno("<stdin>".into(), line.clone(), lineno);
                     match intp.interpret_lexer("__main__".to_string(), lexer) {
-                        Ok(value::Value::Uninitialized) => (),
-                        Ok(value::Value::Str(s)) => {
+                        Ok((value::Value::Uninitialized, _)) => (),
+                        Ok((value::Value::Str(s), _)) => {
                             println!("{}", intp.get_string(s));
                         }
-                        Ok(a) => println!("{}", a),
+                        Ok((a, eval::ReturnState::Evaluated)) => println!("{}", a),
+                        Ok((value::Value::Int(a), eval::ReturnState::Exited)) => return a,
+                        Ok((a, eval::ReturnState::Exited)) => unreachable!("{:?}", a),
                         Err(e) => match e.downcast_ref::<parser::Error>() {
                             Some(parser::Error::UnexpectedEOF) => match rl.readline("... ") {
                                 Ok(cont) => {

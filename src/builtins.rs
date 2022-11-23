@@ -34,7 +34,7 @@ pub struct BuiltinFunction {
 
 impl Debug for BuiltinFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("BuiltinFunction(\"{}\"", self.name))
+        write!(f, "BuiltinFunction(\"{}\"", self.name)
     }
 }
 
