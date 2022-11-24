@@ -47,37 +47,37 @@ pub enum ErrorType {
 impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}: {}", self.loc, self.err))
+        write!(f, "{}: {}", self.loc, self.err)
     }
 }
 
 impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::CannotAssignType(t1, op, t2) => f.write_fmt(format_args!( "Cannot assign `{t1}` {op} `{t2}`",)),
-            Self::CannotAssignUnit => f.write_str("Cannot assign unit value"),
-            Self::CannotDeriveReturnType => f.write_str("Cannot derive the return type of this function call"),
-            Self::CannotIndexType(t) => f.write_fmt(format_args!( "Cannot index into type `{t}`")),
-            Self::CannotIndirectlyCallBuiltins => f.write_str("Cannot indirectly call buitins yet"),
-            Self::CannotReturnTypeFromNonFunction(t) => f.write_fmt(format_args!( "Cannot return type `{t}` from outside a function")),
-            Self::ClassHasNoFieldOrMethod(t, fm) => f.write_fmt(format_args!( "Class `{t}` has no field or method `{fm}`",)),
-            Self::ClassLacksInit(t) => f.write_fmt(format_args!( "class `{t}` lacks the `__init__` method and cannot be constructed")),
-            Self::EmptyBlock => f.write_str("Empty Block Expressions are not allowed (yet)"),
-            Self::FuncTypeUnknown(func) => f.write_fmt(format_args!( "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",)),
-            Self::IfConditionNotBool(t) => f.write_fmt(format_args!("if condition must be bool. This one is `{t}`")),
-            Self::IndexNotInt => f.write_str( "Index expression requires 1 argument of type `int`"),
-            Self::ListTypeMismatch(t1, t2) => f.write_fmt(format_args!( "List established to contain type `{t1}` but this element was of type `{t2}`",)),
-            Self::LoopConditionNotBool(t) => f.write_fmt(format_args!("While loop condition must be bool. This one is `{t}`")),
-            Self::MismatchedReturnTypes(t1, t2) => f.write_fmt(format_args!( "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",)),
-            Self::NoDefinedBinOp(t1, op, t2) => f.write_fmt(format_args!( "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",)),
-            Self::NoDefinedUnOp(t, op) => f.write_fmt(format_args!( "Cannot apply binary operation {op} to `{t}`. No operation has been defined",)),
-            Self::NoSuchNameInScope(s) => f.write_fmt(format_args!( "`no name `{s}` in scope",)),
-            Self::NotAssignable => f.write_str("LHS of assignment is not assignable"),
-            Self::NotCallable(t) => f.write_fmt(format_args!("`{t}` is not callable")),
-            Self::Originating => f.write_str("Originating here"),
-            Self::UninitializedAssignment => f.write_str("Trying to assign to variable with uninitialized type. This might be a bug"),
-            Self::WrongNumberOfArguments(e, t) => f.write_fmt(format_args!( "Wrong number of arguments. Expected {e} found {t}",)),
-            Self::WrongNumberOfArgumentsWithDefault(a, d, t) => f.write_fmt(format_args!( "Wrong number of arguments. Found {a} arguemnts with {d} defaults. Expected a total of {t}",)),
+            Self::CannotAssignType(t1, op, t2) => write!(f,  "Cannot assign `{t1}` {op} `{t2}`",),
+            Self::CannotAssignUnit => write!(f, "Cannot assign unit value"),
+            Self::CannotDeriveReturnType => write!(f, "Cannot derive the return type of this function call"),
+            Self::CannotIndexType(t) => write!(f,  "Cannot index into type `{t}`"),
+            Self::CannotIndirectlyCallBuiltins => write!(f, "Cannot indirectly call buitins yet"),
+            Self::CannotReturnTypeFromNonFunction(t) => write!(f,  "Cannot return type `{t}` from outside a function"),
+            Self::ClassHasNoFieldOrMethod(t, fm) => write!(f,  "Class `{t}` has no field or method `{fm}`",),
+            Self::ClassLacksInit(t) => write!(f,  "class `{t}` lacks the `__init__` method and cannot be constructed"),
+            Self::EmptyBlock => write!(f, "Empty Block Expressions are not allowed (yet)"),
+            Self::FuncTypeUnknown(func) => write!(f,  "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",),
+            Self::IfConditionNotBool(t) => write!(f, "if condition must be bool. This one is `{t}`"),
+            Self::IndexNotInt => write!(f,  "Index expression requires 1 argument of type `int`"),
+            Self::ListTypeMismatch(t1, t2) => write!(f,  "List established to contain type `{t1}` but this element was of type `{t2}`",),
+            Self::LoopConditionNotBool(t) => write!(f, "While loop condition must be bool. This one is `{t}`"),
+            Self::MismatchedReturnTypes(t1, t2) => write!(f,  "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",),
+            Self::NoDefinedBinOp(t1, op, t2) => write!(f,  "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",),
+            Self::NoDefinedUnOp(t, op) => write!(f,  "Cannot apply binary operation {op} to `{t}`. No operation has been defined",),
+            Self::NoSuchNameInScope(s) => write!(f,  "`no name `{s}` in scope",),
+            Self::NotAssignable => write!(f, "LHS of assignment is not assignable"),
+            Self::NotCallable(t) => write!(f, "`{t}` is not callable"),
+            Self::Originating => write!(f, "Originating here"),
+            Self::UninitializedAssignment => write!(f, "Trying to assign to variable with uninitialized type. This might be a bug"),
+            Self::WrongNumberOfArguments(e, t) => write!(f,  "Wrong number of arguments. Expected {e} found {t}",),
+            Self::WrongNumberOfArgumentsWithDefault(a, d, t) => write!(f,  "Wrong number of arguments. Found {a} arguemnts with {d} defaults. Expected a total of {t}",),
         }
     }
 }

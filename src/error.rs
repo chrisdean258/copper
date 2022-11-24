@@ -14,7 +14,7 @@ impl<T: Error> Error for ErrorCollection<T> {}
 impl<T: Error> Display for ErrorCollection<T> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         for error in self.errs.iter() {
-            f.write_fmt(format_args!("{error}\n"))?;
+            writeln!(f, "{error}")?;
         }
         Ok(())
     }
