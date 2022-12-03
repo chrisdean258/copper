@@ -477,21 +477,21 @@ impl Compiler {
     }
 
     fn whileexpr(&mut self, w: &While) {
-        let start = self.code.jump_relative(0);
-        let body = self.code.next_function_relative_addr();
-        let mut breaks = Vec::new();
-        let mut continues = Vec::new();
-        swap(&mut self.breaks, &mut breaks);
-        swap(&mut self.continues, &mut continues);
+        let condition = self.code.next_function_relative_addr();
+        self.expr(w.condition.as_ref());
+        self.code.emit(MachineOperation::BoolNot);
+        let skip_body = self.code.jump_relative_if(0);
+
+        let mut breaks = take(&mut self.breaks);
+        let mut continues = take(&mut self.continues);
         self.expr(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
         swap(&mut self.continues, &mut continues);
-        let condition = self.code.next_function_relative_addr();
-        self.expr(w.condition.as_ref());
-        self.code.jump_relative_if(body as isize);
+
+        self.code.jump_relative(condition as isize);
         let end = self.code.push(Value::Uninitialized);
 
-        self.code.backpatch_jump_rel(start, condition as isize);
+        self.code.backpatch_jump_rel(skip_body, end as isize);
         for addr in breaks {
             self.code.backpatch_jump_rel(addr, end as isize);
         }

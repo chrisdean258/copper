@@ -1,12 +1,11 @@
-use crate::eval::Evaluator;
-use crate::memory;
-use crate::typesystem::*;
-use crate::value::Value;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::mem;
-use std::os::unix::io::FromRawFd;
+use crate::{eval::Evaluator, memory, typesystem::*, value::Value};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{stdin, Write},
+    mem,
+    os::unix::io::FromRawFd,
+};
 
 use std::fmt::{Debug, Formatter};
 
@@ -111,6 +110,12 @@ fn len(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     })
 }
 
-fn getline(_eval: &mut Evaluator, _first: usize, _count: usize) -> Value {
-    Value::Null
+fn getline(eval: &mut Evaluator, _: usize, count: usize) -> Value {
+    debug_assert_eq!(count, 0, "0 arguments required");
+    let mut line = String::new();
+    let stdin = stdin();
+    match stdin.read_line(&mut line) {
+        Ok(_) => Value::Str(eval.memory.alloc_string(line)),
+        Err(_) => Value::None(STR),
+    }
 }
