@@ -362,9 +362,6 @@ impl TypeSystem {
     }
 
     pub fn underlying_type(&self, t: Type) -> Option<Type> {
-        if t == STR {
-            return Some(CHAR);
-        }
         match self.types[t].te_type {
             TypeEntryType::Container(t) => Some(t),
             _ => None,
