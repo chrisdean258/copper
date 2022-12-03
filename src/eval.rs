@@ -296,7 +296,6 @@ impl Evaluator {
                     let bp = self.memory.stack_top() - num_args;
                     let builtin_idx = newip - BUILTIN_CODE;
                     let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
-                    self.memory.truncate_stack(self.bp);
                     reg = rv;
                 }
                 MachineOperation::CallKnownSize(newip, num_args) => {

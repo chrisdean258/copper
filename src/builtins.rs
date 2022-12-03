@@ -48,12 +48,12 @@ macro_rules! builtin_func {
 }
 
 impl BuiltinFunction {
-    pub fn get_table(ts: &mut TypeSystem) -> Vec<BuiltinFunction> {
+    pub fn get_table(_ts: &mut TypeSystem) -> Vec<BuiltinFunction> {
         vec![
             builtin_func!(write, INT; ANY, ... => UNIT),
             builtin_func!(alloc, INT => PTR),
             builtin_func!(len, ANY => INT),
-            builtin_func!(getline, => ts.option_type(STR)),
+            builtin_func!(getline, => OPT_STR),
         ]
     }
 
@@ -115,7 +115,8 @@ fn getline(eval: &mut Evaluator, _: usize, count: usize) -> Value {
     let mut line = String::new();
     let stdin = stdin();
     match stdin.read_line(&mut line) {
+        Ok(0) => Value::None(OPT_STR),
         Ok(_) => Value::Str(eval.memory.alloc_string(line)),
-        Err(_) => Value::None(STR),
+        Err(e) => panic!("{}", e),
     }
 }

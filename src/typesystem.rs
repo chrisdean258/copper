@@ -159,6 +159,7 @@ pub const CHAR: Type = 8;
 pub const INT: Type = 9;
 pub const FLOAT: Type = 10;
 pub const STR: Type = 11;
+pub const OPT_STR: Type = 12;
 
 trait TypeMatch {
     fn matches(&self, other: &Type) -> bool;
@@ -180,6 +181,10 @@ impl TypeSystem {
         };
         rv.add_default_types();
         rv.add_default_ops();
+        // This is somewhat of a hack because getline returns an option string so we need to to be
+        // determinable.
+        let opt_str = rv.option_type(STR);
+        debug_assert_eq!(opt_str, OPT_STR);
         rv
     }
 
