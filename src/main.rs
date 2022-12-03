@@ -73,10 +73,10 @@ fn real_main() -> i64 {
         }
     };
 
-    let val = match rv {
+    match rv {
         Err(s) => {
             eprintln!("{}", s);
-            return 1;
+            1
         }
         Ok((v, eval::ReturnState::Evaluated)) => {
             intp.print_value(v);
@@ -106,7 +106,7 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
                         Ok((value::Value::Int(a), eval::ReturnState::Exited)) => return a,
                         Ok((a, eval::ReturnState::Exited)) => unreachable!("{:?}", a),
                         Err(e) => match e.downcast_ref::<parser::Error>() {
-                            Some(parser::Error::UnexpectedEOF) => match rl.readline("... ") {
+                            Some(parser::Error::UnexpectedEOF(_)) => match rl.readline("... ") {
                                 Ok(cont) => {
                                     line = format!("{}{}", line, cont);
                                     lineno += 1;

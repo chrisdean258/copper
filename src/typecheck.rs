@@ -681,10 +681,6 @@ impl TypeChecker {
 
     fn immediate(&mut self, i: Immediate) -> Result<(TypedExpressionType, Type), ()> {
         Ok(match i.value {
-            Value::Null => (
-                TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
-                typesystem::NULL,
-            ),
             Value::Bool(_) => (
                 TypedExpressionType::Immediate(TypedImmediate { value: i.value }),
                 typesystem::BOOL,

@@ -1,1 +1,3 @@
-return 1
+while { a = getline(); a != null } {
+	print(a)
+}

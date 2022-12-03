@@ -33,7 +33,7 @@ pub enum Operation {
     ModEq,
     BitShiftRightEq,
     BitShiftLeftEq,
-    UnaryMinus,
+    Negate,
     UnaryPlus,
     BoolNot,
     BitNot,
@@ -98,6 +98,7 @@ pub enum MachineOperation {
     Div,
     BoolNot,
     BitNot,
+    Negate,
 }
 
 impl Operation {
@@ -167,6 +168,7 @@ impl Operation {
                 | Operation::PreInc
                 | Operation::PreDec
                 | Operation::Deref
+                | Operation::Negate
         )
     }
 
@@ -205,6 +207,7 @@ impl Operation {
             Div,
             BoolNot,
             BitNot,
+            Negate,
         }
     }
 }
@@ -220,8 +223,8 @@ impl Display for Operation {
             Operation::BitAnd => "&",
             Operation::CmpGE => ">=",
             Operation::CmpGT => ">",
-            Operation::CmpLE => "<",
-            Operation::CmpLT => "<=",
+            Operation::CmpLE => "<=",
+            Operation::CmpLT => "<",
             Operation::CmpEq => "==",
             Operation::CmpNotEq => "!=",
             Operation::BitShiftLeft => "<<",
@@ -242,7 +245,7 @@ impl Display for Operation {
             Operation::ModEq => "%=",
             Operation::BitShiftRightEq => ">>=",
             Operation::BitShiftLeftEq => "<<=",
-            Operation::UnaryMinus => "-",
+            Operation::Negate => "-",
             Operation::UnaryPlus => "+",
             Operation::BoolNot => "!",
             Operation::BitNot => "~",
@@ -321,6 +324,7 @@ impl Display for MachineOperation {
             MachineOperation::Div => write!(f, "/"),
             MachineOperation::BoolNot => write!(f, "!"),
             MachineOperation::BitNot => write!(f, "~"),
+            MachineOperation::Negate => write!(f, "-"),
         }
     }
 }

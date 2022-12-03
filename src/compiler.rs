@@ -1,13 +1,20 @@
+#![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
+    parser::*,
     parser::{ClassDecl, Function, Lambda},
     typecheck::*,
-    typesystem::{Signature, Type, TypeSystem, NULL},
+    typesystem::{Signature, Type, TypeSystem, NULL, STR},
     value::Value,
 };
-use std::{cell::RefCell, collections::HashMap, mem::swap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    mem::{swap, take},
+    rc::Rc,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
@@ -393,47 +400,48 @@ impl Compiler {
         None
     }
 
-    // fn funcrefexpr(&mut self, r: &FuncRefExpr) {
-    // let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
-    // if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
-    // match val {
-    // MemoryLocation::CodeLocation(a) => {
-    // self.code.push(Value::Ptr(a));
-    // return;
-    // }
-    // MemoryLocation::CurrentFunction => {
-    // self.recursive_calls.push(self.code.push(Value::Null));
-    // return;
-    // }
-    // t => unreachable!("Expected CodeLocation found {:?}", t),
-    // }
-    // }
-    // let mut is_init = false;
-    // let func = match self.scope_lookup(&r.name, &self.func_scopes) {
-    // Some(f) => f,
-    // None => match self.scope_lookup(&r.name, &self.class_scopes) {
-    // None => panic!(
-    // "Could not find a func `{}` in func_scope or class_scope",
-    // r.name
-    // ),
-    // Some(c) => {
-    // is_init = true;
-    // match &c.borrow().methods.get("__init__").unwrap().etype {
-    // ExpressionType::Function(f) => f.clone(),
-    // _ => unreachable!(),
-    // }
-    // }
-    // },
-    // };
+    fn funcrefexpr(&mut self, r: &FuncRefExpr) {
+        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
+        if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
+            match val {
+                MemoryLocation::CodeLocation(a) => {
+                    self.code.push(Value::Ptr(a));
+                    return;
+                }
+                MemoryLocation::CurrentFunction => {
+                    self.recursive_calls
+                        .push(self.code.push(Value::Uninitialized));
+                    return;
+                }
+                t => unreachable!("Expected CodeLocation found {:?}", t),
+            }
+        }
+        let mut is_init = false;
+        let func = match self.scope_lookup(&r.name, &self.func_scopes) {
+            Some(f) => f,
+            None => match self.scope_lookup(&r.name, &self.class_scopes) {
+                None => panic!(
+                    "Could not find a func `{}` in func_scope or class_scope",
+                    r.name
+                ),
+                Some(c) => {
+                    is_init = true;
+                    match &c.borrow().methods.get("__init__").unwrap().etype {
+                        ExpressionType::Function(f) => f.clone(),
+                        _ => unreachable!(),
+                    }
+                }
+            },
+        };
 
-    // self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
+        self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
-    // let save_bp_list = take(&mut self.recursive_calls);
-    // let addr = self.single_function(&func.borrow(), &r.sig, is_init);
-    // self.recursive_calls = save_bp_list;
-    // self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
-    // self.code.push(Value::Ptr(addr));
-    // }
+        let save_bp_list = take(&mut self.recursive_calls);
+        let addr = self.single_function(&func.borrow(), &r.sig, is_init);
+        self.recursive_calls = save_bp_list;
+        self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
+        self.code.push(Value::Ptr(addr));
+    }
 
     fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
@@ -470,21 +478,21 @@ impl Compiler {
     }
 
     fn whileexpr(&mut self, w: &TypedWhile) {
-        let start = self.code.jump_relative(0);
-        let body = self.code.next_function_relative_addr();
-        let mut breaks = Vec::new();
-        let mut continues = Vec::new();
-        swap(&mut self.breaks, &mut breaks);
-        swap(&mut self.continues, &mut continues);
+        let condition = self.code.next_function_relative_addr();
+        self.expr(w.condition.as_ref());
+        self.code.emit(MachineOperation::BoolNot);
+        let skip_body = self.code.jump_relative_if(0);
+
+        let mut breaks = take(&mut self.breaks);
+        let mut continues = take(&mut self.continues);
         self.expr(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
         swap(&mut self.continues, &mut continues);
-        let condition = self.code.next_function_relative_addr();
-        self.expr(w.condition.as_ref());
-        self.code.jump_relative_if(body as isize);
+
+        self.code.jump_relative(condition as isize);
         let end = self.code.push(Value::Uninitialized);
 
-        self.code.backpatch_jump_rel(start, condition as isize);
+        self.code.backpatch_jump_rel(skip_body, end as isize);
         for addr in breaks {
             self.code.backpatch_jump_rel(addr, end as isize);
         }
@@ -583,21 +591,27 @@ impl Compiler {
     }
 
     fn index(&mut self, i: &TypedIndexExpr) {
-        self.get_no_ref(i.obj.as_ref());
-        self.code.dup();
-        self.code.push(Value::PtrOffset(1));
-        self.code.emit(MachineOperation::Plus);
-        self.code.load();
+        if i.obj.typ == STR {
+            self.expr(i.obj.as_ref());
+            self.expr(&i.args[0]);
+            self.code.emit(MachineOperation::Plus);
+        } else {
+            self.get_no_ref(i.obj.as_ref());
+            self.code.dup();
+            self.code.push(Value::PtrOffset(1));
+            self.code.emit(MachineOperation::Plus);
+            self.code.load();
 
-        debug_assert!(i.args.len() == 1);
-        self.expr(&i.args[0]);
-        self.code.dup();
-        self.code.rotate(3);
-        self.code.emit(MachineOperation::CmpLE);
-        self.code.conditional_fail();
-        self.code.swap();
-        self.code.load();
-        self.code.emit(MachineOperation::Plus);
+            debug_assert!(i.args.len() == 1);
+            self.expr(&i.args[0]);
+            self.code.dup();
+            self.code.rotate(3);
+            self.code.emit(MachineOperation::CmpLE);
+            self.code.conditional_fail();
+            self.code.swap();
+            self.code.load();
+            self.code.emit(MachineOperation::Plus);
+        }
         if !self.need_ref {
             self.code.load();
         }

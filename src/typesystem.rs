@@ -159,6 +159,7 @@ pub const CHAR: Type = 8;
 pub const INT: Type = 9;
 pub const FLOAT: Type = 10;
 pub const STR: Type = 11;
+pub const OPT_STR: Type = 12;
 
 trait TypeMatch {
     fn matches(&self, other: &Type) -> bool;
@@ -180,6 +181,10 @@ impl TypeSystem {
         };
         rv.add_default_types();
         rv.add_default_ops();
+        // This is somewhat of a hack because getline returns an option string so we need to to be
+        // determinable.
+        let opt_str = rv.option_type(STR);
+        debug_assert_eq!(opt_str, OPT_STR);
         rv
     }
 
@@ -207,7 +212,7 @@ impl TypeSystem {
         self.new_type_with_num(String::from("char"), TypeEntryType::Basic, CHAR);
         self.new_type_with_num(String::from("int"), TypeEntryType::Basic, INT);
         self.new_type_with_num(String::from("float"), TypeEntryType::Basic, FLOAT);
-        self.new_type_with_num(String::from("str"), TypeEntryType::Basic, STR);
+        self.new_type_with_num(String::from("str"), TypeEntryType::Container(CHAR), STR);
     }
 
     fn add_default_ops(&mut self) {
@@ -243,6 +248,8 @@ impl TypeSystem {
         make_op!(Minus, Plus, Times, Mod, Div  |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
+            CHAR, INT => INT,
+            INT, CHAR => INT,
         );
 
         make_op!(Minus, Plus, Times, Div  |
@@ -270,6 +277,8 @@ impl TypeSystem {
         make_op!(PlusEq, MinusEq, TimesEq, DivEq, ModEq, BitShiftRightEq, BitShiftLeftEq |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
+            CHAR, INT => CHAR,
+            INT, CHAR => INT,
         );
 
         make_op!(MinusEq, PlusEq, TimesEq, DivEq  |
@@ -283,6 +292,12 @@ impl TypeSystem {
         make_op!(BitNot, PreInc, PreDec, PostInc, PostDec |
             CHAR => CHAR,
             INT => INT,
+        );
+
+        make_op!(UnaryPlus, Negate |
+            CHAR => CHAR,
+            INT => INT,
+            FLOAT => FLOAT,
         );
 
         self.ensure_op(Operation::Deref);
