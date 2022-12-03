@@ -52,6 +52,17 @@ impl Interpretter {
                             .unwrap()
                     )
                 }
+                MachineOperation::CallKnownSize(addr, size) => {
+                    eprint!(
+                        " ({}, {})",
+                        self.compiler
+                            .code
+                            .rev_functions
+                            .get(&(addr - CODE))
+                            .unwrap(),
+                        size
+                    )
+                }
                 MachineOperation::CallBuiltin(_addr) => {}
                 _ => {}
             }

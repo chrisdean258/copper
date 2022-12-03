@@ -688,7 +688,7 @@ impl ParseTree {
             let optype = match token.token_type {
                 TokenType::BoolNot => Operation::BoolNot,
                 TokenType::BitNot => Operation::BitNot,
-                TokenType::Minus => Operation::UnaryMinus,
+                TokenType::Minus => Operation::Negate,
                 TokenType::Plus => Operation::UnaryPlus,
                 TokenType::Times => Operation::Deref,
                 TokenType::Inc => {

@@ -212,7 +212,7 @@ impl TypeSystem {
         self.new_type_with_num(String::from("char"), TypeEntryType::Basic, CHAR);
         self.new_type_with_num(String::from("int"), TypeEntryType::Basic, INT);
         self.new_type_with_num(String::from("float"), TypeEntryType::Basic, FLOAT);
-        self.new_type_with_num(String::from("str"), TypeEntryType::Basic, STR);
+        self.new_type_with_num(String::from("str"), TypeEntryType::Container(CHAR), STR);
     }
 
     fn add_default_ops(&mut self) {
@@ -248,6 +248,8 @@ impl TypeSystem {
         make_op!(Minus, Plus, Times, Mod, Div  |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
+            CHAR, INT => INT,
+            INT, CHAR => INT,
         );
 
         make_op!(Minus, Plus, Times, Div  |
@@ -275,6 +277,8 @@ impl TypeSystem {
         make_op!(PlusEq, MinusEq, TimesEq, DivEq, ModEq, BitShiftRightEq, BitShiftLeftEq |
             CHAR, CHAR => CHAR,
             INT, INT => INT,
+            CHAR, INT => CHAR,
+            INT, CHAR => INT,
         );
 
         make_op!(MinusEq, PlusEq, TimesEq, DivEq  |
@@ -288,6 +292,12 @@ impl TypeSystem {
         make_op!(BitNot, PreInc, PreDec, PostInc, PostDec |
             CHAR => CHAR,
             INT => INT,
+        );
+
+        make_op!(UnaryPlus, Negate |
+            CHAR => CHAR,
+            INT => INT,
+            FLOAT => FLOAT,
         );
 
         self.ensure_op(Operation::Deref);
@@ -352,6 +362,9 @@ impl TypeSystem {
     }
 
     pub fn underlying_type(&self, t: Type) -> Option<Type> {
+        if t == STR {
+            return Some(CHAR);
+        }
         match self.types[t].te_type {
             TypeEntryType::Container(t) => Some(t),
             _ => None,

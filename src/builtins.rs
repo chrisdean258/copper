@@ -106,7 +106,7 @@ fn len(eval: &mut Evaluator, first: usize, count: usize) -> Value {
             1 << (p / memory::HEAP)
         }
         Value::Str(s) => eval.memory.strings[s].len() as i64,
-        t => panic!("Canot type len of {:?}", t),
+        t => panic!("Cannot calculate len of `{:?}`", t),
     })
 }
 

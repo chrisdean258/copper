@@ -93,7 +93,8 @@ impl Evaluator {
             ($op:tt, $($t1:ident, $t2:ident),+ $(,)?) => {
                 let a = pop!();
                 reg = match (a, reg) {
-                    $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(if bb $op aa {1} else {0}),)+
+                    $((Value::$t1(aa), Value::$t2(bb)) => Value::Bool(u8::from(bb $op aa)),)+
+                    (Value::Str(aa), Value::Str(bb)) => Value::Bool(u8::from(bb $op aa || self.memory.strings[bb] $op self.memory.strings[aa])),
                     (_, b) => unreachable!("Trying to apply binop {:?} {} {:?}", a, stringify!($op), b),
                 };
             };
@@ -110,7 +111,16 @@ impl Evaluator {
 
         macro_rules! print_stack {
             () => {
-                eprintln!("Stack: {:?} {:?}", self.memory.stack, reg);
+                if self.bp - STACK >= self.memory.stack.len() {
+                    eprintln!("Stack: {:?} {:?} ", self.memory.stack, reg);
+                } else {
+                    eprintln!(
+                        "Stack: {:?} {:?} {:?}",
+                        &self.memory.stack[..(self.bp - STACK)],
+                        &self.memory.stack[(self.bp - STACK)..],
+                        reg
+                    );
+                }
             };
         }
 
@@ -144,14 +154,19 @@ impl Evaluator {
                 MachineOperation::Save => {
                     retval = reg;
                 }
-                MachineOperation::Load => {
-                    let addr = inplace!(Value::Ptr);
-                    if let Some(v) = self.memory.get(addr) {
-                        reg = *v
-                    } else if cfg!(debug_assertions) {
-                        panic!("Reading out of bounds 0x{:x}", addr);
+                MachineOperation::Load => match reg {
+                    Value::Ptr(addr) => {
+                        if let Some(v) = self.memory.get(addr) {
+                            reg = *v
+                        } else if cfg!(debug_assertions) {
+                            panic!("Reading out of bounds 0x{:x}", addr);
+                        }
                     }
-                }
+                    Value::StrIdx(s, i) => {
+                        reg = Value::Char(self.memory.strings[s as usize].as_bytes()[i as usize]);
+                    }
+                    a => panic!("Trying to deref `{a:?}`"),
+                },
                 MachineOperation::LoadLocal(o) => {
                     let ptr = (self.bp as isize + o) as usize;
                     self.memory.push(reg);
@@ -204,7 +219,9 @@ impl Evaluator {
                     reg = Value::Ptr(addr);
                 }
                 MachineOperation::Reserve(size) => {
+                    self.memory.push(reg);
                     self.memory.reserve(*size);
+                    reg = self.memory.pop();
                 }
                 MachineOperation::Rotate(num) => {
                     // intentional direct stack manipulation
@@ -296,15 +313,14 @@ impl Evaluator {
                     let bp = self.memory.stack_top() - num_args;
                     let builtin_idx = newip - BUILTIN_CODE;
                     let rv = (self.builtin_table[builtin_idx].func)(self, bp, num_args);
+                    self.memory.truncate_stack(bp);
                     reg = rv;
                 }
                 MachineOperation::CallKnownSize(newip, num_args) => {
-                    self.memory.push(reg);
-                    let bp = self.memory.stack_top() - num_args;
+                    let bp = self.memory.stack_top() - num_args + 1;
                     retstack.push((self.bp, ip + 1));
                     self.bp = bp;
                     ip = *newip;
-                    reg = self.memory.pop();
                     continue;
                 }
                 MachineOperation::BoolOr => {
@@ -384,6 +400,9 @@ impl Evaluator {
                         // (_, Value::Null) => Value::Bool(0),
                         (Value::None(_), _) => Value::Bool(0),
                         (_, Value::None(_)) => Value::Bool(0),
+                        (Value::Str(aa), Value::Str(bb)) => Value::Bool(u8::from(
+                            bb == aa || self.memory.strings[bb] == self.memory.strings[aa],
+                        )),
                         (_, b) => {
                             unreachable!("Trying to apply binop {:?} == {:?}", a, b)
                         }
@@ -397,14 +416,12 @@ impl Evaluator {
                         (Value::Int(aa), Value::Int(bb)) => Value::Bool(u8::from(bb != aa)),
                         (Value::Char(aa), Value::Char(bb)) => Value::Bool(u8::from(bb != aa)),
                         (Value::Bool(aa), Value::Bool(bb)) => Value::Bool(u8::from(bb != aa)),
-                        // (Value::Null, Value::Null) => Value::Bool(0),
-                        // (Value::Null, Value::None(_)) => Value::Bool(0),
-                        // (Value::None(_), Value::Null) => Value::Bool(0),
                         (Value::None(aa), Value::None(bb)) => Value::Bool(u8::from(bb != aa)),
-                        // (Value::Null, _) => Value::Bool(1),
-                        // (_, Value::Null) => Value::Bool(1),
                         (Value::None(_), _) => Value::Bool(1),
                         (_, Value::None(_)) => Value::Bool(1),
+                        (Value::Str(aa), Value::Str(bb)) => Value::Bool(u8::from(
+                            bb != aa || self.memory.strings[bb] != self.memory.strings[aa],
+                        )),
                         (_, b) => {
                             unreachable!("Trying to apply binop {:?} != {:?}", a, b)
                         }
@@ -437,6 +454,12 @@ impl Evaluator {
                         (Value::PtrOffset(aa), Value::Ptr(ref mut bb)) => {
                             *bb = (*bb as isize + aa) as usize;
                         }
+                        (Value::PtrOffset(aa), Value::Str(bb)) => {
+                            reg = Value::StrIdx(*bb as u32, aa as u32)
+                        }
+                        (Value::Int(aa), Value::Str(bb)) => {
+                            reg = Value::StrIdx(*bb as u32, aa as u32)
+                        }
                         (Value::Int(aa), Value::Ptr(ref mut bb)) => {
                             *bb = (*bb as isize + aa as isize) as usize;
                         }
@@ -445,6 +468,12 @@ impl Evaluator {
                         }
                         (Value::Int(aa), Value::Int(ref mut bb)) => {
                             *bb += aa;
+                        }
+                        (Value::Char(aa), Value::Int(ref mut bb)) => {
+                            *bb += aa as i64;
+                        }
+                        (Value::Int(aa), Value::Char(bb)) => {
+                            reg = Value::Int(aa + *bb as i64);
                         }
                         (Value::Char(aa), Value::Char(ref mut bb)) => {
                             *bb += aa;
@@ -488,6 +517,9 @@ impl Evaluator {
                 },
                 MachineOperation::BitNot => {
                     do_unop!(!, Int, Char);
+                }
+                MachineOperation::Negate => {
+                    do_unop!(-, Int, Float);
                 }
             }
             ip += 1;

@@ -3,7 +3,7 @@ use crate::{
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
     parser::*,
-    typesystem::{Signature, Type, TypeSystem, NULL},
+    typesystem::{Signature, Type, TypeSystem, NULL, STR},
     value::Value,
 };
 use std::{
@@ -409,7 +409,8 @@ impl Compiler {
                     return;
                 }
                 MemoryLocation::CurrentFunction => {
-                    self.recursive_calls.push(self.code.push(Value::Null));
+                    self.recursive_calls
+                        .push(self.code.push(Value::Uninitialized));
                     return;
                 }
                 t => unreachable!("Expected CodeLocation found {:?}", t),
@@ -590,21 +591,27 @@ impl Compiler {
     }
 
     fn index(&mut self, i: &IndexExpr) {
-        self.get_no_ref(i.obj.as_ref());
-        self.code.dup();
-        self.code.push(Value::PtrOffset(1));
-        self.code.emit(MachineOperation::Plus);
-        self.code.load();
+        if i.obj.derived_type.unwrap() == STR {
+            self.expr(i.obj.as_ref());
+            self.expr(&i.args[0]);
+            self.code.emit(MachineOperation::Plus);
+        } else {
+            self.get_no_ref(i.obj.as_ref());
+            self.code.dup();
+            self.code.push(Value::PtrOffset(1));
+            self.code.emit(MachineOperation::Plus);
+            self.code.load();
 
-        debug_assert!(i.args.len() == 1);
-        self.expr(&i.args[0]);
-        self.code.dup();
-        self.code.rotate(3);
-        self.code.emit(MachineOperation::CmpLE);
-        self.code.conditional_fail();
-        self.code.swap();
-        self.code.load();
-        self.code.emit(MachineOperation::Plus);
+            debug_assert!(i.args.len() == 1);
+            self.expr(&i.args[0]);
+            self.code.dup();
+            self.code.rotate(3);
+            self.code.emit(MachineOperation::CmpLE);
+            self.code.conditional_fail();
+            self.code.swap();
+            self.code.load();
+            self.code.emit(MachineOperation::Plus);
+        }
         if !self.need_ref {
             self.code.load();
         }

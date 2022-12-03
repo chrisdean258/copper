@@ -374,7 +374,6 @@ impl TypeChecker {
 
     fn immediate(&mut self, i: &mut Immediate) -> Result<Type, TypeError> {
         Ok(match i.value {
-            Value::Null => typesystem::NULL,
             Value::Bool(_) => typesystem::BOOL,
             Value::Char(_) => typesystem::CHAR,
             Value::Int(_) => typesystem::INT,
