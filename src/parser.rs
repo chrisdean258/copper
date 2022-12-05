@@ -197,6 +197,7 @@ pub struct Function {
     pub default_args: Vec<Expression>,
     pub locals: Option<usize>,
     pub alloc_before_call: Option<usize>,
+
     pub signatures: Vec<Signature>,
     pub typed_bodies: Vec<TypedExpression>,
 }
@@ -206,6 +207,9 @@ pub struct Lambda {
     pub num_args: usize,
     pub body: Box<Expression>,
     pub locals: Option<usize>,
+
+    pub signatures: Vec<Signature>,
+    pub typed_bodies: Vec<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -867,6 +871,8 @@ impl ParseTree {
                 num_args,
                 body: Box::new(body),
                 locals: None,
+                signatures: Vec::new(),
+                typed_bodies: Vec::new(),
             }))),
         })
     }

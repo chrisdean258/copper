@@ -6,7 +6,7 @@ use crate::{
     operation::{MachineOperation, Operation},
     parser::{ClassDecl, Function, Lambda},
     typecheck::*,
-    typesystem::{Signature, Type, TypeSystem, NULL, STR},
+    typesystem::{Type, TypeSystem, NULL, STR},
     value::Value,
 };
 use std::{
@@ -244,6 +244,7 @@ impl Compiler {
             TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
             TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
             TypedExpressionType::Function(f) => self.function(f),
+            TypedExpressionType::Lambda(l) => self.lambda(l),
             e => todo!("{:?}", e),
         }
     }
@@ -678,16 +679,14 @@ impl Compiler {
         self.code.close_function_and_patch(&self.recursive_calls)
     }
 
-    fn lambda(&mut self, l: Rc<RefCell<Lambda>>, sigs: Vec<Signature>) {
-        let sig = &sigs[0];
-        // for sig in sigs.iter() {
-        let addr = self.single_lambda(&l.borrow(), sig);
+    fn lambda(&mut self, l: &Rc<RefCell<Lambda>>) {
+        debug_assert_eq!(l.borrow().signatures.len(), 1);
+        let addr = self.single_lambda(&l.borrow(), 0);
         self.code.push(Value::Ptr(addr));
-        // break;
-        // }
     }
 
-    fn single_lambda(&mut self, l: &Lambda, sig: &Signature) -> usize {
+    fn single_lambda(&mut self, l: &Lambda, sig_idx: usize) -> usize {
+        let sig = &l.signatures[sig_idx];
         let name = format!(
             "<lambda>{}",
             self.types.as_ref().unwrap().format_signature(sig)
@@ -699,10 +698,7 @@ impl Compiler {
         if l.locals.unwrap() > sig.inputs.len() {
             self.code.reserve(l.locals.unwrap() - sig.inputs.len());
         }
-        if true {
-            todo!();
-        }
-        // self.expr(l.body.as_ref());
+        self.expr(&l.typed_bodies[sig_idx]);
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();

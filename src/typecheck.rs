@@ -85,6 +85,7 @@ impl std::fmt::Display for ErrorType {
 }
 
 type ParserFunction = Rc<RefCell<parser::Function>>;
+type ParserLambda = Rc<RefCell<parser::Lambda>>;
 
 pub struct TypeChecker {
     pub system: TypeSystem,
@@ -98,7 +99,7 @@ pub struct TypeChecker {
     type_to_resolved_func: HashMap<Type, TypedExpression>,
 
     allow_insert: Option<Type>,
-    lambda_args: Vec<Type>,
+    lambda_args: Vec<TypedExpression>,
     location: Option<Location>,
     globals: usize,
     allow_raw_func: bool,
@@ -154,7 +155,7 @@ pub enum TypedExpressionType {
     // Functions/lambdas fundamentally don't have types until they are called
     // So this requires looking in the scope table
     Function(ParserFunction),
-    Lambda,
+    Lambda(ParserLambda),
     List(TypedList),
     Str(TypedStr),
     IndexExpr(TypedIndexExpr),
@@ -889,10 +890,10 @@ impl TypeChecker {
         Ok((TypedExpressionType::Function(f), typ))
     }
 
-    fn lambda(&mut self, l: Rc<RefCell<Lambda>>) -> Result<(TypedExpressionType, Type), ()> {
+    fn lambda(&mut self, l: ParserLambda) -> Result<(TypedExpressionType, Type), ()> {
         let typ = self.system.function_type("<lambda>".to_string());
-        self.type_to_lambda.insert(typ, l);
-        Ok((TypedExpressionType::Lambda, typ))
+        self.type_to_lambda.insert(typ, l.clone());
+        Ok((TypedExpressionType::Lambda(l), typ))
     }
 
     fn lambdaarg(&mut self, l: LambdaArg) -> Result<(TypedExpressionType, Type), ()> {
@@ -902,7 +903,7 @@ impl TypeChecker {
         );
         Ok((
             TypedExpressionType::LambdaArg(TypedLambdaArg { number: l.number }),
-            self.lambda_args[l.number],
+            self.lambda_args[l.number].typ,
         ))
     }
 
@@ -1041,23 +1042,14 @@ impl TypeChecker {
             ));
         }
 
-        match &subject.etype {
-            TypedExpressionType::FuncRefExpr(f) => {
-                self.call_func_with_args(f.func.clone(), subject, args)
-            }
-            TypedExpressionType::VarRefExpr(f) => {
-                let Some(typ) = self.scope_lookup(&f.name) else {
-                    unreachable!("I think");
-                };
-                if let Some(func) = self.type_to_func.get(&typ) {
-                    self.call_func_with_args(func.clone(), subject, args)
-                } else if let Some(lambda) = self.type_to_lambda.get(&typ) {
-                    todo!("lambda = {lambda:?}");
-                } else {
-                    panic!("not found {typ} {}", self.system.typename(typ));
-                }
-            }
-            a => todo!("{a:?}"),
+        if let TypedExpressionType::FuncRefExpr(f) = &subject.etype {
+            self.call_func_with_args(f.func.clone(), subject, args)
+        } else if let Some(func) = self.type_to_func.get(&subject.typ) {
+            self.call_func_with_args(func.clone(), subject, args)
+        } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
+            self.call_lambda_with_args(lambda.clone(), subject, args)
+        } else {
+            todo!()
         }
     }
 
@@ -1067,7 +1059,19 @@ impl TypeChecker {
         subject: TypedExpression,
         args: Vec<TypedExpression>,
     ) -> Result<(TypedExpressionType, Type), ()> {
-        let b = f.borrow();
+        let b = match f.try_borrow() {
+            Ok(a) => a,
+            Err(_) => {
+                return Ok((
+                    TypedExpressionType::CallExpr(TypedCallExpr {
+                        function: Box::new(subject),
+                        args,
+                        sig_idx: None,
+                    }),
+                    UNKNOWN_RETURN,
+                ))
+            }
+        };
         for (i, sig) in b.signatures.iter().enumerate() {
             if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
                 let out = sig.output;
@@ -1255,15 +1259,59 @@ impl TypeChecker {
         }
     }
 
+    fn call_lambda_with_args(
+        &mut self,
+        l: ParserLambda,
+        subject: TypedExpression,
+        args: Vec<TypedExpression>,
+    ) -> Result<(TypedExpressionType, Type), ()> {
+        let b = match l.try_borrow() {
+            Ok(a) => a,
+            Err(_) => {
+                return Ok((
+                    TypedExpressionType::CallExpr(TypedCallExpr {
+                        function: Box::new(subject),
+                        args,
+                        sig_idx: None,
+                    }),
+                    UNKNOWN_RETURN,
+                ))
+            }
+        };
+        for (i, sig) in b.signatures.iter().enumerate() {
+            if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
+                let out = sig.output;
+                drop(b);
+                return Ok((
+                    TypedExpressionType::CallExpr(TypedCallExpr {
+                        function: Box::new(subject),
+                        args,
+                        sig_idx: Some(i),
+                    }),
+                    out,
+                ));
+            }
+        }
+        drop(b);
+        let calling_location = self.location.clone().unwrap();
+        let (te, sig_idx) = self.call_lambda(l, args.clone(), &calling_location)?;
+        Ok((
+            TypedExpressionType::CallExpr(TypedCallExpr {
+                function: Box::new(subject),
+                args,
+                sig_idx,
+            }),
+            te.typ,
+        ))
+    }
+
     #[allow(dead_code)]
     fn call_lambda(
         &mut self,
-        lambda: Rc<RefCell<Lambda>>,
-        functype: Type,
-        mut args: Vec<Type>,
-        funcloc: Location,
-        c: &mut CallExpr,
-    ) -> Result<TypedExpression, ()> {
+        lambda: ParserLambda,
+        mut args: Vec<TypedExpression>,
+        funcloc: &Location,
+    ) -> Result<(TypedExpression, Option<usize>), ()> {
         // There may be a systen where we can cache the results of these expressions
         // But currently I'm not 100% sure on the relationship between functions and types
         // And it seems like I should move the the resolved/unresolved system I use for classes
@@ -1273,17 +1321,17 @@ impl TypeChecker {
         // }
 
         swap(&mut self.lambda_args, &mut args);
-
+        let argtypes = args.iter().map(|a| a.typ).collect();
         self.openscope();
         self.func_returns.push(None);
-        let rv = self.call_single_check(*lambda.borrow_mut().body.clone(), &funcloc)?;
+        let rv = self.call_single_check(*lambda.borrow_mut().body.clone(), funcloc)?;
+        let func_sig = Signature::new(argtypes, None, rv.typ);
+        let idx = lambda.borrow().signatures.len();
+        lambda.borrow_mut().typed_bodies.push(rv.clone());
+        lambda.borrow_mut().signatures.push(func_sig);
         lambda.borrow_mut().locals = Some(self.closescope() + args.len());
         swap(&mut self.lambda_args, &mut args);
-        let rftyp = self
-            .system
-            .add_function_signature(functype, Signature::new(args, None, rv.typ));
-        c.function.as_mut().derived_type = Some(rftyp);
-        Ok(rv)
+        Ok((rv, Some(idx)))
     }
 
     fn dotted_lookup(&mut self, mut d: DottedLookup) -> Result<(TypedExpressionType, Type), ()> {
