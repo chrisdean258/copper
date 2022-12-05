@@ -1,6 +1,6 @@
 use crate::{
-    lex::*, location::Location, operation::Operation, typesystem::Signature, typesystem::Type,
-    value::Value,
+    lex::*, location::Location, operation::Operation, typecheck::TypedExpression,
+    typesystem::Signature, typesystem::Type, value::Value,
 };
 use std::{cell::RefCell, collections::HashMap, iter::Peekable, mem::swap, rc::Rc};
 
@@ -197,6 +197,8 @@ pub struct Function {
     pub default_args: Vec<Expression>,
     pub locals: Option<usize>,
     pub alloc_before_call: Option<usize>,
+    pub signatures: Vec<Signature>,
+    pub typed_bodies: Vec<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -245,8 +247,6 @@ pub struct Continue {
 pub enum Error {
     UnexpectedEOF(&'static str),
     UnexpectedToken(Token, Option<&'static str>),
-    ContinueNotAllowed(Location),
-    BreakNotAllowed(Location),
     MethodRedefinition(Location, String),
     FieldRedefinition(Location, String),
 }
@@ -262,12 +262,6 @@ impl std::fmt::Display for Error {
                     write!(f, " Expected `{}`.", expected)?;
                 }
                 Ok(())
-            }
-            Self::ContinueNotAllowed(l) => {
-                write!(f, "{}: `continue` not allowed here", l)
-            }
-            Self::BreakNotAllowed(l) => {
-                write!(f, "{}: `break` not allowed here", l)
             }
             Self::MethodRedefinition(l, n) => {
                 write!(f, "{}: Redefinition of method `{}`", l, n)
@@ -854,6 +848,8 @@ impl ParseTree {
                 default_args,
                 locals: None,
                 alloc_before_call: None,
+                signatures: Vec::new(),
+                typed_bodies: Vec::new(),
             }))),
         })
     }

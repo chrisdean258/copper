@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction, error::ErrorCollection, location::Location, operation::Operation,
-    parser, parser::ParseTree, parser::*, typesystem, typesystem::*, value::Value,
+    parser, parser::*, typesystem, typesystem::*, value::Value,
 };
 use std::{
     cell::RefCell,
@@ -29,6 +29,7 @@ pub enum ErrorType {
     EmptyBlock,
     FuncTypeUnknown(String),
     IfConditionNotBool(String),
+    IncorrectTypesForBuiltin(String, String),
     IndexNotInt,
     ListTypeMismatch(String, String),
     LoopConditionNotBool(String),
@@ -65,6 +66,7 @@ impl std::fmt::Display for ErrorType {
             Self::EmptyBlock => write!(f, "Empty Block Expressions are not allowed (yet)"),
             Self::FuncTypeUnknown(func) => write!(f,  "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",),
             Self::IfConditionNotBool(t) => write!(f, "if condition must be bool. This one is `{t}`"),
+            Self::IncorrectTypesForBuiltin(e, fo) => write!(f, "Functions inputs didnt match. Exepcted `{e}` found `{fo}`"),
             Self::IndexNotInt => write!(f,  "Index expression requires 1 argument of type `int`"),
             Self::ListTypeMismatch(t1, t2) => write!(f,  "List established to contain type `{t1}` but this element was of type `{t2}`",),
             Self::LoopConditionNotBool(t) => write!(f, "While loop condition must be bool. This one is `{t}`"),
@@ -82,16 +84,17 @@ impl std::fmt::Display for ErrorType {
     }
 }
 
+type ParserFunction = Rc<RefCell<parser::Function>>;
+
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
-    func_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    func_scopes: Vec<Rc<RefCell<HashMap<String, ParserFunction>>>>,
     class_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
 
-    type_to_func: HashMap<Type, Rc<RefCell<parser::Function>>>,
+    type_to_func: HashMap<Type, ParserFunction>,
     type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
     type_to_class: HashMap<Type, Rc<RefCell<ClassDecl>>>,
-
     type_to_resolved_func: HashMap<Type, TypedExpression>,
 
     allow_insert: Option<Type>,
@@ -149,7 +152,7 @@ pub enum TypedExpressionType {
     AssignExpr(TypedAssignExpr),
     // Functions/lambdas fundamentally don't have types until they are called
     // So this requires looking in the scope table
-    Function,
+    Function(ParserFunction),
     Lambda,
     List(TypedList),
     Str(TypedStr),
@@ -203,6 +206,7 @@ pub struct TypedClassRefExpr {
 #[derive(Debug, Clone)]
 pub struct TypedFuncRefExpr {
     pub name: String,
+    pub func: ParserFunction,
 }
 
 #[derive(Debug, Clone)]
@@ -379,8 +383,13 @@ impl TypeChecker {
         self.scope_lookup_general(name, &self.scopes)
     }
 
-    fn scope_lookup_func(&self, name: &str) -> Option<Type> {
-        self.scope_lookup_general(name, &self.func_scopes)
+    fn scope_lookup_func(&self, name: &str) -> Option<ParserFunction> {
+        for scope in self.func_scopes.iter().rev() {
+            if let Some(t) = scope.borrow().get(name) {
+                return Some(t.clone());
+            }
+        }
+        None
     }
 
     fn scope_lookup_class(&self, name: &str) -> Option<Type> {
@@ -394,10 +403,10 @@ impl TypeChecker {
         place
     }
 
-    fn insert_func_scope(&mut self, name: &str, t: Type) -> usize {
+    fn insert_func_scope(&mut self, name: &str, f: ParserFunction) -> usize {
         let mut scope = self.func_scopes.last().unwrap().borrow_mut();
         let place = scope.len();
-        scope.insert(String::from(name), t);
+        scope.insert(String::from(name), f);
         place
     }
 
@@ -633,22 +642,14 @@ impl TypeChecker {
             ));
         }
         match self.scope_lookup_func(&r.name) {
-            Some(typ) if self.allow_raw_func => Ok((
-                TypedExpressionType::FuncRefExpr(TypedFuncRefExpr { name: r.name }),
-                typ,
+            Some(func) if self.allow_raw_func => Ok((
+                TypedExpressionType::FuncRefExpr(TypedFuncRefExpr { name: r.name, func }),
+                typesystem::UNKNOWN_RETURN,
             )),
             Some(_) => self.error(ErrorType::FuncTypeUnknown(r.name)),
             None => self.error(ErrorType::NoSuchNameInScope(r.name)),
         }
     }
-
-    // fn funcrefexpr(&mut self, r: &mut FuncRefExpr) -> Result<(TypedExpressionType, Type), ()> {
-    // let name = self.system.mangle(&r.name, &r.sig);
-    // match self.scope_lookup(&name) {
-    // Some(t) => Ok(t),
-    // None => unreachable!("Could not find {:?} in scope", r),
-    // }
-    // }
 
     fn assignment(&mut self, a: AssignExpr) -> Result<(TypedExpressionType, Type), ()> {
         if !a.lhs.is_lval() {
@@ -864,18 +865,14 @@ impl TypeChecker {
         ))
     }
 
-    fn function(
-        &mut self,
-        f: Rc<RefCell<parser::Function>>,
-    ) -> Result<(TypedExpressionType, Type), ()> {
+    fn function(&mut self, f: ParserFunction) -> Result<(TypedExpressionType, Type), ()> {
         let name = f.borrow().name.clone();
         let default = "<anonymous function>".to_owned();
         let typ = self.system.function_type(name.clone().unwrap_or(default));
         if let Some(s) = name {
-            self.insert_func_scope(&s, typ);
+            self.insert_func_scope(&s, f.clone());
         }
-        self.type_to_func.insert(typ, f);
-        Ok((TypedExpressionType::Function, typ))
+        Ok((TypedExpressionType::Function(f), typ))
     }
 
     fn lambda(&mut self, l: Rc<RefCell<Lambda>>) -> Result<(TypedExpressionType, Type), ()> {
@@ -963,15 +960,15 @@ impl TypeChecker {
                 }
                 let unresolved = self.system.class_new_unresolved(subject.typ);
                 argtypes.insert(0, unresolved);
-                let init_func = self.expr(init.clone())?;
-                let _ = (
-                    TypedExpressionType::InitCallExpr(TypedInitCallExpr {
-                        obj: Box::new(init_func),
-                        args,
-                        alloc_before_call,
-                    }),
-                    unresolved,
-                );
+                let _init_func = self.expr(init.clone())?;
+                // let _ = (
+                // TypedExpressionType::InitCallExpr(TypedInitCallExpr {
+                // obj: Box::new(init_func),
+                // args,
+                // alloc_before_call,
+                // }),
+                // unresolved,
+                // );
             } else {
                 return self.error(ErrorType::ClassLacksInit(self.system.typename(subject.typ)));
             }
@@ -1012,88 +1009,110 @@ impl TypeChecker {
                 _ => return self.error(ErrorType::CannotIndirectlyCallBuiltins),
             };
             let builtins = BuiltinFunction::get_hashmap(&mut self.system);
-            let _func = builtins.get(&funcname).unwrap();
-            todo!();
+            // Ok to unwrap here because we have already verified that this is a builtin function
+            let func = builtins.get(&funcname).unwrap();
+            let outtyp = func.signature.match_inputs(&argtypes).ok_or_else(|| {
+                let _ = self.error::<()>(ErrorType::IncorrectTypesForBuiltin(
+                    self.system.format_args_from_sig(&func.signature),
+                    self.system.format_args(&argtypes),
+                ));
+            })?;
+            return Ok((
+                TypedExpressionType::CallExpr(TypedCallExpr {
+                    function: Box::new(subject),
+                    args,
+                }),
+                outtyp,
+            ));
         }
-        todo!()
 
-        // if let Some(sig) = self.system.get_resolved_func_sig_can_fail(functype) {
-        // mangle!(c, args, sig.output);
-        // return Ok(sig.output);
-        // }
-
-        // let rv = match self.type_to_func.get_mut(&functype) {
-        // Some(func) => {
-        // let func = func.clone();
-        // self.call_function(func, functype, args.clone(), funcloc, c)?
-        // }
-        // None => {
-        // let lambda = self.type_to_lambda.get_mut(&functype).unwrap().clone();
-        // self.call_lambda(lambda, functype, args.clone(), funcloc, c)?
-        // }
-        // };
-        // mangle!(c, args, rv);
-        // Ok(override_return.unwrap_or(rv)) // override return is for constructors
+        match &subject.etype {
+            TypedExpressionType::FuncRefExpr(f) => {
+                let b = f.func.borrow();
+                for sig in b.signatures.iter() {
+                    if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
+                        let out = sig.output;
+                        drop(b);
+                        return Ok((
+                            TypedExpressionType::CallExpr(TypedCallExpr {
+                                function: Box::new(subject),
+                                args,
+                            }),
+                            out,
+                        ));
+                    }
+                }
+                drop(b);
+                let calling_location = self.location.clone().unwrap();
+                let te = self.call_function(f.func.clone(), args.clone(), &calling_location)?;
+                Ok((
+                    TypedExpressionType::CallExpr(TypedCallExpr {
+                        function: Box::new(subject),
+                        args,
+                    }),
+                    te.typ,
+                ))
+            }
+            a => todo!("{:?}", a),
+        }
     }
 
     #[allow(dead_code)]
     fn call_function(
         &mut self,
-        function: Rc<RefCell<parser::Function>>,
-        functype: Type,
-        args: Vec<Type>,
-        funcloc: Location,
-        c: &mut CallExpr,
+        function: ParserFunction,
+        args: Vec<TypedExpression>,
+        calling_location: &Location,
     ) -> Result<TypedExpression, ()> {
-        match function.try_borrow_mut() {
-            Ok(_) => (),
-            Err(_) => {
-                return Ok(TypedExpression {
-                    etype: TypedExpressionType::UnknownReturn,
-                    location: self.location.clone().unwrap(),
-                    typ: UNKNOWN_RETURN,
-                })
-            }
+        if function.try_borrow_mut().is_err() {
+            return Ok(TypedExpression {
+                etype: TypedExpressionType::UnknownReturn,
+                location: self.location.clone().unwrap(),
+                typ: UNKNOWN_RETURN,
+            });
         }
-        let rv = self.call_function_int(function.clone(), functype, args, funcloc, c)?;
+
+        let argtypes = args.iter().map(|a| a.typ).collect();
+        let rv = self.call_function_int(function.clone(), args, calling_location)?;
+        let func_sig = Signature::new(argtypes, None, rv.typ);
+
+        // TODO: This might be the right algorithm
+        // let func_sig = if function.borrow().repeated.is_none() {
+        // Signature::new(args.clone(), None, rv.typ)
+        // } else {
+        // let num = function.borrow().argnames.len();
+        // Signature::new(
+        // args.iter().take(num).cloned().collect(),
+        // args.last().cloned(),
+        // rv.typ,
+        // )
+        // };
+
+        function.borrow_mut().typed_bodies.push(rv.clone());
+        function.borrow_mut().signatures.push(func_sig.clone());
+
         if let Some(name) = &function.borrow().name {
-            let func_sig = self
-                .system
-                .get_resolved_func_sig(c.function.derived_type.unwrap());
             self.func_mangle_name_scope_insert(name, func_sig);
-            match &c.function.etype {
-                ExpressionType::RefExpr(_r) => {
-                    todo!()
-                    // c.function.etype = ExpressionType::FuncRefExpr(FuncRefExpr {
-                    // name: r.name.clone(),
-                    // sig: func_sig,
-                    // })
-                }
-                ExpressionType::DottedLookup(_d) => {
-                    todo!()
-                }
-                _ => (),
-            }
         }
         Ok(rv)
     }
 
     fn call_function_single_check(
         &mut self,
-        function: &Rc<RefCell<parser::Function>>,
-        args: &[Type],
+        function: &ParserFunction,
+        args: &[TypedExpression],
         calling_location: &Location,
     ) -> Result<(TypedExpression, usize), ()> {
         self.openscope();
         if let Some(name) = function.borrow().repeated.clone() {
             if args.len() > function.borrow().argnames.len() {
-                self.repeated_arg = Some((name, *args.last().unwrap()));
+                self.repeated_arg = Some((name, args.last().unwrap().typ));
             } else {
                 self.repeated_arg = Some((name, 0));
             }
         }
         for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
-            self.insert_scope(name, *typ);
+            self.insert_scope(name, typ.typ);
         }
         let rv = self.call_single_check(*function.borrow_mut().body.clone(), calling_location)?;
         Ok((rv, self.closescope()))
@@ -1135,11 +1154,9 @@ impl TypeChecker {
 
     fn call_function_int(
         &mut self,
-        function: Rc<RefCell<parser::Function>>,
-        functype: Type,
-        mut args: Vec<Type>,
-        funcloc: Location,
-        c: &mut CallExpr,
+        function: ParserFunction,
+        mut args: Vec<TypedExpression>,
+        calling_location: &Location,
     ) -> Result<TypedExpression, ()> {
         let num_default_needed = if function.borrow().repeated.is_some() {
             0
@@ -1167,45 +1184,25 @@ impl TypeChecker {
             def_args.push(self.expr(expr));
         }
         for e in def_args {
-            args.push(e?.typ);
-        }
-
-        //check if we have already memoized a matching signature
-        if let Some(t) = self.system.function_get_resolved(functype, &args) {
-            let expr = self.type_to_resolved_func.get(&t).unwrap().clone();
-            return Ok(expr);
+            args.push(e?);
         }
 
         let save = self.need_recheck;
         self.need_recheck = false;
-        let (rv, num_locals) = self.call_function_single_check(&function, &args, &funcloc)?;
+        let (rv, num_locals) =
+            self.call_function_single_check(&function, &args, calling_location)?;
         function.borrow_mut().locals = Some(num_locals);
-        let func_sig = if function.borrow().repeated.is_none() {
-            Signature::new(args.clone(), None, rv.typ)
-        } else {
-            let num = function.borrow().argnames.len();
-            Signature::new(
-                args.iter().take(num).cloned().collect(),
-                args.last().cloned(),
-                rv.typ,
-            )
-        };
-        let rftyp = self.system.add_function_signature(functype, func_sig);
-        c.function.as_mut().derived_type = Some(rftyp);
-        self.type_to_resolved_func.insert(rv.typ, rv.clone());
 
         if self.need_recheck {
             let (new_rv, num_locals) =
-                self.call_function_single_check(&function, &args, &funcloc)?;
+                self.call_function_single_check(&function, &args, calling_location)?;
             if new_rv.typ != rv.typ {
                 self.type_to_resolved_func.remove(&rv.typ);
-                return self.error_with_origin(
-                    ErrorType::MismatchedReturnTypes(
-                        self.system.typename(new_rv.typ),
-                        self.system.typename(rv.typ),
-                    ),
-                    funcloc,
-                );
+                todo!();
+                // return self.error_with_origin(ErrorType::MismatchedReturnTypes(
+                // self.system.typename(new_rv.typ),
+                // self.system.typename(rv.typ),
+                // ));
             }
             self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
             debug_assert_eq!(function.borrow_mut().locals.unwrap(), num_locals);

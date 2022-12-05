@@ -224,27 +224,13 @@ impl Compiler {
             TypedExpressionType::For(f) => todo!(), //self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
-            TypedExpressionType::FuncRefExpr(r) => todo!(), //self.funcrefexpr(r),
+            TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
             TypedExpressionType::Immediate(i) => self.immediate(i),
             TypedExpressionType::BlockExpr(b) => self.block(b),
             TypedExpressionType::BinOp(b) => self.binop(b),
             TypedExpressionType::PreUnOp(p) => self.preunop(p),
             TypedExpressionType::PostUnOp(p) => self.postunop(p),
             TypedExpressionType::AssignExpr(a) => self.assignment(a),
-            // TypedExpressionType::Function(f) => self.function(
-            // f.clone(),
-            // self.types
-            // .as_ref()
-            // .unwrap()
-            // .get_signatures_for_func(e.derived_type.unwrap()),
-            // ),
-            // TypedExpressionType::Lambda(l) => self.lambda(
-            // l.clone(),
-            // self.types
-            // .as_ref()
-            // .unwrap()
-            // .get_signatures_for_func(e.derived_type.unwrap()),
-            // ),
             TypedExpressionType::List(l) => self.list(l),
             TypedExpressionType::IndexExpr(i) => self.index(i),
             TypedExpressionType::DottedLookup(d) => self.dotted_lookup(d),
@@ -254,6 +240,7 @@ impl Compiler {
             TypedExpressionType::Null => self.null(e.typ),
             TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
             TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
+            TypedExpressionType::Function(f) => self.function(f),
             e => todo!("{:?}", e),
         }
     }
@@ -391,6 +378,10 @@ impl Compiler {
         }
     }
 
+    fn funcrefexpr(&mut self, f: &TypedFuncRefExpr) {
+        todo!()
+    }
+
     fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
         for scope in table.iter().rev() {
             if let Some(f) = scope.get(key) {
@@ -400,6 +391,7 @@ impl Compiler {
         None
     }
 
+<<<<<<< Updated upstream
     fn funcrefexpr(&mut self, r: &FuncRefExpr) {
         let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
         if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
@@ -443,6 +435,8 @@ impl Compiler {
         self.code.push(Value::Ptr(addr));
     }
 
+=======
+>>>>>>> Stashed changes
     fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
         if a.op != Operation::Equal {
@@ -617,9 +611,9 @@ impl Compiler {
         }
     }
 
-    fn function(&mut self, f: Rc<RefCell<Function>>, sigs: Vec<Signature>) {
+    fn function(&mut self, f: &Rc<RefCell<Function>>) {
         // names functions are rendered in accordance with FuncRefExprs so that more instances can be rendered when needed
-        if let Some(name) = &f.borrow().name {
+        if let Some(name) = f.borrow().name.clone() {
             self.func_scopes
                 .last_mut()
                 .unwrap()
@@ -627,7 +621,8 @@ impl Compiler {
             self.code.push(Value::Uninitialized);
         } else {
             // I think this is broken but it _might_ work
-            for sig in sigs.iter() {
+            debug_assert_eq!(f.borrow().signatures.len(), 1);
+            for sig in f.borrow().signatures.iter() {
                 let addr = self.single_function(&f.borrow(), sig, false);
                 self.code.push(Value::Ptr(addr));
             }

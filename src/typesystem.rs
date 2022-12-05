@@ -119,30 +119,20 @@ impl Signature {
         }
     }
 
-    pub fn match_inputs(&self, inputs: &[Type]) -> bool {
+    pub fn match_inputs(&self, inputs: &[Type]) -> Option<Type> {
         let inputs_eq = self.inputs.iter().zip(inputs).all(|(a, b)| a.matches(b));
         if !inputs_eq {
-            return false;
+            return None;
         }
         if self.inputs.len() == inputs.len() {
-            return true;
+            return Some(self.output);
         }
         if let Some(t) = self.repeated_inputs {
-            return inputs[self.inputs.len()..].iter().all(|a| a.matches(&t));
+            if inputs[self.inputs.len()..].iter().all(|a| a.matches(&t)) {
+                return Some(self.output);
+            }
         }
-        false
-    }
-
-    pub fn output_type_if_match(&self, ts: &TypeSystem, inputs: &[Type]) -> Result<Type, String> {
-        if self.match_inputs(inputs) {
-            Ok(self.output)
-        } else {
-            Err(format!(
-                "Functions inputs didnt match. Exepcted `{}` found `{}`",
-                ts.format_args_from_sig(self),
-                ts.format_args(inputs),
-            ))
-        }
+        None
     }
 }
 
