@@ -144,6 +144,7 @@ pub enum TypedExpressionType {
     VarRefExpr(TypedVarRefExpr),
     ClassRefExpr(TypedClassRefExpr),
     FuncRefExpr(TypedFuncRefExpr),
+    BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
     Immediate(TypedImmediate),
     BlockExpr(TypedBlockExpr),
     BinOp(TypedBinOp),
@@ -210,6 +211,11 @@ pub struct TypedFuncRefExpr {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypedBuiltinFuncRefExpr {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct TypedAssignExpr {
     pub lhs: Box<TypedExpression>,
     pub op: Operation,
@@ -267,6 +273,7 @@ pub struct TypedStr {
 pub struct TypedCallExpr {
     pub function: Box<TypedExpression>,
     pub args: Vec<TypedExpression>,
+    pub sig_idx: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -616,10 +623,16 @@ impl TypeChecker {
         match (self.scope_lookup(&r.name), self.allow_insert) {
             (Some(t), _) => {
                 return Ok((
-                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
-                        name: r.name,
-                        is_decl: r.is_decl,
-                    }),
+                    if t == BUILTIN_FUNCTION {
+                        TypedExpressionType::BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr {
+                            name: r.name,
+                        })
+                    } else {
+                        TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                            name: r.name,
+                            is_decl: r.is_decl,
+                        })
+                    },
                     t,
                 ));
             }
@@ -1021,6 +1034,7 @@ impl TypeChecker {
                 TypedExpressionType::CallExpr(TypedCallExpr {
                     function: Box::new(subject),
                     args,
+                    sig_idx: None,
                 }),
                 outtyp,
             ));
@@ -1029,7 +1043,7 @@ impl TypeChecker {
         match &subject.etype {
             TypedExpressionType::FuncRefExpr(f) => {
                 let b = f.func.borrow();
-                for sig in b.signatures.iter() {
+                for (i, sig) in b.signatures.iter().enumerate() {
                     if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
                         let out = sig.output;
                         drop(b);
@@ -1037,6 +1051,7 @@ impl TypeChecker {
                             TypedExpressionType::CallExpr(TypedCallExpr {
                                 function: Box::new(subject),
                                 args,
+                                sig_idx: Some(i),
                             }),
                             out,
                         ));
@@ -1044,11 +1059,13 @@ impl TypeChecker {
                 }
                 drop(b);
                 let calling_location = self.location.clone().unwrap();
-                let te = self.call_function(f.func.clone(), args.clone(), &calling_location)?;
+                let (te, sig_idx) =
+                    self.call_function(f.func.clone(), args.clone(), &calling_location)?;
                 Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),
                         args,
+                        sig_idx,
                     }),
                     te.typ,
                 ))
@@ -1063,38 +1080,41 @@ impl TypeChecker {
         function: ParserFunction,
         args: Vec<TypedExpression>,
         calling_location: &Location,
-    ) -> Result<TypedExpression, ()> {
+    ) -> Result<(TypedExpression, Option<usize>), ()> {
         if function.try_borrow_mut().is_err() {
-            return Ok(TypedExpression {
-                etype: TypedExpressionType::UnknownReturn,
-                location: self.location.clone().unwrap(),
-                typ: UNKNOWN_RETURN,
-            });
+            return Ok((
+                TypedExpression {
+                    etype: TypedExpressionType::UnknownReturn,
+                    location: self.location.clone().unwrap(),
+                    typ: UNKNOWN_RETURN,
+                },
+                None,
+            ));
         }
 
         let argtypes = args.iter().map(|a| a.typ).collect();
         let rv = self.call_function_int(function.clone(), args, calling_location)?;
-        let func_sig = Signature::new(argtypes, None, rv.typ);
 
         // TODO: This might be the right algorithm
-        // let func_sig = if function.borrow().repeated.is_none() {
-        // Signature::new(args.clone(), None, rv.typ)
-        // } else {
-        // let num = function.borrow().argnames.len();
-        // Signature::new(
-        // args.iter().take(num).cloned().collect(),
-        // args.last().cloned(),
-        // rv.typ,
-        // )
-        // };
+        let func_sig = if function.borrow().repeated.is_none() {
+            Signature::new(argtypes, None, rv.typ)
+        } else {
+            let num = function.borrow().argnames.len();
+            Signature::new(
+                argtypes.iter().take(num).cloned().collect(),
+                argtypes.last().cloned(),
+                rv.typ,
+            )
+        };
 
+        let idx = function.borrow().signatures.len();
         function.borrow_mut().typed_bodies.push(rv.clone());
         function.borrow_mut().signatures.push(func_sig.clone());
 
         if let Some(name) = &function.borrow().name {
             self.func_mangle_name_scope_insert(name, func_sig);
         }
-        Ok(rv)
+        Ok((rv, Some(idx)))
     }
 
     fn call_function_single_check(

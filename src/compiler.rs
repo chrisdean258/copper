@@ -2,6 +2,7 @@
 use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
+    memory,
     operation::{MachineOperation, Operation},
     parser::{ClassDecl, Function, Lambda},
     typecheck::*,
@@ -11,7 +12,7 @@ use crate::{
 use std::{
     cell::RefCell,
     collections::HashMap,
-    mem::{swap, take},
+    mem::{replace, swap, take},
     rc::Rc,
 };
 
@@ -41,6 +42,7 @@ pub struct Compiler {
     continues: Vec<usize>,
     current_null: Option<usize>,
     extra_args: usize,
+    cur_sig_idx: Option<usize>,
 }
 
 impl Compiler {
@@ -71,6 +73,7 @@ impl Compiler {
             continues: Vec::new(),
             current_null: None,
             extra_args: 0,
+            cur_sig_idx: None,
         }
     }
 
@@ -224,6 +227,7 @@ impl Compiler {
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
             TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
+            TypedExpressionType::BuiltinFuncRefExpr(b) => self.builtinfuncrefexpr(b),
             TypedExpressionType::Immediate(i) => self.immediate(i),
             TypedExpressionType::BlockExpr(b) => self.block(b),
             TypedExpressionType::BinOp(b) => self.binop(b),
@@ -365,7 +369,9 @@ impl Compiler {
             self.lookup_scope_local_or_global(&r.name)
         };
         match mem {
-            MemoryLocation::BuiltinFunction(u) => panic!("Should have been a funcrefexpr {}", u),
+            MemoryLocation::BuiltinFunction(u) => {
+                panic!("Should have been a funcrefexpr {u:?}\n{r:?}")
+            }
             // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
             MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
@@ -386,13 +392,22 @@ impl Compiler {
         None
     }
 
-    fn funcrefexpr(&mut self, _r: &TypedFuncRefExpr) {
-        todo!()
+    fn builtinfuncrefexpr(&mut self, b: &TypedBuiltinFuncRefExpr) {
+        let Some(val) = self.lookup_scope_local_or_global_can_fail(&b.name) else {
+            unreachable!("Cannot find builtin function `{}`", b.name);
+        };
+        let MemoryLocation::BuiltinFunction(num) = val else {
+            unreachable!("Expected CodeLocation found {val:?}");
+        };
+        self.code.push(Value::Ptr(num + memory::BUILTIN_CODE));
     }
 
-    /*
-    fn funcrefexpr(&mut self, r: &FuncRefExpr) {
-        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
+    fn funcrefexpr(&mut self, r: &TypedFuncRefExpr) {
+        let Some(sig_idx) = self.cur_sig_idx else {
+            panic!("No signature index");
+        };
+        let signature = &r.func.borrow().signatures[sig_idx];
+        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, signature);
         if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
             match val {
                 MemoryLocation::CodeLocation(a) => {
@@ -407,7 +422,7 @@ impl Compiler {
                 t => unreachable!("Expected CodeLocation found {:?}", t),
             }
         }
-        let mut is_init = false;
+        let is_init = false;
         let func = match self.scope_lookup(&r.name, &self.func_scopes) {
             Some(f) => f,
             None => match self.scope_lookup(&r.name, &self.class_scopes) {
@@ -415,12 +430,13 @@ impl Compiler {
                     "Could not find a func `{}` in func_scope or class_scope",
                     r.name
                 ),
-                Some(c) => {
-                    is_init = true;
-                    match &c.borrow().methods.get("__init__").unwrap().etype {
-                        ExpressionType::Function(f) => f.clone(),
-                        _ => unreachable!(),
-                    }
+                Some(_c) => {
+                    todo!();
+                    // is_init = true;
+                    // match &c.borrow().methods.get("__init__").unwrap().etype {
+                    // ExpressionType::Function(f) => f.clone(),
+                    // _ => unreachable!(),
+                    // }
                 }
             },
         };
@@ -428,12 +444,11 @@ impl Compiler {
         self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
         let save_bp_list = take(&mut self.recursive_calls);
-        let addr = self.single_function(&func.borrow(), &r.sig, is_init);
+        let addr = self.single_function(&func.borrow(), sig_idx, is_init);
         self.recursive_calls = save_bp_list;
         self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
     }
-    */
 
     fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
@@ -617,24 +632,18 @@ impl Compiler {
         } else {
             // I think this is broken but it _might_ work
             debug_assert_eq!(f.borrow().signatures.len(), 1);
-            for sig in f.borrow().signatures.iter() {
-                let addr = self.single_function(&f.borrow(), sig, false);
-                self.code.push(Value::Ptr(addr));
-            }
+            // for sig in f.borrow().signatures.iter() {
+            let addr = self.single_function(&f.borrow(), 0, false);
+            self.code.push(Value::Ptr(addr));
+            // }
         }
     }
 
-    fn single_function(
-        &mut self,
-        f: &Function,
-        sig: &Signature,
-        _alloc_before_call: bool,
-    ) -> usize {
+    fn single_function(&mut self, f: &Function, sig_idx: usize, _alloc_before_call: bool) -> usize {
+        let sig = &f.signatures[sig_idx];
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.argnames.len(),
-            "{:#?}\n-------------------\n{:#?}",
-            f,
-            sig
+            "{f:#?}\n-------------------\n{sig:#?}",
         );
         let name = format!(
             "{}{}",
@@ -657,10 +666,7 @@ impl Compiler {
             self.code.alloc(size);
             self.code.store_fast();
         }
-        if true {
-            todo!()
-        }
-        // self.expr(f.body.as_ref());
+        self.expr(&f.typed_bodies[sig_idx]);
         if f.alloc_before_call.is_some() {
             self.code.local_ref(0);
             self.code.load();
@@ -722,10 +728,20 @@ impl Compiler {
 
         let mut arg_types = Some(c.args.iter().map(|a| a.typ).collect());
         swap(&mut arg_types, &mut self.arg_types);
-        self.expr(c.function.as_ref());
-        self.arg_types = arg_types;
 
-        self.code.call();
+        if let Some(sig_idx) = c.sig_idx {
+            let save_sig_idx = replace(&mut self.cur_sig_idx, Some(sig_idx));
+            self.expr(c.function.as_ref());
+            self.cur_sig_idx = save_sig_idx;
+            self.arg_types = arg_types;
+            self.code.call();
+        } else {
+            // Builtin function
+            self.expr(c.function.as_ref());
+            self.arg_types = arg_types;
+            self.code.call();
+            // panic!("Cannot calculate call expr without signature: {c:?}");
+        }
     }
 
     fn dotted_lookup(&mut self, d: &TypedDottedLookup) {
