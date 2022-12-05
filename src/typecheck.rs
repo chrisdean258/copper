@@ -882,6 +882,7 @@ impl TypeChecker {
         let name = f.borrow().name.clone();
         let default = "<anonymous function>".to_owned();
         let typ = self.system.function_type(name.clone().unwrap_or(default));
+        self.type_to_func.insert(typ, f.clone());
         if let Some(s) = name {
             self.insert_func_scope(&s, f.clone());
         }
@@ -1017,10 +1018,10 @@ impl TypeChecker {
         }
 
         if subject.typ == BUILTIN_FUNCTION {
-            let funcname = match &c.function.as_ref().etype {
-                ExpressionType::RefExpr(r) => r.name.clone(),
-                _ => return self.error(ErrorType::CannotIndirectlyCallBuiltins),
+            let ExpressionType::RefExpr(refexpr) =  &c.function.as_ref().etype else {
+                return self.error(ErrorType::CannotIndirectlyCallBuiltins);
             };
+            let funcname = refexpr.name.clone();
             let builtins = BuiltinFunction::get_hashmap(&mut self.system);
             // Ok to unwrap here because we have already verified that this is a builtin function
             let func = builtins.get(&funcname).unwrap();
@@ -1042,36 +1043,56 @@ impl TypeChecker {
 
         match &subject.etype {
             TypedExpressionType::FuncRefExpr(f) => {
-                let b = f.func.borrow();
-                for (i, sig) in b.signatures.iter().enumerate() {
-                    if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
-                        let out = sig.output;
-                        drop(b);
-                        return Ok((
-                            TypedExpressionType::CallExpr(TypedCallExpr {
-                                function: Box::new(subject),
-                                args,
-                                sig_idx: Some(i),
-                            }),
-                            out,
-                        ));
-                    }
+                self.call_func_with_args(f.func.clone(), subject, args)
+            }
+            TypedExpressionType::VarRefExpr(f) => {
+                let Some(typ) = self.scope_lookup(&f.name) else {
+                    unreachable!("I think");
+                };
+                if let Some(func) = self.type_to_func.get(&typ) {
+                    self.call_func_with_args(func.clone(), subject, args)
+                } else if let Some(lambda) = self.type_to_lambda.get(&typ) {
+                    todo!("lambda = {lambda:?}");
+                } else {
+                    panic!("not found {typ} {}", self.system.typename(typ));
                 }
+            }
+            a => todo!("{a:?}"),
+        }
+    }
+
+    fn call_func_with_args(
+        &mut self,
+        f: ParserFunction,
+        subject: TypedExpression,
+        args: Vec<TypedExpression>,
+    ) -> Result<(TypedExpressionType, Type), ()> {
+        let b = f.borrow();
+        for (i, sig) in b.signatures.iter().enumerate() {
+            if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
+                let out = sig.output;
                 drop(b);
-                let calling_location = self.location.clone().unwrap();
-                let (te, sig_idx) =
-                    self.call_function(f.func.clone(), args.clone(), &calling_location)?;
-                Ok((
+                return Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),
                         args,
-                        sig_idx,
+                        sig_idx: Some(i),
                     }),
-                    te.typ,
-                ))
+                    out,
+                ));
             }
-            a => todo!("{:?}", a),
         }
+        drop(b);
+        let calling_location = self.location.clone().unwrap();
+        let (te, sig_idx) = self.call_function(f, args.clone(), &calling_location)?;
+        Ok((
+            TypedExpressionType::CallExpr(TypedCallExpr {
+                function: Box::new(subject),
+                args,
+                sig_idx,
+            }),
+            te.typ,
+        ))
     }
 
     #[allow(dead_code)]
