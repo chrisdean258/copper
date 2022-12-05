@@ -3,7 +3,6 @@ use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     operation::{MachineOperation, Operation},
-    parser::*,
     parser::{ClassDecl, Function, Lambda},
     typecheck::*,
     typesystem::{Signature, Type, TypeSystem, NULL, STR},
@@ -221,7 +220,7 @@ impl Compiler {
     fn expr(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
-            TypedExpressionType::For(f) => todo!(), //self.forexpr(f),
+            TypedExpressionType::For(f) => todo!("{f:?}"), //self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
             TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
@@ -378,10 +377,6 @@ impl Compiler {
         }
     }
 
-    fn funcrefexpr(&mut self, f: &TypedFuncRefExpr) {
-        todo!()
-    }
-
     fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
         for scope in table.iter().rev() {
             if let Some(f) = scope.get(key) {
@@ -391,7 +386,11 @@ impl Compiler {
         None
     }
 
-<<<<<<< Updated upstream
+    fn funcrefexpr(&mut self, _r: &TypedFuncRefExpr) {
+        todo!()
+    }
+
+    /*
     fn funcrefexpr(&mut self, r: &FuncRefExpr) {
         let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, &r.sig);
         if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
@@ -434,9 +433,8 @@ impl Compiler {
         self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
     }
+    */
 
-=======
->>>>>>> Stashed changes
     fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
         if a.op != Operation::Equal {
@@ -614,10 +612,7 @@ impl Compiler {
     fn function(&mut self, f: &Rc<RefCell<Function>>) {
         // names functions are rendered in accordance with FuncRefExprs so that more instances can be rendered when needed
         if let Some(name) = f.borrow().name.clone() {
-            self.func_scopes
-                .last_mut()
-                .unwrap()
-                .insert(name.clone(), f.clone());
+            self.func_scopes.last_mut().unwrap().insert(name, f.clone());
             self.code.push(Value::Uninitialized);
         } else {
             // I think this is broken but it _might_ work
@@ -716,7 +711,7 @@ impl Compiler {
     fn call(&mut self, c: &TypedCallExpr) {
         let save_extra = self.extra_args;
         self.extra_args = 0;
-        let mut alloc_before_call_num = 0;
+        let alloc_before_call_num = 0;
         for arg in c.args.iter() {
             self.expr(arg);
         }
