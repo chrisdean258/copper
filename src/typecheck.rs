@@ -6,7 +6,7 @@ use crate::{
 use std::{
     cell::RefCell,
     collections::HashMap,
-    mem::{swap, take},
+    mem::{replace, swap, take},
     rc::Rc,
 };
 
@@ -18,6 +18,8 @@ pub struct Error {
 
 #[derive(Debug, Clone)]
 pub enum ErrorType {
+    BreakNotAllowed,
+    ContinueNotAllowed,
     CannotAssignType(String, Operation, String),
     CannotAssignUnit,
     CannotDeriveReturnType,
@@ -55,6 +57,8 @@ impl std::fmt::Display for Error {
 impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::BreakNotAllowed => write!(f, "`break` not allowed outside of loops"),
+            Self::ContinueNotAllowed => write!(f, "`continue` not allowed outside of loops"),
             Self::CannotAssignType(t1, op, t2) => write!(f,  "Cannot assign `{t1}` {op} `{t2}`",),
             Self::CannotAssignUnit => write!(f, "Cannot assign unit value"),
             Self::CannotDeriveReturnType => write!(f, "Cannot derive the return type of this function call"),
@@ -107,6 +111,7 @@ pub struct TypeChecker {
     need_recheck: bool,
     repeated_arg: Option<(String, Type)>,
     errors: ErrorCollection<Error>,
+    in_loop: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -318,6 +323,7 @@ impl TypeChecker {
             need_recheck: false,
             repeated_arg: None,
             errors: ErrorCollection::new(),
+            in_loop: false,
         };
         rv.openscope();
         for f in BuiltinFunction::get_table(&mut rv.system) {
@@ -463,8 +469,8 @@ impl TypeChecker {
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
             // These were moved out of parsing as parsing can only report one error right now
-            Statement::Continue(c) => todo!("{:?}", c), // make sure the continue is allowed in the context
-            Statement::Break(b) => todo!("{:?}", b), // make sure the continue is allowed in the context
+            Statement::Continue(_) => self.continue_()?,
+            Statement::Break(_) => self.break_()?,
             Statement::Return(r) => self.return_(r)?,
         })
     }
@@ -502,6 +508,20 @@ impl TypeChecker {
             body,
             from_function,
         }))
+    }
+
+    fn break_(&mut self) -> Result<TypedStatement, ()> {
+        if !self.in_loop {
+            return self.error(ErrorType::BreakNotAllowed);
+        }
+        Ok(TypedStatement::Break)
+    }
+
+    fn continue_(&mut self) -> Result<TypedStatement, ()> {
+        if !self.in_loop {
+            return self.error(ErrorType::BreakNotAllowed);
+        }
+        Ok(TypedStatement::Break)
     }
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, ()> {
@@ -733,6 +753,7 @@ impl TypeChecker {
     }
 
     fn whileexpr(&mut self, w: While) -> Result<(TypedExpressionType, Type), ()> {
+        let save_in_loop = replace(&mut self.in_loop, true);
         let cond = self.expr(*w.condition);
         match &cond {
             Ok(t) if t.typ != BOOL => {
@@ -743,6 +764,7 @@ impl TypeChecker {
         }
         let body = Box::new(self.expr(*w.body)?);
         let condition = Box::new(cond?);
+        self.in_loop = save_in_loop;
 
         Ok((
             TypedExpressionType::While(TypedWhile { condition, body }),
@@ -1170,6 +1192,7 @@ impl TypeChecker {
     ) -> Result<TypedExpression, ()> {
         self.func_returns.push(None);
         let save_repeated = self.repeated_arg.clone();
+        let save_in_loop = replace(&mut self.in_loop, false);
         let rv = match self.expr(function) {
             Ok(t) if t.typ == UNKNOWN_RETURN => {
                 self.error_with_origin(
@@ -1183,6 +1206,7 @@ impl TypeChecker {
             }
             Ok(t) => t,
         };
+        self.in_loop = save_in_loop;
         self.repeated_arg = save_repeated;
         let derived = self.func_returns.pop().unwrap();
         match derived {
