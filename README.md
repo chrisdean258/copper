@@ -128,7 +128,7 @@ Lists are a work in progress but can be defined and indexed, although cannot be
 changed in size. It _should_ go without saying that lists are 0-indexed
 (looking at you lua).
 
-```
+```copper
 a = [1, 2, 3]
 print(a[1])
 ```
