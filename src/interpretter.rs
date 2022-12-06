@@ -96,6 +96,7 @@ impl Interpretter {
             self.compiler
                 .compile(label, &typedtree, &self.typechecker.system);
         if cfg!(debug_assertions) && self.debug {
+            self.typechecker.system.print_types();
             self.print_code(&code);
         }
         Ok(self.evaluator.eval(code, strings, entry, self.debug)?)

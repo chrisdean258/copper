@@ -782,38 +782,35 @@ impl TypeChecker {
     }
 
     fn ifexpr_int(&mut self, i: If, is_and_if: bool) -> Result<(TypedIf, Type), ()> {
-        let mut rvtyp = UNIT;
         let mut make_option = false;
-        let mut return_unit = false;
+        let mut return_unit = i.else_body.is_none();
         let cond = self.expr(*i.condition);
-        match &cond {
-            Ok(t) if t.typ != BOOL && t.typ != UNKNOWN_RETURN => {
-                let _ =
-                    self.error::<()>(ErrorType::IfConditionNotBool(self.system.typename(t.typ)));
-            }
-            _ => (),
-        }
 
         let body = self.expr(*i.body);
         let and_bodies_res: Vec<(_, Location)> = i
             .and_bodies
             .into_iter()
-            .map(|b| (self.ifexpr_int(b.0, true), b.1))
+            .map(|(b, l)| (self.ifexpr_int(b, true), l))
             .collect();
+        let else_body_opt_res = i.else_body.map(|b| self.expr(*b));
 
-        let else_body = if let Some(b) = i.else_body {
-            Some(self.expr(*b)?)
+        let cond = cond?;
+        if cond.typ != BOOL && cond.typ != UNKNOWN_RETURN {
+            self.error(ErrorType::IfConditionNotBool(
+                self.system.typename(cond.typ),
+            ))?;
+        }
+        let else_body = if let Some(r) = else_body_opt_res {
+            Some(r?)
         } else {
-            return_unit = true;
             None
         };
-
         let mut and_bodies = Vec::new();
         for (b, l) in and_bodies_res {
             and_bodies.push((b?, l));
         }
         let body = body?;
-        let cond = cond?;
+        let mut rvtyp = body.typ;
 
         for ((_body, typ), _location) in and_bodies.iter() {
             if *typ == NULL {

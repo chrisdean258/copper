@@ -178,6 +178,13 @@ impl TypeSystem {
         rv
     }
 
+    pub fn print_types(&self) {
+        eprintln!("Types:");
+        for (i, typ) in self.types.iter().enumerate() {
+            eprintln!("  {i:02}: {}", typ.name)
+        }
+    }
+
     fn add_default_types(&mut self) {
         self.new_type_with_num(String::from("unit"), TypeEntryType::Unit, UNIT);
         self.new_type_with_num(
