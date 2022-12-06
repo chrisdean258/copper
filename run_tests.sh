@@ -3,13 +3,13 @@
 
 cargo build || exit 1
 
-# red
-# green
-# yellow
-# blue
-# magenta
-# cyan
-# white
+# 1 red
+# 2 green
+# 3 yellow
+# 4 blue
+# 5 magenta
+# 6 cyan
+# 7 white
 
 
 run-test()
@@ -19,6 +19,7 @@ run-test()
 		rv=$((rv+1))
 	fi
 	if [ -n "$(cat "stderr.txt")" ]; then 
+		mv stderr.txt `basename $1`
 		rv=$((rv+2))
 	fi
 	rm "stderr.txt"

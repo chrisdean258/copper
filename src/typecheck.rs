@@ -521,7 +521,7 @@ impl TypeChecker {
         if !self.in_loop {
             return self.error(ErrorType::BreakNotAllowed);
         }
-        Ok(TypedStatement::Break)
+        Ok(TypedStatement::Continue)
     }
 
     fn classdecl(&mut self, c: Rc<RefCell<ClassDecl>>) -> Result<Type, ()> {
