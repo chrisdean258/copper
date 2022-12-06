@@ -19,7 +19,6 @@ run-test()
 		rv=$((rv+1))
 	fi
 	if [ -n "$(cat "stderr.txt")" ]; then 
-		mv stderr.txt `basename $1`
 		rv=$((rv+2))
 	fi
 	rm "stderr.txt"
