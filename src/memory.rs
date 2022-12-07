@@ -76,7 +76,7 @@ impl Memory {
         debug_assert!(self.stack.len() >= count);
         debug_assert!(count >= 2);
         let val = *self.stack.last().unwrap();
-        let idx = self.stack.len() - count as usize;
+        let idx = self.stack.len() - count;
         for i in (idx..(self.stack.len() - 1)).rev() {
             self.stack[i + 1] = self.stack[i];
         }
