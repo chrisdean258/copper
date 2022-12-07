@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::{memory, operation::MachineOperation, optimizer::optimize, value::Value};
 use std::{
     collections::HashMap,

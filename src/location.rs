@@ -1,5 +1,4 @@
 use std::fmt;
-use std::fmt::Arguments;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -30,10 +29,6 @@ impl Location {
     #[allow(dead_code)]
     pub fn err(&self, errmsg: &str) -> String {
         format!("{}: {}", self, errmsg)
-    }
-
-    pub fn errfmt(&self, args: Arguments) -> String {
-        format!("{}: {}", self, args)
     }
 }
 

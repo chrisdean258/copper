@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::operation::Operation;
 use std::collections::HashMap;
 
