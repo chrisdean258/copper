@@ -615,7 +615,8 @@ impl ParseTree {
                     _ => return Err(unexpected(token)),
                 }
             }
-            AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq => match lhs.etype {
+            AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq | BitShiftLeftEq
+            | BitShiftRightEq => match lhs.etype {
                 ExpressionType::RefExpr(_) => {
                     lexer.next();
                     lhs
