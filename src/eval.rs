@@ -163,7 +163,13 @@ impl Evaluator {
                         }
                     }
                     Value::StrIdx(s, i) => {
-                        reg = Value::Char(self.memory.strings[s as usize].as_bytes()[i as usize]);
+                        let s = self.memory.strings[s as usize].as_bytes();
+                        let Some(ch) = s.get(i as usize) else {
+                            return Err(
+                                format!("Indexing into string with index {i} but string len is {}", s.len())
+                            );
+                        };
+                        reg = Value::Char(*ch);
                     }
                     a => panic!("Trying to deref `{a:?}`"),
                 },
