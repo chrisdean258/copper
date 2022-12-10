@@ -90,6 +90,22 @@ impl CodeBuilder {
         self.active_functions.last().unwrap().code.len()
     }
 
+    pub fn split_off_from(&mut self, addr: usize) -> Vec<MachineOperation> {
+        self.active_functions
+            .last_mut()
+            .unwrap()
+            .code
+            .split_off(addr)
+    }
+
+    pub fn append(&mut self, mut code: Vec<MachineOperation>) {
+        self.active_functions
+            .last_mut()
+            .unwrap()
+            .code
+            .append(&mut code)
+    }
+
     pub fn call(&mut self) -> usize {
         self.emit(MachineOperation::Call)
     }

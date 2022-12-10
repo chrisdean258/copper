@@ -486,26 +486,32 @@ impl Compiler {
     }
 
     fn whileexpr(&mut self, w: &TypedWhile) {
-        let condition = self.code.next_function_relative_addr();
+        let skip_body = self.code.jump_relative(0);
+        let cond_addr = self.code.next_function_relative_addr();
         self.expr(w.condition.as_ref());
-        self.code.emit(MachineOperation::BoolNot);
-        let skip_body = self.code.jump_relative_if(0);
+        let cond = self.code.split_off_from(cond_addr);
 
+        let body_addr = self.code.next_function_relative_addr();
+        debug_assert!(body_addr == cond_addr);
         let mut breaks = take(&mut self.breaks);
         let mut continues = take(&mut self.continues);
         self.expr(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
         swap(&mut self.continues, &mut continues);
 
-        self.code.jump_relative(condition as isize);
+        let new_cond_addr = self.code.next_function_relative_addr();
+        self.code.append(cond);
+        self.code
+            .backpatch_jump_rel(skip_body, new_cond_addr as isize);
+        self.code.jump_relative_if(body_addr as isize);
+
         let end = self.code.push(Value::Uninitialized);
 
-        self.code.backpatch_jump_rel(skip_body, end as isize);
         for addr in breaks {
             self.code.backpatch_jump_rel(addr, end as isize);
         }
         for addr in continues {
-            self.code.backpatch_jump_rel(addr, condition as isize);
+            self.code.backpatch_jump_rel(addr, new_cond_addr as isize);
         }
     }
 
