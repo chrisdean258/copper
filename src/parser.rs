@@ -21,7 +21,6 @@ pub enum Statement {
 pub struct Expression {
     pub etype: ExpressionType,
     pub location: Location,
-    pub derived_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -306,7 +305,6 @@ macro_rules! binop {
                 };
                 let rhs = self.$next(lexer)?;
                 lhs = Expression {
-                    derived_type: None,
                     location: token.location,
                     etype:ExpressionType::BinOp(BinOp {
                     lhs: Box::new(lhs),
@@ -354,6 +352,28 @@ macro_rules! if_expect {
     };
 }
 
+macro_rules! recover {
+    ( $lexer:ident, $($token:path),* $(,)? ) => {
+        eat_until!($lexer, $($token),*);
+        if_expect!($lexer, $($token),*)
+    };
+}
+
+macro_rules! eat_until {
+    ( $lexer:ident, $($token:path),* $(,)? ) => {
+            while let Some(t) = $lexer.peek() {
+                match &t.token_type {
+                    $($token => {
+                        break;
+                    })*
+                    _ => {
+                        $lexer.next();
+                    }
+                }
+            }
+    };
+}
+
 impl ParseTree {
     pub fn new() -> ParseTree {
         ParseTree {
@@ -373,11 +393,7 @@ impl ParseTree {
                 Err(e) => {
                     self.statements.push(Statement::ParseError(e));
                     self.has_error = true;
-                    while peekable.peek().is_some() {
-                        if let Some(TokenType::Semicolon) = peekable.next().map(|t| t.token_type) {
-                            break;
-                        }
-                    }
+                    recover!(peekable, TokenType::Semicolon);
                 }
             }
         }
@@ -515,7 +531,6 @@ impl ParseTree {
             rv.push(statement?);
         }
         Ok(Expression {
-            derived_type: None,
             location,
             etype: ExpressionType::BlockExpr(BlockExpr { statements: rv }),
         })
@@ -529,7 +544,6 @@ impl ParseTree {
         let body = Box::new(self.parse_expr(lexer)?);
 
         Ok(Expression {
-            derived_type: None,
             location,
             etype: ExpressionType::For(For {
                 reference,
@@ -545,7 +559,6 @@ impl ParseTree {
         let body = Box::new(self.parse_expr(lexer)?);
 
         Ok(Expression {
-            derived_type: None,
             location,
             etype: ExpressionType::While(While { condition, body }),
         })
@@ -569,7 +582,6 @@ impl ParseTree {
         }
 
         Ok(Expression {
-            derived_type: None,
             location,
             etype: ExpressionType::If(fif),
         })
@@ -658,7 +670,6 @@ impl ParseTree {
             _ => unreachable!(),
         };
         Ok(Expression {
-            derived_type: None,
             location: token.location,
             etype: ExpressionType::AssignExpr(AssignExpr {
                 lhs: Box::new(reflhs),
@@ -713,14 +724,12 @@ impl ParseTree {
             if let ExpressionType::RefExpr(r) = &rhs.etype {
                 if Some(&r.name) == self.repeated_arg.as_ref() && optype == Operation::Deref {
                     return Ok(Expression {
-                        derived_type: None,
                         location: token.location,
                         etype: ExpressionType::RepeatedArg,
                     });
                 }
             }
             Ok(Expression {
-                derived_type: None,
                 location: token.location,
                 etype: ExpressionType::PreUnOp(PreUnOp {
                     op: optype,
@@ -737,7 +746,6 @@ impl ParseTree {
         while let Some(token) = lexer.peek().cloned() {
             lhs = match token.token_type {
                 TokenType::Inc => Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::PostUnOp(PostUnOp {
                         lhs: if lhs.is_lval() {
@@ -749,7 +757,6 @@ impl ParseTree {
                     }),
                 },
                 TokenType::Dec => Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::PostUnOp(PostUnOp {
                         lhs: if lhs.is_lval() {
@@ -763,7 +770,6 @@ impl ParseTree {
                 TokenType::OpenParen => {
                     let args = self.parse_paren_cse(lexer, "function call")?;
                     Expression {
-                        derived_type: None,
                         location: token.location,
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
@@ -779,7 +785,6 @@ impl ParseTree {
                     let args = self.parse_cse(lexer, "index expression")?;
                     expect!(lexer, TokenType::CloseBracket, "index expression").location;
                     Expression {
-                        derived_type: None,
                         location,
                         etype: ExpressionType::IndexExpr(IndexExpr {
                             obj: Box::new(lhs),
@@ -856,7 +861,6 @@ impl ParseTree {
         swap(&mut self.repeated_arg, &mut repeated);
 
         Ok(Expression {
-            derived_type: None,
             location: loctoken.location,
             etype: ExpressionType::Function(Rc::new(RefCell::new(Function {
                 argnames: args,
@@ -879,7 +883,6 @@ impl ParseTree {
         let body = self.parse_expr(lexer)?;
         let num_args = self.max_arg.pop().unwrap();
         Ok(Expression {
-            derived_type: None,
             location,
             etype: ExpressionType::Lambda(Rc::new(RefCell::new(Lambda {
                 num_args,
@@ -929,7 +932,6 @@ impl ParseTree {
         if let Some(token) = lexer.peek().cloned() {
             let mut rv = match &token.token_type {
                 TokenType::Identifier(i) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::RefExpr(RefExpr {
                         name: i.clone(),
@@ -942,47 +944,40 @@ impl ParseTree {
                     }
                     lexer.next();
                     Ok(Expression {
-                        derived_type: None,
                         location: token.location.clone(),
                         etype: ExpressionType::LambdaArg(LambdaArg { number: *a }),
                     })
                 }
                 TokenType::LambdaArg(_) if self.max_arg.is_empty() => self.parse_lambda(lexer),
                 TokenType::Char(c) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Immediate(Immediate {
                         value: Value::Char(*c as u8),
                     }),
                 }),
                 TokenType::Str(s) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Str(Str { string: s.clone() }),
                 }),
                 TokenType::Int(i) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Immediate(Immediate {
                         value: Value::Int(*i),
                     }),
                 }),
                 TokenType::Float(f) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Immediate(Immediate {
                         value: Value::Float(*f),
                     }),
                 }),
                 TokenType::Bool(b) => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Immediate(Immediate {
                         value: Value::Bool(*b),
                     }),
                 }),
                 TokenType::Null => Ok(Expression {
-                    derived_type: None,
                     location: lexer.next().unwrap().location,
                     etype: ExpressionType::Null,
                 }),
@@ -1018,7 +1013,6 @@ impl ParseTree {
                 location: l,
                 ..
             }) => Expression {
-                derived_type: None,
                 location: l.clone(),
                 etype: ExpressionType::PossibleMethodCall(PossibleMethodCall {
                     lhs: Box::new(lhs),
@@ -1029,7 +1023,6 @@ impl ParseTree {
                 }),
             },
             _ => Expression {
-                derived_type: None,
                 location,
                 etype: ExpressionType::DottedLookup(DottedLookup {
                     lhs: Box::new(lhs),
@@ -1050,15 +1043,23 @@ impl ParseTree {
             r
         };
         Ok(Expression {
-            derived_type: None,
             location: loc,
             etype: ExpressionType::List(List { exprs }),
         })
     }
 
     fn parse_paren(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Expression, Error> {
-        expect!(lexer, TokenType::OpenParen, "expression");
-        let rv = self.parse_expr(lexer)?;
+        let location = expect!(lexer, TokenType::OpenParen, "expression").location;
+        let rv = match self.parse_expr(lexer) {
+            Ok(expr) => expr,
+            Err(e) => {
+                eat_until!(lexer, TokenType::CloseParen);
+                Expression {
+                    location,
+                    etype: ExpressionType::ParseError(e),
+                }
+            }
+        };
         expect!(lexer, TokenType::CloseParen, "expression");
         Ok(rv)
     }

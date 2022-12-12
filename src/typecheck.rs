@@ -975,7 +975,6 @@ impl TypeChecker {
                             rhs: m.method_name,
                             index: None,
                         }),
-                        derived_type: None,
                         location: m.location,
                     }),
                     None,
