@@ -9,14 +9,14 @@ impl Iterator for CharIter {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let rv = self.chars.get(self.idx).cloned();
+        let rv = self.chars.get(self.idx).cloned()?;
         self.idx += 1;
-        if let Some('\n') = self.peek() {
+        if rv == '\n' {
             self.line_no += 1;
             self.col_no = 0;
         }
         self.col_no += 1;
-        rv
+        Some(rv)
     }
 }
 

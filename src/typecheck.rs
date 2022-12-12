@@ -51,7 +51,10 @@ pub enum ErrorType {
 impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}: {}", self.loc, self.err)
+        match &self.err {
+            ErrorType::ParseError(e) => write!(f, "{e}"),
+            _ => write!(f, "{}: {}", self.loc, self.err),
+        }
     }
 }
 
@@ -609,8 +612,9 @@ impl TypeChecker {
     }
 
     fn binop(&mut self, b: BinOp) -> Result<(TypedExpressionType, Type), ()> {
-        let mut lhs = self.expr(*b.lhs)?;
+        let lhs = self.expr(*b.lhs);
         let mut rhs = self.expr(*b.rhs)?;
+        let mut lhs = lhs?;
         if self.system.is_option(lhs.typ) && rhs.typ == NULL {
             rhs.typ = lhs.typ;
         } else if self.system.is_option(rhs.typ) && lhs.typ == NULL {

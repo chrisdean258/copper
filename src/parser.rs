@@ -251,16 +251,24 @@ pub struct Continue {
 
 #[derive(Clone, Debug)]
 pub enum Error {
+    Lexing(Location, char, &'static str, Option<&'static str>),
+    FieldRedefinition(Location, String),
+    MethodRedefinition(Location, String),
     UnexpectedEOF(&'static str),
     UnexpectedToken(Token, Option<&'static str>),
-    MethodRedefinition(Location, String),
-    FieldRedefinition(Location, String),
 }
 
 impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::Lexing(l, c, con, expt) => {
+                write!(f, "{l}: Unable to lex `{c}` while trying to lex {con}.")?;
+                if let Some(expected) = expt {
+                    write!(f, " Was expecting `{}`.", expected)?;
+                }
+                Ok(())
+            }
             Self::UnexpectedEOF(c) => write!(f, "Unexpected EOF while parsing {c}"),
             Self::UnexpectedToken(t, expt) => {
                 write!(f, "{}: Unexpected `{}`.", t.location, t.token_type)?;
@@ -279,12 +287,20 @@ impl std::fmt::Display for Error {
     }
 }
 
+fn unexpected_int(token: Token, expt: Option<&'static str>) -> Error {
+    if let TokenType::ErrChar(e, c) = token.token_type {
+        Error::Lexing(token.location, e, c, expt)
+    } else {
+        Error::UnexpectedToken(token, expt)
+    }
+}
+
 fn unexpected(token: Token) -> Error {
-    Error::UnexpectedToken(token, None)
+    unexpected_int(token, None)
 }
 
 fn unexpect_known(token: Token, expt: &'static str) -> Error {
-    Error::UnexpectedToken(token, Some(expt))
+    unexpected_int(token, Some(expt))
 }
 
 macro_rules! binop {
