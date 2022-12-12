@@ -14,6 +14,7 @@ pub enum Statement {
     Continue(Continue),
     Return(Return),
     Break(Break),
+    ParseError(Error),
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,7 @@ pub enum ExpressionType {
     LambdaArg(LambdaArg),
     RepeatedArg,
     Null,
+    ParseError(Error),
 }
 
 impl Expression {
@@ -61,6 +63,7 @@ pub struct ParseTree {
     max_arg: Vec<usize>,
     repeated_arg: Option<String>,
     pub globals: Option<usize>,
+    has_error: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -358,16 +361,26 @@ impl ParseTree {
             max_arg: Vec::new(),
             repeated_arg: None,
             globals: None,
+            has_error: false,
         }
     }
 
-    pub fn parse_statements(&mut self, lexer: Lexer) -> Result<(), Error> {
+    pub fn parse_statements(&mut self, lexer: Lexer) {
         let mut peekable = lexer.peekable();
         while peekable.peek().is_some() {
-            let statement = self.parse_statement(&mut peekable);
-            self.statements.push(statement?);
+            match self.parse_statement(&mut peekable) {
+                Ok(s) => self.statements.push(s),
+                Err(e) => {
+                    self.statements.push(Statement::ParseError(e));
+                    self.has_error = true;
+                    while peekable.peek().is_some() {
+                        if let Some(TokenType::Semicolon) = peekable.next().map(|t| t.token_type) {
+                            break;
+                        }
+                    }
+                }
+            }
         }
-        Ok(())
     }
 
     fn parse_statement(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
@@ -1055,8 +1068,8 @@ impl ParseTree {
     }
 }
 
-pub fn parse(lexer: Lexer) -> Result<ParseTree, Error> {
+pub fn parse(lexer: Lexer) -> ParseTree {
     let mut tree = ParseTree::new();
-    tree.parse_statements(lexer)?;
-    Ok(tree)
+    tree.parse_statements(lexer);
+    tree
 }

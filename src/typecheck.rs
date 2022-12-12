@@ -42,6 +42,7 @@ pub enum ErrorType {
     NotAssignable,
     NotCallable(String),
     Originating,
+    ParseError(parser::Error),
     UninitializedAssignment,
     WrongNumberOfArguments(usize, usize),
     WrongNumberOfArgumentsWithDefault(usize, usize, usize),
@@ -58,7 +59,6 @@ impl std::fmt::Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::BreakNotAllowed => write!(f, "`break` not allowed outside of loops"),
-            Self::ContinueNotAllowed => write!(f, "`continue` not allowed outside of loops"),
             Self::CannotAssignType(t1, op, t2) => write!(f,  "Cannot assign `{t1}` {op} `{t2}`",),
             Self::CannotAssignUnit => write!(f, "Cannot assign unit value"),
             Self::CannotDeriveReturnType => write!(f, "Cannot derive the return type of this function call"),
@@ -67,6 +67,7 @@ impl std::fmt::Display for ErrorType {
             Self::CannotReturnTypeFromNonFunction(t) => write!(f,  "Cannot return type `{t}` from outside a function"),
             Self::ClassHasNoFieldOrMethod(t, fm) => write!(f,  "Class `{t}` has no field or method `{fm}`",),
             Self::ClassLacksInit(t) => write!(f,  "class `{t}` lacks the `__init__` method and cannot be constructed"),
+            Self::ContinueNotAllowed => write!(f, "`continue` not allowed outside of loops"),
             Self::EmptyBlock => write!(f, "Empty Block Expressions are not allowed (yet)"),
             Self::FuncTypeUnknown(func) => write!(f,  "`{func}` is a function whose types cannot be determined. Try wrapping it in a lambda",),
             Self::IfConditionNotBool(t) => write!(f, "if condition must be bool. This one is `{t}`"),
@@ -81,6 +82,7 @@ impl std::fmt::Display for ErrorType {
             Self::NotAssignable => write!(f, "LHS of assignment is not assignable"),
             Self::NotCallable(t) => write!(f, "`{t}` is not callable"),
             Self::Originating => write!(f, "Originating here"),
+            Self::ParseError(e) => write!(f, "{e}"),
             Self::UninitializedAssignment => write!(f, "Trying to assign to variable with uninitialized type. This might be a bug"),
             Self::WrongNumberOfArguments(e, t) => write!(f,  "Wrong number of arguments. Expected {e} found {t}",),
             Self::WrongNumberOfArgumentsWithDefault(a, d, t) => write!(f,  "Wrong number of arguments. Found {a} arguemnts with {d} defaults. Expected a total of {t}",),
@@ -351,11 +353,35 @@ impl TypeChecker {
     }
 
     pub fn vec_of_statement(&mut self, stats: Vec<Statement>) -> Result<Vec<TypedStatement>, ()> {
-        stats.into_iter().map(|s| self.statement(s)).collect()
+        let mut is_err = false;
+        let mut rv = Vec::new();
+        for stat in stats {
+            match self.statement(stat) {
+                Ok(s) => rv.push(s),
+                Err(()) => is_err = true,
+            }
+        }
+        if is_err {
+            Err(())
+        } else {
+            Ok(rv)
+        }
     }
 
     pub fn vec_of_exprs(&mut self, exprs: Vec<Expression>) -> Result<Vec<TypedExpression>, ()> {
-        exprs.into_iter().map(|s| self.expr(s)).collect()
+        let mut is_err = false;
+        let mut rv = Vec::new();
+        for expr in exprs {
+            match self.expr(expr) {
+                Ok(s) => rv.push(s),
+                Err(()) => is_err = true,
+            }
+        }
+        if is_err {
+            Err(())
+        } else {
+            Ok(rv)
+        }
     }
 
     fn error<T>(&mut self, err: ErrorType) -> Result<T, ()> {
@@ -468,10 +494,10 @@ impl TypeChecker {
             Statement::ClassDecl(_c) => todo!(), //self.classdecl(c.clone())?,
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
-            // These were moved out of parsing as parsing can only report one error right now
             Statement::Continue(_) => self.continue_()?,
             Statement::Break(_) => self.break_()?,
             Statement::Return(r) => self.return_(r)?,
+            Statement::ParseError(e) => self.error(ErrorType::ParseError(e))?,
         })
     }
 
@@ -559,6 +585,7 @@ impl TypeChecker {
             ExpressionType::RepeatedArg => self.repeated_arg(),
             ExpressionType::Null => self.null(),
             ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m),
+            ExpressionType::ParseError(e) => self.error(ErrorType::ParseError(e))?,
         }?;
         // if rv == UNKNOWN_RETURN {
         // self.need_recheck = true;

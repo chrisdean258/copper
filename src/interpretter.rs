@@ -87,7 +87,7 @@ impl Interpretter {
         label: String,
         lexer: Lexer,
     ) -> Result<(Value, ReturnState), Box<dyn std::error::Error>> {
-        let tree = parser::parse(lexer)?;
+        let tree = parser::parse(lexer);
         let typedtree = self.typechecker.typecheck(tree)?;
         if self.typecheck_only {
             return Ok((Value::Uninitialized, ReturnState::Evaluated));
