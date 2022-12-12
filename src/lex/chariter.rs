@@ -2,8 +2,6 @@ pub struct CharIter {
     chars: Vec<char>,
     line_no: usize,
     col_no: usize,
-    prev_line_no: usize,
-    prev_col_no: usize,
     idx: usize,
 }
 
@@ -13,8 +11,6 @@ impl Iterator for CharIter {
     fn next(&mut self) -> Option<Self::Item> {
         let rv = self.chars.get(self.idx).cloned();
         self.idx += 1;
-        self.prev_line_no = self.line_no;
-        self.prev_col_no = self.col_no;
         if let Some('\n') = self.peek() {
             self.line_no += 1;
             self.col_no = 0;
@@ -50,15 +46,13 @@ impl CharIter {
         CharIter {
             chars: string.chars().collect(),
             line_no: lineno,
-            col_no: 0,
-            prev_col_no: 0,
-            prev_line_no: lineno,
+            col_no: 1,
             idx: 0,
         }
     }
 
     pub fn location(&self) -> (usize, usize) {
-        (self.prev_line_no, self.prev_col_no)
+        (self.line_no, self.col_no)
     }
 
     pub fn peek(&mut self) -> Option<char> {
