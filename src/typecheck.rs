@@ -501,6 +501,7 @@ impl TypeChecker {
             Statement::Break(_) => self.break_()?,
             Statement::Return(r) => self.return_(r)?,
             Statement::ParseError(e) => self.error(ErrorType::ParseError(e))?,
+            Statement::ExpressionError(e) => TypedStatement::Expr(self.expr(e)?),
         })
     }
 

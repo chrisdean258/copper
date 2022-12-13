@@ -300,7 +300,7 @@ impl std::fmt::Display for Error {
 
 fn unexpected_int(token: Token, expt: Option<&'static str>) -> Expression {
     Expression {
-        location: token.location,
+        location: token.location.clone(),
         etype: ExpressionType::ParseError(if let TokenType::ErrChar(e, c) = token.token_type {
             Error::Lexing(token.location, e, c, expt)
         } else {
@@ -354,7 +354,7 @@ macro_rules! peek_handle_eof {
         if let Some(t) = $lexer.peek() {
             t
         } else {
-            return $conv(Error::eof($self.eof, $context));
+            return $conv(Error::eof($self.eof.clone(), $context));
         }
     };
 }
@@ -374,20 +374,23 @@ macro_rules! expect {
         expect!($self, $lexer, $token, $context, |i| i)
     }};
     ( $self:expr, $lexer:ident, $token:path, $context:expr, $conv:expr ) => {{
-        let token = next_handle_eof!($self, $lexer, $context);
+        let token = next_handle_eof!($self, $lexer, $context, $conv);
         match &token.token_type {
             $token => token,
-            _ => return $conv(Error::eof($self.eof, $context)),
+            _ => return $conv(unexpect_known(token, stringify!($token))),
         }
     }};
 }
 
 macro_rules! expect_val {
     ( $self:expr, $lexer:ident, $token:path, $context:expr ) => {{
-        let token = next_handle_eof!($self, $lexer, $context);
+        expect_val!($self, $lexer, $token, $context, |i| i)
+    }};
+    ( $self:expr, $lexer:ident, $token:path, $context:expr, $conv:expr ) => {{
+        let token = next_handle_eof!($self, $lexer, $context, $conv);
         match token.token_type {
             $token(v) => v,
-            _ => return unexpect_known(token, stringify!($token)),
+            _ => return $conv(unexpect_known(token, stringify!($token))),
         }
     }};
 }
@@ -408,7 +411,7 @@ macro_rules! if_expect {
     };
 }
 
-macro_rules! recover {;
+macro_rules! recover {
     ( $lexer:ident, $($token:path),* $(,)? ) => {
         eat_until!($lexer, $($token),*);
         if_expect!($lexer, $($token),*)
@@ -445,91 +448,166 @@ impl ParseTree {
     pub fn parse_statements(&mut self, lexer: Lexer) {
         let mut peekable = lexer.peekable();
         while peekable.peek().is_some() {
-            match self.parse_statement(&mut peekable) {
-                Ok(s) => self.statements.push(s),
-                Err(e) => {
-                    self.statements.push(Statement::ParseError(e));
-                    self.has_error = true;
-                }
-            }
+            let s = self.parse_statement(&mut peekable);
+            self.statements.push(s);
         }
     }
 
-    fn parse_statement(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let token = lexer.peek().ok_or(Error::UnexpectedEOF("statement"))?;
-        let rv = Ok(match &token.token_type {
-            TokenType::Class => self.parse_class_decl(lexer)?,
-            TokenType::Import => self.parse_import(lexer)?,
-            TokenType::From => self.parse_from_import(lexer)?,
-            TokenType::Break => self.parse_break(lexer)?,
-            TokenType::Continue => self.parse_continue(lexer)?,
-            TokenType::Return => self.parse_return(lexer)?,
+    fn parse_statement(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let token = peek_handle_eof!(self, lexer, "statement", Statement::ExpressionError);
+        let rv = match &token.token_type {
+            TokenType::Class => self.parse_class_decl(lexer),
+            TokenType::Import => self.parse_import(lexer),
+            TokenType::From => self.parse_from_import(lexer),
+            TokenType::Break => self.parse_break(lexer),
+            TokenType::Continue => self.parse_continue(lexer),
+            TokenType::Return => self.parse_return(lexer),
             _ => Statement::Expr(self.parse_expr(lexer)),
-        });
+        };
         // eat all the semicolons
         while if_expect!(self, lexer, TokenType::Semicolon) {}
         rv
     }
 
-    fn parse_continue(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::Continue, "continue", |i| Ok(
-            Statement::ExpressionError(i)
-        ))
+    fn parse_continue(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::Continue,
+            "continue",
+            Statement::ExpressionError
+        )
         .location;
-        Ok(Statement::Continue(Continue { location }))
+        Statement::Continue(Continue { location })
     }
 
-    fn parse_return(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::Return, "return").location;
+    fn parse_return(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::Return,
+            "return",
+            Statement::ExpressionError
+        )
+        .location;
         let body = if if_expect!(self, lexer, TokenType::Semicolon) {
             None
         } else {
             Some(Box::new(self.parse_expr(lexer)))
         };
-        Ok(Statement::Return(Return {
+        Statement::Return(Return {
             location,
             body,
             from_function: true,
-        }))
+        })
     }
 
-    fn parse_break(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::Break, "break").location;
-        Ok(Statement::Break(Break { location }))
+    fn parse_break(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::Break,
+            "break",
+            Statement::ExpressionError
+        )
+        .location;
+        Statement::Break(Break { location })
     }
 
-    fn parse_import(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::Import, "import").location;
-        let filename = expect_val!(self, lexer, TokenType::Identifier, "import");
-        Ok(Statement::Import(Import { location, filename }))
+    fn parse_import(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::Import,
+            "import",
+            Statement::ExpressionError
+        )
+        .location;
+        let filename = expect_val!(
+            self,
+            lexer,
+            TokenType::Identifier,
+            "import",
+            Statement::ExpressionError
+        );
+        Statement::Import(Import { location, filename })
     }
 
-    fn parse_from_import(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::From, "from import").location;
-        let file = expect_val!(self, lexer, TokenType::Identifier, "from import");
-        expect!(self, lexer, TokenType::Import, "from import");
-        let what = expect_val!(self, lexer, TokenType::Identifier, "from import");
-        Ok(Statement::FromImport(FromImport {
+    fn parse_from_import(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::From,
+            "from import",
+            Statement::ExpressionError
+        )
+        .location;
+        let file = expect_val!(
+            self,
+            lexer,
+            TokenType::Identifier,
+            "from import",
+            Statement::ExpressionError
+        );
+        expect!(
+            self,
+            lexer,
+            TokenType::Import,
+            "from import",
+            Statement::ExpressionError
+        );
+        let what = expect_val!(
+            self,
+            lexer,
+            TokenType::Identifier,
+            "from import",
+            Statement::ExpressionError
+        );
+        Statement::FromImport(FromImport {
             location,
             file,
             what,
-        }))
+        })
     }
 
-    fn parse_class_decl(&mut self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Error> {
-        let location = expect!(self, lexer, TokenType::Class, "class declaraction").location;
-        let name = expect_val!(self, lexer, TokenType::Identifier, "class declaration");
-        expect!(self, lexer, TokenType::OpenBrace, "class declaration");
+    fn parse_class_decl(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
+        let location = expect!(
+            self,
+            lexer,
+            TokenType::Class,
+            "class declaraction",
+            Statement::ExpressionError
+        )
+        .location;
+        let name = expect_val!(
+            self,
+            lexer,
+            TokenType::Identifier,
+            "class declaration",
+            Statement::ExpressionError
+        );
+        expect!(
+            self,
+            lexer,
+            TokenType::OpenBrace,
+            "class declaration",
+            Statement::ExpressionError
+        );
 
         let mut fields = HashMap::new();
         let mut methods = HashMap::new();
         loop {
-            let token = lexer
-                .peek()
-                .ok_or(Error::UnexpectedEOF("class declaration"))?;
+            let token =
+                peek_handle_eof!(self, lexer, "class declaration", Statement::ExpressionError);
             match token.token_type {
                 TokenType::CloseBrace => {
-                    expect!(self, lexer, TokenType::CloseBrace, "class declaration");
+                    expect!(
+                        self,
+                        lexer,
+                        TokenType::CloseBrace,
+                        "class declaration",
+                        Statement::ExpressionError
+                    );
                     break;
                 }
                 TokenType::Function => {
@@ -539,23 +617,30 @@ impl ParseTree {
                         _ => unreachable!(),
                     };
                     if methods.insert(fname.clone(), fun.clone()).is_some() {
-                        return Err(Error::MethodRedefinition(location, fname));
+                        return Statement::ParseError(Error::MethodRedefinition(location, fname));
                     }
                 }
                 TokenType::Field => {
-                    expect!(self, lexer, TokenType::Field, "fields");
+                    expect!(
+                        self,
+                        lexer,
+                        TokenType::Field,
+                        "fields",
+                        Statement::ExpressionError
+                    );
                     loop {
-                        let token = lexer.next().ok_or(Error::UnexpectedEOF("fields"))?;
+                        let token =
+                            next_handle_eof!(self, lexer, "fields", Statement::ExpressionError);
                         let fieldname = match token.token_type {
                             TokenType::Identifier(s) => s,
                             _ => break,
                         };
                         if fields.insert(fieldname.clone(), fields.len()).is_some() {
-                            return Err(Error::FieldRedefinition(location, fieldname));
+                            return Statement::ParseError(Error::FieldRedefinition(
+                                location, fieldname,
+                            ));
                         }
-                        match lexer
-                            .peek()
-                            .ok_or(Error::UnexpectedEOF("fields"))?
+                        match peek_handle_eof!(self, lexer, "fields", Statement::ExpressionError)
                             .token_type
                         {
                             TokenType::Semicolon => {
@@ -569,16 +654,16 @@ impl ParseTree {
                         }
                     }
                 }
-                _ => return unexpected(token.clone()),
+                _ => return Statement::ExpressionError(unexpected(token.clone())),
             }
         }
 
-        Ok(Statement::ClassDecl(Rc::new(RefCell::new(ClassDecl {
+        Statement::ClassDecl(Rc::new(RefCell::new(ClassDecl {
             location,
             name,
             fields,
             methods,
-        }))))
+        })))
     }
 
     fn parse_block(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
@@ -586,8 +671,7 @@ impl ParseTree {
         let location = expect!(self, lexer, TokenType::OpenBrace, "block").location;
 
         while !if_expect!(self, lexer, TokenType::CloseBrace) {
-            let statement = self.parse_statement(lexer);
-            rv.push(statement.unwrap());
+            rv.push(self.parse_statement(lexer));
         }
         Expression {
             location,
@@ -646,14 +730,17 @@ impl ParseTree {
         }
     }
 
-    fn parse_and(&mut self, lexer: &mut Peekable<Lexer>) -> Result<(If, Location), Error> {
-        expect!(self, lexer, TokenType::And, "and if statement");
+    fn parse_and(&mut self, lexer: &mut Peekable<Lexer>) -> Result<(If, Location), Expression> {
+        expect!(self, lexer, TokenType::And, "and if statement", |i| Err(i));
         self.parse_if_internal(lexer)
     }
 
-    fn parse_if_internal(&mut self, lexer: &mut Peekable<Lexer>) -> Result<(If, Location), Error> {
+    fn parse_if_internal(
+        &mut self,
+        lexer: &mut Peekable<Lexer>,
+    ) -> Result<(If, Location), Expression> {
         use crate::lex::TokenType::If as tokenIf;
-        let location = expect!(self, lexer, tokenIf, "if statement").location;
+        let location = expect!(self, lexer, tokenIf, "if statement", |i| Err(i)).location;
         let condition = Box::new(self.parse_expr(lexer));
         let body = Box::new(self.parse_expr(lexer));
         Ok((
@@ -954,7 +1041,7 @@ impl ParseTree {
             return Vec::new();
         }
         let cse = self.parse_cse(lexer, context);
-        expect!(self, lexer, TokenType::CloseParen, context);
+        expect!(self, lexer, TokenType::CloseParen, context, |i| vec![i]);
         cse
     }
 
@@ -966,7 +1053,7 @@ impl ParseTree {
                 Some(TokenType::CloseBracket) => break,
                 Some(TokenType::CloseParen) => break,
                 None => {
-                    rv.push(Error::eof(self.eof, context));
+                    rv.push(Error::eof(self.eof.clone(), context));
                     break;
                 }
                 _ => (),
@@ -978,7 +1065,7 @@ impl ParseTree {
 
     fn parse_ref(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
         let token = peek_handle_eof!(self, lexer, "reference");
-        let mut rv = match &token.token_type {
+        let mut rv = match &token.token_type.clone() {
             TokenType::Identifier(i) => Expression {
                 location: lexer.next().unwrap().location,
                 etype: ExpressionType::RefExpr(RefExpr {
@@ -990,9 +1077,8 @@ impl ParseTree {
                 if *a + 1 > *self.max_arg.last().unwrap() {
                     *self.max_arg.last_mut().unwrap() = *a + 1;
                 }
-                lexer.next();
                 Expression {
-                    location: token.location.clone(),
+                    location: lexer.next().unwrap().location.clone(),
                     etype: ExpressionType::LambdaArg(LambdaArg { number: *a }),
                 }
             }
@@ -1090,7 +1176,7 @@ impl ParseTree {
     }
 
     fn parse_paren(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
-        let location = expect!(self, lexer, TokenType::OpenParen, "expression").location;
+        expect!(self, lexer, TokenType::OpenParen, "expression").location;
         let rv = self.parse_expr(lexer);
         expect!(self, lexer, TokenType::CloseParen, "expression");
         rv
