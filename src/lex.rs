@@ -209,6 +209,10 @@ impl Lexer {
         }
     }
 
+    pub fn eof(&self) -> Location {
+        Location::new_eof(self.label.clone())
+    }
+
     #[allow(dead_code)]
     fn location(&self) -> Location {
         let borrowed: &CharIter = self.chars.borrow();

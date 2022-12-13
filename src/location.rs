@@ -6,6 +6,7 @@ pub struct Location {
     pub label: Rc<String>,
     pub line: usize,
     pub column: usize,
+    pub is_eof: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -23,9 +24,18 @@ impl Location {
             label,
             line,
             column,
+            is_eof: false,
         }
     }
 
+    pub fn new_eof(label: Rc<String>) -> Location {
+        Location {
+            label,
+            line: 0,
+            column: 0,
+            is_eof: true,
+        }
+    }
     #[allow(dead_code)]
     pub fn err(&self, errmsg: &str) -> String {
         format!("{}: {}", self, errmsg)
@@ -34,7 +44,11 @@ impl Location {
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}:{}", self.label, self.line, self.column)
+        if self.is_eof {
+            write!(f, "{}", self.label)
+        } else {
+            write!(f, "{}:{}:{}", self.label, self.line, self.column)
+        }
     }
 }
 
