@@ -63,8 +63,8 @@ pub struct ParseTree {
     max_arg: Vec<usize>,
     repeated_arg: Option<String>,
     pub globals: Option<usize>,
-    has_error: bool,
     eof: Location,
+    needs_recovery: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +377,10 @@ macro_rules! expect {
         let token = next_handle_eof!($self, $lexer, $context, $conv);
         match &token.token_type {
             $token => token,
-            _ => return $conv(unexpect_known(token, stringify!($token))),
+            _ => {
+                $self.needs_recovery = true;
+                return $conv(unexpect_known(token, stringify!($token)));
+            }
         }
     }};
 }
@@ -390,7 +393,10 @@ macro_rules! expect_val {
         let token = next_handle_eof!($self, $lexer, $context, $conv);
         match token.token_type {
             $token(v) => v,
-            _ => return $conv(unexpect_known(token, stringify!($token))),
+            _ => {
+                $self.needs_recovery = true;
+                return $conv(unexpect_known(token, stringify!($token)));
+            }
         }
     }};
 }
@@ -440,8 +446,8 @@ impl ParseTree {
             max_arg: Vec::new(),
             repeated_arg: None,
             globals: None,
-            has_error: false,
             eof,
+            needs_recovery: false,
         }
     }
 
@@ -464,6 +470,10 @@ impl ParseTree {
             TokenType::Return => self.parse_return(lexer),
             _ => Statement::Expr(self.parse_expr(lexer)),
         };
+        if self.needs_recovery {
+            eat_until!(lexer, TokenType::Semicolon, TokenType::Class);
+            self.needs_recovery = false;
+        }
         // eat all the semicolons
         while if_expect!(self, lexer, TokenType::Semicolon) {}
         rv
