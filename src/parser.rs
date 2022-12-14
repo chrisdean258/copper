@@ -4,6 +4,8 @@ use crate::{
 };
 use std::{cell::RefCell, collections::HashMap, iter::Peekable, mem::swap, rc::Rc};
 
+// TODO: Unexpected should never be passed a `.peek()`ed token, only a `.next()`ed one
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Statement {
@@ -313,7 +315,7 @@ fn unexpected(token: Token) -> Expression {
     unexpected_int(token, None)
 }
 
-fn unexpect_known(token: Token, expt: &'static str) -> Expression {
+fn unexpected_known(token: Token, expt: &'static str) -> Expression {
     unexpected_int(token, Some(expt))
 }
 
@@ -363,13 +365,6 @@ macro_rules! peek_handle_eof_stat {
     ( $self:expr, $lexer:ident, $context:expr) => {
         peek_handle_eof!($self, $lexer, $context, Statement::ExpressionError)
     };
-    ( $self:expr, $lexer:ident, $context:expr, $conv:expr) => {
-        if let Some(t) = $lexer.peek() {
-            t
-        } else {
-            return $conv(Error::eof($self.eof.clone(), $context));
-        }
-    };
 }
 
 macro_rules! next_handle_eof {
@@ -389,23 +384,23 @@ macro_rules! next_handle_eof_stat {
 }
 
 macro_rules! expect {
-    ( $self:expr, $lexer:ident, $token:path, $context:expr ) => {{
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr ) => {{
         expect!($self, $lexer, $token, $context, |i| i)
     }};
-    ( $self:expr, $lexer:ident, $token:path, $context:expr, $conv:expr ) => {{
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr, $conv:expr ) => {{
         let token = next_handle_eof!($self, $lexer, $context, $conv);
         match &token.token_type {
             $token => token,
             _ => {
                 $self.needs_recovery = true;
-                return $conv(unexpect_known(token, stringify!($token)));
+                return $conv(unexpected_known(token, stringify!($token)));
             }
         }
     }};
 }
 
 macro_rules! expect_stat {
-    ( $self:expr, $lexer:ident, $token:path, $context:expr ) => {{
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr ) => {{
         expect!($self, $lexer, $token, $context, Statement::ExpressionError)
     }};
 }
@@ -420,7 +415,7 @@ macro_rules! expect_val {
             $token(v) => v,
             _ => {
                 $self.needs_recovery = true;
-                return $conv(unexpect_known(token, stringify!($token)));
+                return $conv(unexpected_known(token, stringify!($token)));
             }
         }
     }};
@@ -433,7 +428,7 @@ macro_rules! expect_val_stat {
 }
 
 macro_rules! if_expect {
-    ( $self:expr, $lexer:ident, $($token:path),* $(,)? ) => {
+    ( $self:expr, $lexer:ident, $($token:pat),* $(,)? ) => {
         if let Some(token) = $lexer.peek() {
             match &token.token_type {
                 $($token => {
@@ -449,35 +444,83 @@ macro_rules! if_expect {
 }
 
 macro_rules! recover {
-    ( $self:expr, $lexer:ident, $($token:path),* $(,)? => $cond:expr ) => {
-        eat_until!($self, $lexer, $($token),* => $cond);
-        if_expect!($self, $lexer, $($token),*)
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr => $cond:expr ) => {
+        eat_until!($self, $lexer, $token => $cond);
+        expect!($self, $lexer, $token, $context)
+    };
+}
+
+macro_rules! recover_stat {
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr => $cond:expr ) => {
+        eat_until!($self, $lexer, $token => $cond);
+        expect_stat!($self, $lexer, $token, $context)
     };
 }
 
 macro_rules! eat_until {
-    ( $self:expr, $lexer:ident, $($token:path),* $(,)? => $cond:expr) => {
+    ( $self:expr, $lexer:ident, $token:pat => $cond:expr) => {
         let mut parens: isize = 0;
         let mut braces: isize = 0;
         let mut brackets: isize = 0;
         $self.needs_recovery = false;
         while let Some(t) = $lexer.peek() {
             match &t.token_type {
-                $($token if $cond(parens, braces, brackets) => {
+                $token if $cond(parens, braces, brackets) => {
                     break;
-                })*
-                TokenType::OpenParen => parens += 1,
-                TokenType::OpenBracket => brackets += 1,
-                TokenType::OpenBrace => braces += 1,
-                TokenType::CloseParen => parens -= 1,
-                TokenType::CloseBracket => brackets -= 1,
-                TokenType::CloseBrace => braces -= 1,
+                }
+                TokenType::OpenParen => {
+                    $lexer.next();
+                    parens += 1
+                }
+                TokenType::OpenBracket => {
+                    $lexer.next();
+                    brackets += 1
+                }
+                TokenType::OpenBrace => {
+                    $lexer.next();
+                    braces += 1
+                }
+                TokenType::CloseParen => {
+                    $lexer.next();
+                    parens -= 1
+                }
+                TokenType::CloseBracket => {
+                    $lexer.next();
+                    brackets -= 1
+                }
+                TokenType::CloseBrace => {
+                    $lexer.next();
+                    braces -= 1
+                }
                 _ => {
                     $lexer.next();
                 }
             }
         }
     };
+}
+macro_rules! close_or_recover {
+    ( $self:expr, $lexer:ident, $token:pat, $context:expr, $rv:expr, $cond:expr ) => {{
+        let token = next_handle_eof!($self, $lexer, $context);
+        match token.token_type {
+            $token => {
+                $self.needs_recovery = false;
+                $rv
+            }
+            _ => {
+                recover!($self, $lexer, $token, $context => $cond);
+                // NOTE: This is a hack to return both the parsed expression for typechecking and
+                //       the error that is the unexpected token. It is okay to do this because we
+                //       have an error wrapped un the second spot and so it won't pass typechecking
+                Expression {
+                    location: token.location.clone(),
+                    etype: ExpressionType::List(List {
+                        exprs: vec![$rv, unexpected_known(token, "TokenType::CloseParen")],
+                    }),
+                }
+            }
+        }
+    }}
 }
 
 impl ParseTree {
@@ -512,10 +555,13 @@ impl ParseTree {
             _ => Statement::Expr(self.parse_expr(lexer)),
         };
         if self.needs_recovery {
-            eat_until!(self, lexer, TokenType::Semicolon, TokenType::Class => |_, _, _| true);
+            recover_stat!(self, lexer, TokenType::Semicolon | TokenType::Class, "statement" => |_, _, _| true);
         }
         // eat all the semicolons
-        while if_expect!(self, lexer, TokenType::Semicolon) {}
+        while lexer
+            .next_if(|t| matches!(t.token_type, TokenType::Semicolon))
+            .is_some()
+        {}
         rv
     }
 
@@ -526,7 +572,10 @@ impl ParseTree {
 
     fn parse_return(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
         let location = expect_stat!(self, lexer, TokenType::Return, "return").location;
-        let body = if if_expect!(self, lexer, TokenType::Semicolon) {
+        let body = if lexer
+            .next_if(|t| matches!(t.token_type, TokenType::Semicolon))
+            .is_some()
+        {
             None
         } else {
             Some(Box::new(self.parse_expr(lexer)))
@@ -583,7 +632,7 @@ impl ParseTree {
                     };
                     // TODO: Change the way fields and methods are stored so I can do better errors when parsing
                     if methods.insert(fname.clone(), fun.clone()).is_some() {
-                        recover!(self, lexer, TokenType::CloseBrace => |_,_,braces| braces == 0);
+                        recover_stat!(self, lexer, TokenType::CloseBrace, "class declaration" => |_,braces,_| braces == 0);
                         return Statement::ParseError(Error::MethodRedefinition(location, fname));
                     }
                 }
@@ -613,8 +662,9 @@ impl ParseTree {
                     }
                 }
                 _ => {
-                    self.needs_recovery = true;
-                    return Statement::ExpressionError(unexpected(token.clone()));
+                    let token = lexer.next().unwrap();
+                    recover_stat!(self, lexer, TokenType::CloseBrace, "class declaration" => |_,braces,_| braces == 0);
+                    return Statement::ExpressionError(unexpected(token));
                 }
             }
         }
@@ -962,7 +1012,7 @@ impl ParseTree {
 
     fn parse_lambda(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
         let location = lexer.peek().unwrap().location.clone();
-        if_expect!(self, lexer, TokenType::Lambda); //we may or may not have started this lambda with a signifier
+        lexer.next_if(|t| matches!(t.token_type, TokenType::Lambda)); //we may or may not have started this lambda with a signifier
         self.max_arg.push(0);
         let body = self.parse_expr(lexer);
         let num_args = self.max_arg.pop().unwrap();
@@ -1070,7 +1120,7 @@ impl ParseTree {
             TokenType::While => self.parse_while(lexer),
             TokenType::For => self.parse_for(lexer),
             TokenType::If => self.parse_if(lexer),
-            _ => unexpected(token.clone()),
+            _ => unexpected(lexer.next().unwrap()),
         };
         while let Some(TokenType::Dot) = lexer.peek().map(|x| &x.token_type) {
             rv = self.parse_dotted_lookup(lexer, rv);
@@ -1109,33 +1159,38 @@ impl ParseTree {
 
     fn parse_list(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
         let loc = expect!(self, lexer, TokenType::OpenBracket, "list").location;
-        let exprs = if if_expect!(self, lexer, TokenType::CloseBracket) {
-            Vec::new()
+        if if_expect!(self, lexer, TokenType::CloseBracket) {
+            Expression {
+                location: loc,
+                etype: ExpressionType::List(List { exprs: Vec::new() }),
+            }
         } else {
-            let r = self.parse_cse(lexer, "list");
-            expect!(self, lexer, TokenType::CloseBracket, "list");
-            r
-        };
-        Expression {
-            location: loc,
-            etype: ExpressionType::List(List { exprs }),
+            let exprs = self.parse_cse(lexer, "list");
+            close_or_recover!(
+                self,
+                lexer,
+                TokenType::CloseBracket,
+                "parenthesized expression",
+                Expression {
+                    location: loc,
+                    etype: ExpressionType::List(List { exprs }),
+                },
+                |_, _, brackets| brackets == 0
+            )
         }
     }
 
     fn parse_paren(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
         expect!(self, lexer, TokenType::OpenParen, "expression").location;
         let rv = self.parse_expr(lexer);
-        let token = next_handle_eof!(self, lexer, "parenthesized expression");
-        match token.token_type {
-            TokenType::CloseParen => {
-                self.needs_recovery = false;
-                rv
-            }
-            _ => {
-                recover!(self, lexer, TokenType::CloseParen => |parens, _, _| parens == 0);
-                unexpect_known(token, "TokenType::CloseParen")
-            }
-        }
+        close_or_recover!(
+            self,
+            lexer,
+            TokenType::CloseParen,
+            "parenthesized expression",
+            rv,
+            |p, _, _| p == 0
+        )
     }
 
     fn parse_expr(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
