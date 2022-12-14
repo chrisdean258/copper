@@ -30,7 +30,7 @@ impl Evaluator {
             code: Vec::new(),
             memory: Memory::new(),
             builtin_table: BuiltinFunction::get_table(types),
-            bp: STACK + 1,
+            bp: STACK,
             reg: Value::Uninitialized,
         }
     }

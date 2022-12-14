@@ -681,7 +681,11 @@ impl ParseTree {
         let mut rv = Vec::new();
         let location = expect!(self, lexer, TokenType::OpenBrace, "block").location;
 
-        while !if_expect!(self, lexer, TokenType::CloseBrace) {
+        loop {
+            if let TokenType::CloseBrace = peek_handle_eof!(self, lexer, "block").token_type {
+                lexer.next();
+                break;
+            }
             rv.push(self.parse_statement(lexer));
         }
         Expression {

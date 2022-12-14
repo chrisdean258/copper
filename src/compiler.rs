@@ -617,7 +617,7 @@ impl Compiler {
             self.code.load();
 
             debug_assert!(i.args.len() == 1);
-            self.expr(&i.args[0]);
+            self.get_no_ref(&i.args[0]);
             self.code.dup();
             self.code.rotate(3);
             self.code.emit(MachineOperation::CmpLE);
