@@ -220,7 +220,7 @@ impl Compiler {
         self.continues.push(self.code.jump_relative(0));
     }
 
-    fn expr(&mut self, e: &TypedExpression) {
+    fn expr_dont_call_without_handling_needs_ref(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
             TypedExpressionType::For(f) => todo!("{f:?}"), //self.forexpr(f),
@@ -350,14 +350,14 @@ impl Compiler {
     fn get_ref(&mut self, e: &TypedExpression) {
         let save = self.need_ref;
         self.need_ref = true;
-        self.expr(e);
+        self.expr_dont_call_without_handling_needs_ref(e);
         self.need_ref = save;
     }
 
     fn get_value(&mut self, e: &TypedExpression) {
         let save = self.need_ref;
         self.need_ref = false;
-        self.expr(e);
+        self.expr_dont_call_without_handling_needs_ref(e);
         self.need_ref = save;
     }
 

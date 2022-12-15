@@ -173,6 +173,14 @@ impl Evaluator {
                     }
                     a => panic!("Trying to deref `{a:?}`"),
                 },
+                MachineOperation::LoadAddr(addr) => {
+                    if let Some(v) = self.memory.get(*addr) {
+                        let v = *v;
+                        push!(v);
+                    } else if cfg!(debug_assertions) {
+                        panic!("Reading out of bounds 0x{:x}", addr);
+                    }
+                }
                 MachineOperation::LoadLocal(o) => {
                     let ptr = (self.bp as isize + o) as usize;
                     self.memory.push(reg);

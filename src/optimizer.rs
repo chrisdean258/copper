@@ -125,6 +125,10 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                 code[i] = Nop;
                 code[i + 1] = Nop;
             }
+            (Push(Value::Ptr(p)), Load) => {
+                code[i] = Nop;
+                code[i + 1] = LoadAddr(p);
+            }
             _ => (),
         }
         i += 1;
