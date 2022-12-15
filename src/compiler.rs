@@ -174,7 +174,7 @@ impl Compiler {
     fn statement(&mut self, s: &TypedStatement, pop: bool, save: bool) {
         match s {
             TypedStatement::Expr(e) => {
-                self.expr(e);
+                self.get_value(e);
                 if pop {
                     if save {
                         self.code.emit(MachineOperation::Save);
@@ -200,7 +200,7 @@ impl Compiler {
 
     fn return_(&mut self, r: &TypedReturn) {
         match &r.body {
-            Some(e) => self.expr(e),
+            Some(e) => self.get_value(e),
             None => {
                 self.code.push(Value::Uninitialized);
             }
@@ -250,13 +250,13 @@ impl Compiler {
     }
 
     fn binop(&mut self, b: &TypedBinOp) {
-        self.expr(b.lhs.as_ref());
+        self.get_value(b.lhs.as_ref());
         //TODO option types
         if b.op == Operation::BoolOr {
             self.code.dup();
             let from = self.code.jump_relative_if(0);
             self.code.pop();
-            self.expr(b.rhs.as_ref());
+            self.get_value(b.rhs.as_ref());
             let to = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(from, to as isize);
         } else if b.op == Operation::BoolAnd {
@@ -264,11 +264,11 @@ impl Compiler {
             self.code.emit(MachineOperation::BoolNot);
             let from = self.code.jump_relative_if(0);
             self.code.pop();
-            self.expr(b.rhs.as_ref());
+            self.get_value(b.rhs.as_ref());
             let to = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(from, to as isize);
         } else {
-            self.expr(b.rhs.as_ref());
+            self.get_value(b.rhs.as_ref());
             self.code.emit(b.op.as_machine_op());
         }
     }
@@ -292,7 +292,7 @@ impl Compiler {
                 self.code.store();
             }
             t if t.is_preunop() => {
-                self.expr(p.rhs.as_ref());
+                self.get_value(p.rhs.as_ref());
                 if p.op != Operation::Deref {
                     self.code.emit(p.op.as_machine_op());
                 }
@@ -354,7 +354,7 @@ impl Compiler {
         self.need_ref = save;
     }
 
-    fn get_no_ref(&mut self, e: &TypedExpression) {
+    fn get_value(&mut self, e: &TypedExpression) {
         let save = self.need_ref;
         self.need_ref = false;
         self.expr(e);
@@ -456,7 +456,7 @@ impl Compiler {
         if a.op != Operation::Equal {
             self.code.dup();
             self.code.load();
-            self.expr(a.rhs.as_ref());
+            self.get_value(a.rhs.as_ref());
             self.code.emit(a.op.underlying_binop().as_machine_op());
         } else {
             let types = self.types.as_ref().unwrap();
@@ -464,7 +464,7 @@ impl Compiler {
             if types.is_option(a.lhs.typ) {
                 self.current_null = Some(a.lhs.typ);
             }
-            self.expr(a.rhs.as_ref());
+            self.get_value(a.rhs.as_ref());
             self.current_null = save;
         }
         self.code.store();
@@ -488,14 +488,14 @@ impl Compiler {
     fn whileexpr(&mut self, w: &TypedWhile) {
         let skip_body = self.code.jump_relative(0);
         let cond_addr = self.code.next_function_relative_addr();
-        self.expr(w.condition.as_ref());
+        self.get_value(w.condition.as_ref());
         let cond = self.code.split_off_from(cond_addr);
 
         let body_addr = self.code.next_function_relative_addr();
         debug_assert!(body_addr == cond_addr);
         let mut breaks = take(&mut self.breaks);
         let mut continues = take(&mut self.continues);
-        self.expr(w.body.as_ref());
+        self.get_value(w.body.as_ref());
         swap(&mut self.breaks, &mut breaks);
         swap(&mut self.continues, &mut continues);
 
@@ -524,11 +524,11 @@ impl Compiler {
         }
         if !i.and_bodies.is_empty() {
             self.code.push(Value::Uninitialized); // If return value
-            self.expr(i.condition.as_ref());
+            self.get_value(i.condition.as_ref());
             self.code.dup();
             self.code.emit(MachineOperation::BoolNot);
             let mut next_branch = self.code.jump_relative_if(0);
-            self.expr(i.body.as_ref());
+            self.get_value(i.body.as_ref());
             self.code.rotate(3);
             self.code.swap();
             self.code.pop();
@@ -536,14 +536,14 @@ impl Compiler {
             for ((body, _typ), _location) in i.and_bodies.iter() {
                 let loc = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(next_branch, loc as isize);
-                self.expr(body.condition.as_ref());
+                self.get_value(body.condition.as_ref());
                 self.code.dup();
                 self.code.rotate(3);
                 self.code.emit(MachineOperation::BoolOr);
                 self.code.swap();
                 self.code.emit(MachineOperation::BoolNot);
                 next_branch = self.code.jump_relative_if(0);
-                self.expr(body.body.as_ref());
+                self.get_value(body.body.as_ref());
                 self.code.rotate(3);
                 self.code.swap();
                 self.code.pop();
@@ -552,27 +552,27 @@ impl Compiler {
             self.code.backpatch_jump_rel(next_branch, loc as isize);
             if let Some(else_body) = &i.else_body {
                 next_branch = self.code.jump_relative_if(0);
-                self.expr(else_body);
+                self.get_value(else_body);
                 self.code.swap();
                 self.code.pop();
                 let loc = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(next_branch, loc as isize);
             }
         } else {
-            self.expr(i.condition.as_ref());
+            self.get_value(i.condition.as_ref());
             if let Some(else_body) = &i.else_body {
                 let true_branch = self.code.jump_relative_if(0);
-                self.expr(else_body);
+                self.get_value(else_body);
                 let jump_to_end = self.code.jump_relative(0);
                 let true_loc = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(true_branch, true_loc as isize);
-                self.expr(i.body.as_ref());
+                self.get_value(i.body.as_ref());
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             } else {
                 self.code.emit(MachineOperation::BoolNot);
                 let jump_to_end = self.code.jump_relative_if(0);
-                self.expr(i.body.as_ref());
+                self.get_value(i.body.as_ref());
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             }
@@ -599,25 +599,25 @@ impl Compiler {
         self.code.dup();
         self.code.load();
         for expr in l.exprs.iter() {
-            self.expr(expr);
+            self.get_value(expr);
         }
         self.code.store_n(l.exprs.len());
     }
 
     fn index(&mut self, i: &TypedIndexExpr) {
         if i.obj.typ == STR {
-            self.expr(i.obj.as_ref());
-            self.expr(&i.args[0]);
+            self.get_value(i.obj.as_ref());
+            self.get_value(&i.args[0]);
             self.code.emit(MachineOperation::Plus);
         } else {
-            self.get_no_ref(i.obj.as_ref());
+            self.get_value(i.obj.as_ref());
             self.code.dup();
             self.code.push(Value::PtrOffset(1));
             self.code.emit(MachineOperation::Plus);
             self.code.load();
 
             debug_assert!(i.args.len() == 1);
-            self.get_no_ref(&i.args[0]);
+            self.get_value(&i.args[0]);
             self.code.dup();
             self.code.rotate(3);
             self.code.emit(MachineOperation::CmpLE);
@@ -673,7 +673,7 @@ impl Compiler {
             self.code.alloc(size);
             self.code.store_fast();
         }
-        self.expr(&f.typed_bodies[sig_idx]);
+        self.get_value(&f.typed_bodies[sig_idx]);
         if f.alloc_before_call.is_some() {
             self.code.local_ref(0);
             self.code.load();
@@ -704,7 +704,7 @@ impl Compiler {
         if l.locals.unwrap() > sig.inputs.len() {
             self.code.reserve(l.locals.unwrap() - sig.inputs.len());
         }
-        self.expr(&l.typed_bodies[sig_idx]);
+        self.get_value(&l.typed_bodies[sig_idx]);
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
@@ -721,7 +721,7 @@ impl Compiler {
         self.extra_args = 0;
         let alloc_before_call_num = 0;
         for arg in c.args.iter() {
-            self.expr(arg);
+            self.get_value(arg);
         }
         self.code.push(Value::Count(
             c.args.len() + self.extra_args + alloc_before_call_num,
@@ -733,13 +733,13 @@ impl Compiler {
 
         if let Some(sig_idx) = c.sig_idx {
             let save_sig_idx = replace(&mut self.cur_sig_idx, Some(sig_idx));
-            self.expr(c.function.as_ref());
+            self.get_value(c.function.as_ref());
             self.cur_sig_idx = save_sig_idx;
             self.arg_types = arg_types;
             self.code.call();
         } else {
             // Builtin function
-            self.expr(c.function.as_ref());
+            self.get_value(c.function.as_ref());
             self.arg_types = arg_types;
             self.code.call();
             // panic!("Cannot calculate call expr without signature: {c:?}");
@@ -747,7 +747,7 @@ impl Compiler {
     }
 
     fn dotted_lookup(&mut self, d: &TypedDottedLookup) {
-        self.get_no_ref(d.lhs.as_ref());
+        self.get_value(d.lhs.as_ref());
         self.code.push(Value::PtrOffset(d.index as isize));
         self.code.emit(MachineOperation::Plus);
         if !self.need_ref {
