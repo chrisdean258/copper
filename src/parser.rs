@@ -40,8 +40,8 @@ pub enum ExpressionType {
     PreUnOp(PreUnOp),
     PostUnOp(PostUnOp),
     AssignExpr(AssignExpr),
-    Function(Rc<RefCell<Function>>),
-    Lambda(Rc<RefCell<Lambda>>),
+    Function(Function),
+    Lambda(Lambda),
     List(List),
     Str(Str),
     IndexExpr(IndexExpr),
@@ -212,10 +212,6 @@ pub struct Function {
 pub struct Lambda {
     pub num_args: usize,
     pub body: Box<Expression>,
-    pub locals: Option<usize>,
-
-    pub signatures: Vec<Signature>,
-    pub typed_bodies: Vec<TypedExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -627,7 +623,7 @@ impl ParseTree {
                 TokenType::Function => {
                     let fun = self.parse_function(lexer, true);
                     let fname = match &fun.etype {
-                        ExpressionType::Function(f) => f.borrow().name.clone().unwrap(),
+                        ExpressionType::Function(f) => f.name.clone().unwrap(),
                         _ => unreachable!(),
                     };
                     // TODO: Change the way fields and methods are stored so I can do better errors when parsing
@@ -1000,7 +996,7 @@ impl ParseTree {
 
         Expression {
             location: loctoken.location,
-            etype: ExpressionType::Function(Rc::new(RefCell::new(Function {
+            etype: ExpressionType::Function(Function {
                 argnames: args,
                 repeated,
                 body: Box::new(body),
@@ -1010,7 +1006,7 @@ impl ParseTree {
                 alloc_before_call: None,
                 signatures: Vec::new(),
                 typed_bodies: Vec::new(),
-            }))),
+            }),
         }
     }
 
@@ -1022,13 +1018,10 @@ impl ParseTree {
         let num_args = self.max_arg.pop().unwrap();
         Expression {
             location,
-            etype: ExpressionType::Lambda(Rc::new(RefCell::new(Lambda {
+            etype: ExpressionType::Lambda(Lambda {
                 num_args,
                 body: Box::new(body),
-                locals: None,
-                signatures: Vec::new(),
-                typed_bodies: Vec::new(),
-            }))),
+            }),
         }
     }
 

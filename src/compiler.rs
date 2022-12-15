@@ -4,7 +4,7 @@ use crate::{
     code_builder::CodeBuilder,
     memory,
     operation::{MachineOperation, Operation},
-    parser::{ClassDecl, Function, Lambda},
+    parser::ClassDecl,
     typecheck::*,
     typesystem::{Type, TypeSystem, NULL, STR},
     value::Value,
@@ -31,7 +31,7 @@ pub struct Compiler {
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
-    func_scopes: Vec<HashMap<String, Rc<RefCell<Function>>>>,
+    func_scopes: Vec<HashMap<String, TypedFunction>>,
     class_scopes: Vec<HashMap<String, Rc<RefCell<ClassDecl>>>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
@@ -445,7 +445,7 @@ impl Compiler {
         self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
         let save_bp_list = take(&mut self.recursive_calls);
-        let addr = self.single_function(&func.borrow(), sig_idx, is_init);
+        let addr = self.single_function(&func, sig_idx, is_init);
         self.recursive_calls = save_bp_list;
         self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
@@ -631,42 +631,51 @@ impl Compiler {
         }
     }
 
-    fn function(&mut self, f: &Rc<RefCell<Function>>) {
+    fn function(&mut self, f: &TypedFunction) {
         // names functions are rendered in accordance with FuncRefExprs so that more instances can be rendered when needed
-        if let Some(name) = f.borrow().name.clone() {
+        if let Some(name) = f.borrow().function.name.clone() {
             self.func_scopes.last_mut().unwrap().insert(name, f.clone());
             self.code.push(Value::Uninitialized);
         } else {
             // I think this is broken but it _might_ work
             debug_assert_eq!(f.borrow().signatures.len(), 1);
             // for sig in f.borrow().signatures.iter() {
-            let addr = self.single_function(&f.borrow(), 0, false);
+            let addr = self.single_function(f, 0, false);
             self.code.push(Value::Ptr(addr));
             // }
         }
     }
 
-    fn single_function(&mut self, f: &Function, sig_idx: usize, _alloc_before_call: bool) -> usize {
+    fn single_function(
+        &mut self,
+        f: &TypedFunction,
+        sig_idx: usize,
+        _alloc_before_call: bool,
+    ) -> usize {
+        let f = f.borrow();
         let sig = &f.signatures[sig_idx];
         debug_assert!(
-            sig.repeated_inputs.is_some() || sig.inputs.len() == f.argnames.len(),
+            sig.repeated_inputs.is_some() || sig.inputs.len() == f.function.argnames.len(),
             "{f:#?}\n-------------------\n{sig:#?}",
         );
         let name = format!(
             "{}{}",
-            f.name.clone().unwrap_or_else(|| "<anonymous>".to_string()),
+            f.function
+                .name
+                .clone()
+                .unwrap_or_else(|| "<anonymous>".to_string()),
             self.types.as_ref().unwrap().format_signature(sig)
         );
         self.open_scope();
         self.code.open_function(name);
-        for argname in f.argnames.iter() {
+        for argname in f.function.argnames.iter() {
             let var = self.next_local();
             self.insert_scope(argname.clone(), var);
         }
         let old_num_args = self.num_args;
         self.num_args = sig.inputs.len();
-        if f.locals.unwrap() > f.argnames.len() {
-            self.code.reserve(f.locals.unwrap() - f.argnames.len());
+        if f.locals > f.function.argnames.len() {
+            self.code.reserve(f.locals - f.function.argnames.len());
         }
         if let Some(size) = f.alloc_before_call {
             self.code.local_ref(0);
@@ -685,13 +694,14 @@ impl Compiler {
         self.code.close_function_and_patch(&self.recursive_calls)
     }
 
-    fn lambda(&mut self, l: &Rc<RefCell<Lambda>>) {
+    fn lambda(&mut self, l: &TypedLambda) {
         debug_assert_eq!(l.borrow().signatures.len(), 1);
-        let addr = self.single_lambda(&l.borrow(), 0);
+        let addr = self.single_lambda(&l, 0);
         self.code.push(Value::Ptr(addr));
     }
 
-    fn single_lambda(&mut self, l: &Lambda, sig_idx: usize) -> usize {
+    fn single_lambda(&mut self, l: &TypedLambda, sig_idx: usize) -> usize {
+        let l = l.borrow();
         let sig = &l.signatures[sig_idx];
         let name = format!(
             "<lambda>{}",
@@ -701,8 +711,8 @@ impl Compiler {
         self.code.open_function(name);
         let old_num_args = self.num_args;
         self.num_args = sig.inputs.len();
-        if l.locals.unwrap() > sig.inputs.len() {
-            self.code.reserve(l.locals.unwrap() - sig.inputs.len());
+        if l.locals > sig.inputs.len() {
+            self.code.reserve(l.locals - sig.inputs.len());
         }
         self.get_value(&l.typed_bodies[sig_idx]);
         self.code.return_();

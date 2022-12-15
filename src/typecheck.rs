@@ -93,17 +93,14 @@ impl std::fmt::Display for ErrorType {
     }
 }
 
-type ParserFunction = Rc<RefCell<parser::Function>>;
-type ParserLambda = Rc<RefCell<parser::Lambda>>;
-
 pub struct TypeChecker {
     pub system: TypeSystem,
     scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
-    func_scopes: Vec<Rc<RefCell<HashMap<String, ParserFunction>>>>,
+    func_scopes: Vec<Rc<RefCell<HashMap<String, TypedFunction>>>>,
     class_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
 
-    type_to_func: HashMap<Type, ParserFunction>,
-    type_to_lambda: HashMap<Type, Rc<RefCell<Lambda>>>,
+    type_to_func: HashMap<Type, TypedFunction>,
+    type_to_lambda: HashMap<Type, TypedLambda>,
     type_to_class: HashMap<Type, Rc<RefCell<ClassDecl>>>,
     type_to_resolved_func: HashMap<Type, TypedExpression>,
 
@@ -164,8 +161,8 @@ pub enum TypedExpressionType {
     AssignExpr(TypedAssignExpr),
     // Functions/lambdas fundamentally don't have types until they are called
     // So this requires looking in the scope table
-    Function(ParserFunction),
-    Lambda(ParserLambda),
+    Function(TypedFunction),
+    Lambda(TypedLambda),
     List(TypedList),
     Str(TypedStr),
     IndexExpr(TypedIndexExpr),
@@ -218,7 +215,7 @@ pub struct TypedClassRefExpr {
 #[derive(Debug, Clone)]
 pub struct TypedFuncRefExpr {
     pub name: String,
-    pub func: ParserFunction,
+    pub func: TypedFunction,
 }
 
 #[derive(Debug, Clone)]
@@ -307,6 +304,28 @@ pub struct TypedDottedLookup {
     pub rhs: String,
     pub index: usize,
 }
+
+#[derive(Debug, Clone)]
+pub struct TypedFunctionInternal {
+    pub function: parser::Function,
+    pub alloc_before_call: Option<usize>,
+    pub signatures: Vec<Signature>,
+    pub typed_bodies: Vec<TypedExpression>,
+    pub locals: usize,
+}
+
+pub type TypedFunction = Rc<RefCell<TypedFunctionInternal>>;
+
+#[derive(Debug, Clone)]
+pub struct TypedLambdaInternal {
+    pub lambda: parser::Lambda,
+    pub locals: usize,
+
+    pub signatures: Vec<Signature>,
+    pub typed_bodies: Vec<TypedExpression>,
+}
+
+pub type TypedLambda = Rc<RefCell<TypedLambdaInternal>>;
 
 impl TypeChecker {
     pub fn new() -> Self {
@@ -426,7 +445,7 @@ impl TypeChecker {
         self.scope_lookup_general(name, &self.scopes)
     }
 
-    fn scope_lookup_func(&self, name: &str) -> Option<ParserFunction> {
+    fn scope_lookup_func(&self, name: &str) -> Option<TypedFunction> {
         for scope in self.func_scopes.iter().rev() {
             if let Some(t) = scope.borrow().get(name) {
                 return Some(t.clone());
@@ -446,7 +465,7 @@ impl TypeChecker {
         place
     }
 
-    fn insert_func_scope(&mut self, name: &str, f: ParserFunction) -> usize {
+    fn insert_func_scope(&mut self, name: &str, f: TypedFunction) -> usize {
         let mut scope = self.func_scopes.last().unwrap().borrow_mut();
         let place = scope.len();
         scope.insert(String::from(name), f);
@@ -930,21 +949,34 @@ impl TypeChecker {
         ))
     }
 
-    fn function(&mut self, f: ParserFunction) -> Result<(TypedExpressionType, Type), ()> {
-        let name = f.borrow().name.clone();
+    fn function(&mut self, f: parser::Function) -> Result<(TypedExpressionType, Type), ()> {
+        let name = f.name.clone();
         let default = "<anonymous function>".to_owned();
         let typ = self.system.function_type(name.clone().unwrap_or(default));
-        self.type_to_func.insert(typ, f.clone());
+        let rv = Rc::new(RefCell::new(TypedFunctionInternal {
+            function: f,
+            alloc_before_call: None,
+            signatures: Vec::new(),
+            typed_bodies: Vec::new(),
+            locals: 0,
+        }));
+        self.type_to_func.insert(typ, rv.clone());
         if let Some(s) = name {
-            self.insert_func_scope(&s, f.clone());
-        }
-        Ok((TypedExpressionType::Function(f), typ))
+            self.insert_func_scope(&s, rv.clone());
+        };
+        Ok((TypedExpressionType::Function(rv), typ))
     }
 
-    fn lambda(&mut self, l: ParserLambda) -> Result<(TypedExpressionType, Type), ()> {
+    fn lambda(&mut self, l: parser::Lambda) -> Result<(TypedExpressionType, Type), ()> {
         let typ = self.system.function_type("<lambda>".to_string());
-        self.type_to_lambda.insert(typ, l.clone());
-        Ok((TypedExpressionType::Lambda(l), typ))
+        let rv = Rc::new(RefCell::new(TypedLambdaInternal {
+            lambda: l,
+            locals: 0,
+            signatures: Vec::new(),
+            typed_bodies: Vec::new(),
+        }));
+        self.type_to_lambda.insert(typ, rv.clone());
+        Ok((TypedExpressionType::Lambda(rv), typ))
     }
 
     fn lambdaarg(&mut self, l: LambdaArg) -> Result<(TypedExpressionType, Type), ()> {
@@ -1021,7 +1053,7 @@ impl TypeChecker {
             c.alloc_before_call = Some(alloc_before_call);
             if let Some(init) = classdecl.borrow_mut().methods.get_mut("__init__") {
                 if let ExpressionType::Function(f) = &mut init.etype {
-                    f.borrow_mut().alloc_before_call = c.alloc_before_call;
+                    f.alloc_before_call = c.alloc_before_call;
                 }
                 let unresolved = self.system.class_new_unresolved(subject.typ);
                 argtypes.insert(0, unresolved);
@@ -1105,7 +1137,7 @@ impl TypeChecker {
 
     fn call_func_with_args(
         &mut self,
-        f: ParserFunction,
+        f: TypedFunction,
         subject: TypedExpression,
         args: Vec<TypedExpression>,
     ) -> Result<(TypedExpressionType, Type), ()> {
@@ -1152,7 +1184,7 @@ impl TypeChecker {
     #[allow(dead_code)]
     fn call_function(
         &mut self,
-        function: ParserFunction,
+        function: TypedFunction,
         args: Vec<TypedExpression>,
         calling_location: &Location,
     ) -> Result<(TypedExpression, Option<usize>), ()> {
@@ -1171,10 +1203,10 @@ impl TypeChecker {
         let rv = self.call_function_int(function.clone(), args, calling_location)?;
 
         // TODO: This might be the right algorithm
-        let func_sig = if function.borrow().repeated.is_none() {
+        let func_sig = if function.borrow().function.repeated.is_none() {
             Signature::new(argtypes, None, rv.typ)
         } else {
-            let num = function.borrow().argnames.len();
+            let num = function.borrow().function.argnames.len();
             Signature::new(
                 argtypes.iter().take(num).cloned().collect(),
                 argtypes.last().cloned(),
@@ -1186,7 +1218,7 @@ impl TypeChecker {
         function.borrow_mut().typed_bodies.push(rv.clone());
         function.borrow_mut().signatures.push(func_sig.clone());
 
-        if let Some(name) = &function.borrow().name {
+        if let Some(name) = &function.borrow().function.name {
             self.func_mangle_name_scope_insert(name, func_sig);
         }
         Ok((rv, Some(idx)))
@@ -1194,22 +1226,25 @@ impl TypeChecker {
 
     fn call_function_single_check(
         &mut self,
-        function: &ParserFunction,
+        function: &TypedFunction,
         args: &[TypedExpression],
         calling_location: &Location,
     ) -> Result<(TypedExpression, usize), ()> {
         self.openscope();
-        if let Some(name) = function.borrow().repeated.clone() {
-            if args.len() > function.borrow().argnames.len() {
+        if let Some(name) = function.borrow().function.repeated.clone() {
+            if args.len() > function.borrow().function.argnames.len() {
                 self.repeated_arg = Some((name, args.last().unwrap().typ));
             } else {
                 self.repeated_arg = Some((name, 0));
             }
         }
-        for (typ, name) in args.iter().zip(function.borrow().argnames.iter()) {
+        for (typ, name) in args.iter().zip(function.borrow().function.argnames.iter()) {
             self.insert_scope(name, typ.typ);
         }
-        let rv = self.call_single_check(*function.borrow_mut().body.clone(), calling_location)?;
+        let rv = self.call_single_check(
+            *function.borrow_mut().function.body.clone(),
+            calling_location,
+        )?;
         Ok((rv, self.closescope()))
     }
 
@@ -1251,33 +1286,33 @@ impl TypeChecker {
 
     fn call_function_int(
         &mut self,
-        function: ParserFunction,
+        function: TypedFunction,
         mut args: Vec<TypedExpression>,
         calling_location: &Location,
     ) -> Result<TypedExpression, ()> {
-        let num_default_needed = if function.borrow().repeated.is_some() {
+        let num_default_needed = if function.borrow().function.repeated.is_some() {
             0
         } else {
-            let argnamelen = function.borrow().argnames.len();
+            let argnamelen = function.borrow().function.argnames.len();
             if argnamelen < args.len() {
                 return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
             }
             argnamelen - args.len()
         };
 
-        if num_default_needed > function.borrow().default_args.len() {
+        if num_default_needed > function.borrow().function.default_args.len() {
             return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
                 args.len(),
-                function.borrow().default_args.len(),
-                function.borrow().argnames.len(),
+                function.borrow().function.default_args.len(),
+                function.borrow().function.argnames.len(),
             ));
         }
 
-        let first_default = function.borrow().default_args.len() - num_default_needed;
+        let first_default = function.borrow().function.default_args.len() - num_default_needed;
 
         let mut def_args = Vec::new();
         for i in 0..num_default_needed {
-            let expr = function.borrow().default_args[i + first_default].clone();
+            let expr = function.borrow().function.default_args[i + first_default].clone();
             def_args.push(self.expr(expr));
         }
         for e in def_args {
@@ -1288,7 +1323,7 @@ impl TypeChecker {
         self.need_recheck = false;
         let (rv, num_locals) =
             self.call_function_single_check(&function, &args, calling_location)?;
-        function.borrow_mut().locals = Some(num_locals);
+        function.borrow_mut().locals = num_locals;
 
         if self.need_recheck {
             let (new_rv, num_locals) =
@@ -1302,7 +1337,7 @@ impl TypeChecker {
                 // ));
             }
             self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
-            debug_assert_eq!(function.borrow_mut().locals.unwrap(), num_locals);
+            debug_assert_eq!(function.borrow_mut().locals, num_locals);
             self.need_recheck = save;
             Ok(new_rv)
         } else {
@@ -1313,7 +1348,7 @@ impl TypeChecker {
 
     fn call_lambda_with_args(
         &mut self,
-        l: ParserLambda,
+        l: TypedLambda,
         subject: TypedExpression,
         args: Vec<TypedExpression>,
     ) -> Result<(TypedExpressionType, Type), ()> {
@@ -1360,7 +1395,7 @@ impl TypeChecker {
     #[allow(dead_code)]
     fn call_lambda(
         &mut self,
-        lambda: ParserLambda,
+        lambda: TypedLambda,
         mut args: Vec<TypedExpression>,
         funcloc: &Location,
     ) -> Result<(TypedExpression, Option<usize>), ()> {
@@ -1376,12 +1411,12 @@ impl TypeChecker {
         let argtypes = args.iter().map(|a| a.typ).collect();
         self.openscope();
         self.func_returns.push(None);
-        let rv = self.call_single_check(*lambda.borrow_mut().body.clone(), funcloc)?;
+        let rv = self.call_single_check(*lambda.borrow_mut().lambda.body.clone(), funcloc)?;
         let func_sig = Signature::new(argtypes, None, rv.typ);
         let idx = lambda.borrow().signatures.len();
         lambda.borrow_mut().typed_bodies.push(rv.clone());
         lambda.borrow_mut().signatures.push(func_sig);
-        lambda.borrow_mut().locals = Some(self.closescope() + args.len());
+        lambda.borrow_mut().locals = self.closescope() + args.len();
         swap(&mut self.lambda_args, &mut args);
         Ok((rv, Some(idx)))
     }
