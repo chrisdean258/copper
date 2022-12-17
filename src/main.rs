@@ -114,14 +114,14 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
                                 }
                                 Err(ReadlineError::Interrupted) => (),
                                 Err(ReadlineError::Eof) => {
-                                    eprintln!("Error: {:?}", e);
+                                    eprintln!("Error: {e}");
                                 }
                                 Err(err) => {
-                                    eprintln!("Error: {:?}", err);
+                                    eprintln!("Error: {err}");
                                 }
                             },
                             _ => {
-                                println!("{:?}", e);
+                                println!("{e}");
                             }
                         },
                     }
