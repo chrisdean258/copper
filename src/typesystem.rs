@@ -300,6 +300,7 @@ impl TypeSystem {
         );
 
         self.ensure_op(Operation::Deref);
+        self.ensure_op(Operation::Extract);
     }
 
     pub fn ensure_op(&mut self, operation: Operation) {
@@ -356,6 +357,8 @@ impl TypeSystem {
         self.add_signature(Operation::CmpEq, sig!(op_type,op_type => BOOL));
         self.add_signature(Operation::CmpNotEq, sig!(op_type,op_type => BOOL));
         self.add_signature(Operation::Deref, sig!(op_type => t));
+
+        self.add_signature(Operation::Extract, sig!(t, op_type => BOOL));
 
         op_type
     }

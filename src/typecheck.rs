@@ -23,6 +23,7 @@ pub enum ErrorType {
     CannotAssignType(String, Operation, String),
     CannotAssignUnit,
     CannotDeriveReturnType,
+    CannotExtractFromNonOption(String),
     CannotIndexType(String),
     CannotIndirectlyCallBuiltins,
     CannotReturnTypeFromNonFunction(String),
@@ -65,6 +66,7 @@ impl std::fmt::Display for ErrorType {
             Self::CannotAssignType(t1, op, t2) => write!(f,  "Cannot assign `{t1}` {op} `{t2}`",),
             Self::CannotAssignUnit => write!(f, "Cannot assign unit value"),
             Self::CannotDeriveReturnType => write!(f, "Cannot derive the return type of this function call"),
+            Self::CannotExtractFromNonOption(t) => write!(f, "Cannot extract value from type `{t}`"),
             Self::CannotIndexType(t) => write!(f,  "Cannot index into type `{t}`"),
             Self::CannotIndirectlyCallBuiltins => write!(f, "Cannot indirectly call buitins yet"),
             Self::CannotReturnTypeFromNonFunction(t) => write!(f,  "Cannot return type `{t}` from outside a function"),
@@ -737,16 +739,26 @@ impl TypeChecker {
     }
 
     fn assignment(&mut self, a: AssignExpr) -> Result<(TypedExpressionType, Type), ()> {
+        let rhs = self.expr(*a.rhs);
         if !a.lhs.is_lval() {
-            return self.error(ErrorType::NotAssignable);
+            let _ = self.error::<()>(ErrorType::NotAssignable);
         }
-        let rhs = self.expr(*a.rhs)?;
+        let rhs = rhs?;
         if rhs.typ == UNIT {
             return self.error(ErrorType::CannotAssignUnit);
         }
         self.allow_insert = Some(rhs.typ);
-        let lhs = self.expr(*a.lhs)?;
+        if a.op == Operation::Extract {
+            if !self.system.is_option(rhs.typ) {
+                return self.error(ErrorType::CannotExtractFromNonOption(
+                    self.system.typename(rhs.typ),
+                ));
+            }
+            self.allow_insert = self.system.underlying_type(rhs.typ);
+        }
+        let lhs = self.expr(*a.lhs);
         self.allow_insert = None;
+        let lhs = lhs?;
         match self.system.lookup_assign(a.op, lhs.typ, rhs.typ) {
             Some(typ) => Ok((
                 TypedExpressionType::AssignExpr(TypedAssignExpr {

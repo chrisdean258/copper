@@ -46,6 +46,9 @@ pub enum TokenType {
     CloseParen,
     Comma,
     Dot,
+    LeftArrow,
+    RightArrow,
+    FatArrow,
     Equal,
     AndEq,
     XorEq,
@@ -120,6 +123,9 @@ impl Display for TokenType {
             Self::CloseParen => write!(f, ")"),
             Self::Comma => write!(f, ","),
             Self::Dot => write!(f, "."),
+            Self::LeftArrow => write!(f, "<-"),
+            Self::RightArrow => write!(f, "->"),
+            Self::FatArrow => write!(f, "=>"),
             Self::Equal => write!(f, "="),
             Self::AndEq => write!(f, "&="),
             Self::XorEq => write!(f, "^="),
@@ -397,6 +403,7 @@ impl Lexer {
                 '\\' => self.lambda_arg(),
                 '=' => match self.eat_peek() {
                     Some('=') => self.eat_ret(CmpEq),
+                    Some('>') => self.eat_ret(FatArrow),
                     _ => Equal,
                 },
                 '|' => match self.eat_peek() {
@@ -432,6 +439,7 @@ impl Lexer {
                         _ => BitShiftLeft,
                     },
                     Some('=') => self.eat_ret(CmpLE),
+                    Some('-') => self.eat_ret(LeftArrow),
                     _ => CmpLT,
                 },
 
@@ -443,6 +451,7 @@ impl Lexer {
 
                 '-' => match self.eat_peek() {
                     Some('-') => self.eat_ret(Dec),
+                    Some('>') => self.eat_ret(RightArrow),
                     Some('=') => self.eat_ret(MinusEq),
                     _ => Minus,
                 },

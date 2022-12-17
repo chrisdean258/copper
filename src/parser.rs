@@ -783,6 +783,16 @@ impl ParseTree {
                     _ => return unexpected(token),
                 }
             }
+            LeftArrow => {
+                lexer.next();
+                allow_decl = true;
+                match lhs.etype {
+                    ExpressionType::RefExpr(_) => lhs,
+                    ExpressionType::IndexExpr(_) => lhs,
+                    ExpressionType::DottedLookup(_) => lhs,
+                    _ => return unexpected(token),
+                }
+            }
             AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq | BitShiftLeftEq
             | BitShiftRightEq => match lhs.etype {
                 ExpressionType::RefExpr(_) => {
@@ -800,6 +810,7 @@ impl ParseTree {
         let rhs = self.parse_eq(lexer);
         let op = match token.token_type {
             TokenType::Equal => Operation::Equal,
+            TokenType::LeftArrow => Operation::Extract,
             TokenType::AndEq => Operation::AndEq,
             TokenType::XorEq => Operation::XorEq,
             TokenType::OrEq => Operation::OrEq,

@@ -454,23 +454,35 @@ impl Compiler {
         self.code.push(Value::Ptr(addr));
     }
 
+    fn get_value_with_null_as(&mut self, e: &TypedExpression, null_type: Type) {
+        let save = self.current_null;
+        if self.types.as_ref().unwrap().is_option(null_type) {
+            self.current_null = Some(null_type);
+        }
+        self.get_value(e);
+        self.current_null = save;
+    }
+
     fn assignment(&mut self, a: &TypedAssignExpr) {
         self.get_ref(a.lhs.as_ref());
-        if a.op != Operation::Equal {
+        if a.op == Operation::Equal {
+            self.get_value_with_null_as(a.rhs.as_ref(), a.lhs.typ);
+            self.code.store();
+        } else if a.op == Operation::Extract {
+            self.get_value_with_null_as(a.rhs.as_ref(), a.lhs.typ);
+            self.code.dup();
+            self.code.rotate(3);
+            self.code.store();
+            self.code.pop();
+            self.code.push(Value::None(a.rhs.typ));
+            self.code.emit(MachineOperation::CmpNotEq);
+        } else {
             self.code.dup();
             self.code.load();
             self.get_value(a.rhs.as_ref());
             self.code.emit(a.op.underlying_binop().as_machine_op());
-        } else {
-            let types = self.types.as_ref().unwrap();
-            let save = self.current_null;
-            if types.is_option(a.lhs.typ) {
-                self.current_null = Some(a.lhs.typ);
-            }
-            self.get_value(a.rhs.as_ref());
-            self.current_null = save;
+            self.code.store();
         }
-        self.code.store();
     }
 
     fn immediate(&mut self, i: &TypedImmediate) {
@@ -699,7 +711,7 @@ impl Compiler {
 
     fn lambda(&mut self, l: &TypedLambda) {
         debug_assert_eq!(l.borrow().signatures.len(), 1);
-        let addr = self.single_lambda(&l, 0);
+        let addr = self.single_lambda(l, 0);
         self.code.push(Value::Ptr(addr));
     }
 

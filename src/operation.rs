@@ -23,6 +23,7 @@ pub enum Operation {
     Mod,
     Div,
     Equal,
+    Extract,
     AndEq,
     XorEq,
     OrEq,
@@ -133,6 +134,7 @@ impl Operation {
         matches!(
             self,
             Operation::Equal
+                | Operation::Extract
                 | Operation::AndEq
                 | Operation::XorEq
                 | Operation::OrEq
@@ -237,6 +239,7 @@ impl Display for Operation {
             Operation::Mod => "%",
             Operation::Div => "/",
             Operation::Equal => "=",
+            Operation::Extract => "<-",
             Operation::AndEq => "&=",
             Operation::XorEq => "^=",
             Operation::OrEq => "|=",
