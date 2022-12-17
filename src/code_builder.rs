@@ -194,6 +194,10 @@ impl CodeBuilder {
         self.emit(MachineOperation::ConditionalFail)
     }
 
+    pub fn concat_lists(&mut self) -> usize {
+        self.emit(MachineOperation::ConcatLists)
+    }
+
     #[allow(dead_code)]
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
         debug_assert!(!self.active_functions.is_empty());

@@ -100,6 +100,7 @@ pub enum MachineOperation {
     BoolNot,
     BitNot,
     Negate,
+    ConcatLists,
 }
 
 impl Operation {
@@ -327,6 +328,7 @@ impl Display for MachineOperation {
             MachineOperation::BoolNot => write!(f, "!"),
             MachineOperation::BitNot => write!(f, "~"),
             MachineOperation::Negate => write!(f, "-"),
+            MachineOperation::ConcatLists => write!(f, "concatlists"),
         }
     }
 }

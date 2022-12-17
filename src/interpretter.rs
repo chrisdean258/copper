@@ -1,4 +1,5 @@
 use crate::{
+    builtins,
     compiler::Compiler,
     eval::{Evaluator, ReturnState},
     lex::Lexer,
@@ -16,7 +17,7 @@ use std::{
 pub struct Interpretter {
     typechecker: TypeChecker,
     compiler: Compiler,
-    evaluator: Evaluator,
+    pub evaluator: Evaluator,
     typecheck_only: bool,
     debug: bool,
 }
@@ -78,6 +79,9 @@ impl Interpretter {
         match value {
             Value::Uninitialized => (),
             Value::Str(idx) => println!("{}", self.get_string(idx)),
+            Value::Ptr(p) => {
+                builtins::write_list(1, &self.evaluator, p, 0xffffffffffffffff).unwrap()
+            }
             _ => println!("{}", value),
         }
     }

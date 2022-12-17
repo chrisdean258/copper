@@ -516,15 +516,11 @@ impl TypeSystem {
     }
 
     pub fn is_option(&self, opt: Type) -> bool {
-        if let Some(typ) = self.underlying_type(opt) {
-            if let Some(ty) = self.types[typ].option_type {
-                ty == opt
-            } else {
-                false
-            }
-        } else {
-            false
-        }
+        matches!(self.types[opt].te_type, TypeEntryType::Option(_))
+    }
+
+    pub fn is_list(&self, list: Type) -> bool {
+        matches!(self.types[list].te_type, TypeEntryType::List(_))
     }
 
     pub fn function_get_resolved(&self, func: Type, args: &[Type]) -> Option<Type> {

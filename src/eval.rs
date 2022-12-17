@@ -494,11 +494,6 @@ impl Evaluator {
                         (Value::Float(aa), Value::Float(ref mut bb)) => {
                             *bb += aa;
                         }
-                        (Value::Str(aa), Value::Str(bb)) => {
-                            let bb = *bb;
-                            let val = self.memory.strcat(bb, aa);
-                            reg = Value::Str(val);
-                        }
                         (a, b) => {
                             unreachable!("Trying to apply binop {:?} + {:?}", a, b)
                         }
@@ -533,6 +528,32 @@ impl Evaluator {
                 }
                 MachineOperation::Negate => {
                     do_unop!(-, Int, Float);
+                }
+                MachineOperation::ConcatLists => {
+                    let a = pop!();
+                    match (a, &mut reg) {
+                        (Value::Str(aa), Value::Str(bb)) => {
+                            let bb = *bb;
+                            let val = self.memory.strcat(bb, aa);
+                            reg = Value::Str(val);
+                        }
+                        (Value::Ptr(aa), Value::Ptr(bb)) => {
+                            let aelems = as_type!(self.memory[aa], Value::Ptr);
+                            let belems = as_type!(self.memory[*bb], Value::Ptr);
+                            let alen = as_type!(self.memory[aa + 1], Value::Int) as usize;
+                            let blen = as_type!(self.memory[*bb + 1], Value::Int) as usize;
+                            let new_len = alen + blen;
+                            let new_ptr = self.memory.malloc(new_len);
+                            let new_struct = self.memory.malloc(3);
+                            self.memory[new_struct] = Value::Ptr(new_ptr);
+                            self.memory[new_struct + 1] = Value::Int(new_len as i64);
+                            self.memory[new_struct + 2] = Value::Int(new_len as i64);
+                            self.memory.memcpy(new_ptr, belems, blen);
+                            self.memory.memcpy(new_ptr + blen, aelems, alen);
+                            *bb = new_struct;
+                        }
+                        _ => todo!(),
+                    }
                 }
             }
             ip += 1;

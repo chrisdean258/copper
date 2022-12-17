@@ -267,6 +267,9 @@ impl Compiler {
             self.get_value(b.rhs.as_ref());
             let to = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(from, to as isize);
+        } else if self.types.as_ref().unwrap().is_list(b.lhs.typ) {
+            self.get_value(b.rhs.as_ref());
+            self.code.concat_lists();
         } else {
             self.get_value(b.rhs.as_ref());
             self.code.emit(b.op.as_machine_op());
@@ -588,9 +591,9 @@ impl Compiler {
     fn new_list_with_len(&mut self, len: usize) {
         self.code.alloc(3); // list struct
         self.code.dup();
-        self.code.alloc(len);
-        self.code.push(Value::Int(len as i64));
-        self.code.push(Value::Int(len as i64));
+        self.code.alloc(len); // ptr
+        self.code.push(Value::Int(len as i64)); // length
+        self.code.push(Value::Int(len as i64)); // capacity
         self.code.store_n(3);
     }
 

@@ -102,7 +102,7 @@ fn repl(mut intp: interpretter::Interpretter) -> i64 {
                         Ok((value::Value::Str(s), _)) => {
                             println!("{}", intp.get_string(s));
                         }
-                        Ok((a, eval::ReturnState::Evaluated)) => println!("{}", a),
+                        Ok((a, eval::ReturnState::Evaluated)) => intp.print_value(a),
                         Ok((value::Value::Int(a), eval::ReturnState::Exited)) => return a,
                         Ok((a, eval::ReturnState::Exited)) => unreachable!("{:?}", a),
                         Err(e) => match e.downcast_ref::<parser::Error>() {

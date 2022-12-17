@@ -67,6 +67,23 @@ impl BuiltinFunction {
     }
 }
 
+pub fn write_list(fd: i32, eval: &Evaluator, p: usize, arg: usize) -> Result<(), std::io::Error> {
+    let mut f = unsafe { File::from_raw_fd(fd) };
+    let elems = as_type!(eval.memory[p], Value::Ptr, "write", arg);
+    let size = as_type!(eval.memory[p + 1], Value::Int, "write", arg);
+    write!(f, "[")?;
+    for ptr in elems..(elems + (size as usize)) {
+        if ptr == elems {
+            write!(f, "{}", eval.memory[ptr])?;
+        } else {
+            write!(f, ", {}", eval.memory[ptr])?;
+        }
+    }
+    write!(f, "]")?;
+    mem::forget(f);
+    Ok(())
+}
+
 fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     let fd = match eval.memory[first] {
         Value::Int(i) => i as i32,
@@ -76,6 +93,8 @@ fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     for arg in 1..count {
         let a = match eval.memory[first + arg] {
             Value::Str(p) => write!(&mut f, "{}", eval.memory.strings[p]),
+            // This is only a list right now
+            Value::Ptr(p) => write_list(fd, eval, p, arg),
             a => write!(&mut f, "{}", a),
         };
         match a {
