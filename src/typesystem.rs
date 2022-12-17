@@ -347,7 +347,7 @@ impl TypeSystem {
             return t;
         }
         let new_name = format!("option<{}>", self.typename(t));
-        let op_type = self.new_type(new_name, TypeEntryType::List(t));
+        let op_type = self.new_type(new_name, TypeEntryType::Option(t));
         self.types[t].option_type = Some(op_type);
 
         self.add_signature(Operation::Equal, sig!(op_type,op_type => op_type));
