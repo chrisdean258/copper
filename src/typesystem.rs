@@ -15,7 +15,8 @@ pub enum TypeEntryType {
     Unit,
     UnknownReturn,
     Basic,
-    Container(Type),
+    List(Type),
+    Option(Type),
     Function(Function),
     Class(Class),
     ResolvedClass(ResolvedClass),
@@ -210,7 +211,7 @@ impl TypeSystem {
         self.new_type_with_num(String::from("char"), TypeEntryType::Basic, CHAR);
         self.new_type_with_num(String::from("int"), TypeEntryType::Basic, INT);
         self.new_type_with_num(String::from("float"), TypeEntryType::Basic, FLOAT);
-        self.new_type_with_num(String::from("str"), TypeEntryType::Container(CHAR), STR);
+        self.new_type_with_num(String::from("str"), TypeEntryType::List(CHAR), STR);
     }
 
     fn add_default_ops(&mut self) {
@@ -332,7 +333,7 @@ impl TypeSystem {
             return t;
         }
         let new_name = format!("list<{}>", self.typename(t));
-        let list_type = self.new_type(new_name, TypeEntryType::Container(t));
+        let list_type = self.new_type(new_name, TypeEntryType::List(t));
         self.types[t].list_type = Some(list_type);
 
         self.add_signature(Operation::Equal, sig!(list_type, list_type => list_type));
@@ -346,7 +347,7 @@ impl TypeSystem {
             return t;
         }
         let new_name = format!("option<{}>", self.typename(t));
-        let op_type = self.new_type(new_name, TypeEntryType::Container(t));
+        let op_type = self.new_type(new_name, TypeEntryType::List(t));
         self.types[t].option_type = Some(op_type);
 
         self.add_signature(Operation::Equal, sig!(op_type,op_type => op_type));
@@ -361,7 +362,8 @@ impl TypeSystem {
 
     pub fn underlying_type(&self, t: Type) -> Option<Type> {
         match self.types[t].te_type {
-            TypeEntryType::Container(t) => Some(t),
+            TypeEntryType::List(t) => Some(t),
+            TypeEntryType::Option(t) => Some(t),
             _ => None,
         }
     }
