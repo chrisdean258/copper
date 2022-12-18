@@ -1137,9 +1137,9 @@ impl TypeChecker {
         }
 
         if let TypedExpressionType::FuncRefExpr(f) = &subject.etype {
-            self.call_function(f.func.clone(), subject, args)
+            self.call_function(f.func.clone(), subject, args, argtypes)
         } else if let Some(func) = self.type_to_func.get(&subject.typ) {
-            self.call_function(func.clone(), subject, args)
+            self.call_function(func.clone(), subject, args, argtypes)
         } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
             self.call_lambda_with_args(lambda.clone(), subject, args)
         } else {
@@ -1152,6 +1152,7 @@ impl TypeChecker {
         f: TypedFunction,
         subject: TypedExpression,
         mut args: Vec<TypedExpression>,
+        mut argtypes: Vec<Type>,
     ) -> Result<(TypedExpressionType, Type), ()> {
         let mut b = match f.try_borrow_mut() {
             Ok(a) => a,
@@ -1166,8 +1167,11 @@ impl TypeChecker {
                 ))
             }
         };
+
+        self.function_fixup_args(&mut b, &mut args, &mut argtypes)?;
+
         for (i, sig) in b.signatures.iter().enumerate() {
-            if sig.inputs == args.iter().map(|a| a.typ).collect::<Vec<_>>() {
+            if sig.inputs == argtypes {
                 let out = sig.output;
                 drop(b);
                 return Ok((
@@ -1181,7 +1185,6 @@ impl TypeChecker {
             }
         }
         let calling_location = self.location.clone().unwrap();
-        let argtypes = args.iter().map(|a| a.typ).collect();
         let te = self.call_function_int(&mut b, &mut args, &calling_location)?;
 
         // TODO: This might be the right algorithm
@@ -1213,41 +1216,47 @@ impl TypeChecker {
         ))
     }
 
+    fn function_fixup_args(
+        &mut self,
+        f: &mut TypedFunctionInternal,
+        args: &mut Vec<TypedExpression>,
+        argtypes: &mut Vec<Type>,
+    ) -> Result<(), ()> {
+        if f.function.repeated.is_some() {
+            return Ok(());
+        }
+        let argnamelen = f.function.argnames.len();
+        if argnamelen < args.len() {
+            return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
+        }
+        let num_default_needed = argnamelen - args.len();
+        if num_default_needed > f.function.default_args.len() {
+            return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
+                args.len(),
+                f.function.default_args.len(),
+                f.function.argnames.len(),
+            ));
+        }
+        let first_default = f.function.default_args.len() - num_default_needed;
+        let mut def_args = Vec::new();
+        for i in 0..num_default_needed {
+            let expr = f.function.default_args[i + first_default].clone();
+            def_args.push(self.expr(expr));
+        }
+        for e in def_args {
+            let e = e?;
+            argtypes.push(e.typ);
+            args.push(e);
+        }
+        Ok(())
+    }
+
     fn call_function_int(
         &mut self,
         function: &mut TypedFunctionInternal,
         args: &mut Vec<TypedExpression>,
         calling_location: &Location,
     ) -> Result<TypedExpression, ()> {
-        let num_default_needed = if function.function.repeated.is_some() {
-            0
-        } else {
-            let argnamelen = function.function.argnames.len();
-            if argnamelen < args.len() {
-                return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
-            }
-            argnamelen - args.len()
-        };
-
-        if num_default_needed > function.function.default_args.len() {
-            return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
-                args.len(),
-                function.function.default_args.len(),
-                function.function.argnames.len(),
-            ));
-        }
-
-        let first_default = function.function.default_args.len() - num_default_needed;
-
-        let mut def_args = Vec::new();
-        for i in 0..num_default_needed {
-            let expr = function.function.default_args[i + first_default].clone();
-            def_args.push(self.expr(expr));
-        }
-        for e in def_args {
-            args.push(e?);
-        }
-
         let save = self.need_recheck;
         self.need_recheck = false;
         let (rv, num_locals) = self.call_function_single_check(function, args, calling_location)?;
