@@ -675,7 +675,11 @@ impl Compiler {
         let sig = &f.signatures[sig_idx];
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.function.argnames.len(),
-            "{f:#?}\n-------------------\n{sig:#?}",
+            "{:?} {} ?== {}, {:?}",
+            sig.repeated_inputs,
+            sig.inputs.len(),
+            f.function.argnames.len(),
+            sig
         );
         let name = format!(
             "{}{}",

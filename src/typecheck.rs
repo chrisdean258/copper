@@ -1137,9 +1137,9 @@ impl TypeChecker {
         }
 
         if let TypedExpressionType::FuncRefExpr(f) = &subject.etype {
-            self.call_func_with_args(f.func.clone(), subject, args)
+            self.call_function(f.func.clone(), subject, args)
         } else if let Some(func) = self.type_to_func.get(&subject.typ) {
-            self.call_func_with_args(func.clone(), subject, args)
+            self.call_function(func.clone(), subject, args)
         } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
             self.call_lambda_with_args(lambda.clone(), subject, args)
         } else {
@@ -1147,19 +1147,19 @@ impl TypeChecker {
         }
     }
 
-    fn call_func_with_args(
+    fn call_function(
         &mut self,
         f: TypedFunction,
         subject: TypedExpression,
-        args: Vec<TypedExpression>,
+        mut args: Vec<TypedExpression>,
     ) -> Result<(TypedExpressionType, Type), ()> {
-        let b = match f.try_borrow() {
+        let mut b = match f.try_borrow_mut() {
             Ok(a) => a,
             Err(_) => {
                 return Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),
-                        args,
+                        args: args.clone(),
                         sig_idx: None,
                     }),
                     UNKNOWN_RETURN,
@@ -1173,90 +1173,125 @@ impl TypeChecker {
                 return Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),
-                        args,
+                        args: args.clone(),
                         sig_idx: Some(i),
                     }),
                     out,
                 ));
             }
         }
-        drop(b);
         let calling_location = self.location.clone().unwrap();
-        let (te, sig_idx) = self.call_function(f, args.clone(), &calling_location)?;
+        let argtypes = args.iter().map(|a| a.typ).collect();
+        let te = self.call_function_int(&mut b, &mut args, &calling_location)?;
+
+        // TODO: This might be the right algorithm
+        let func_sig = if b.function.repeated.is_none() {
+            Signature::new(argtypes, None, te.typ)
+        } else {
+            let num = b.function.argnames.len();
+            Signature::new(
+                argtypes.iter().take(num).cloned().collect(),
+                argtypes.last().cloned(),
+                te.typ,
+            )
+        };
+
+        let sig_idx = b.signatures.len();
+        b.typed_bodies.push(te.clone());
+        b.signatures.push(func_sig.clone());
+
+        if let Some(name) = &b.function.name {
+            self.func_mangle_name_scope_insert(name, func_sig);
+        }
         Ok((
             TypedExpressionType::CallExpr(TypedCallExpr {
                 function: Box::new(subject),
                 args,
-                sig_idx,
+                sig_idx: Some(sig_idx),
             }),
             te.typ,
         ))
     }
 
-    #[allow(dead_code)]
-    fn call_function(
+    fn call_function_int(
         &mut self,
-        function: TypedFunction,
-        args: Vec<TypedExpression>,
+        function: &mut TypedFunctionInternal,
+        args: &mut Vec<TypedExpression>,
         calling_location: &Location,
-    ) -> Result<(TypedExpression, Option<usize>), ()> {
-        if function.try_borrow_mut().is_err() {
-            return Ok((
-                TypedExpression {
-                    etype: TypedExpressionType::UnknownReturn,
-                    location: self.location.clone().unwrap(),
-                    typ: UNKNOWN_RETURN,
-                },
-                None,
+    ) -> Result<TypedExpression, ()> {
+        let num_default_needed = if function.function.repeated.is_some() {
+            0
+        } else {
+            let argnamelen = function.function.argnames.len();
+            if argnamelen < args.len() {
+                return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
+            }
+            argnamelen - args.len()
+        };
+
+        if num_default_needed > function.function.default_args.len() {
+            return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
+                args.len(),
+                function.function.default_args.len(),
+                function.function.argnames.len(),
             ));
         }
 
-        let argtypes = args.iter().map(|a| a.typ).collect();
-        let rv = self.call_function_int(function.clone(), args, calling_location)?;
+        let first_default = function.function.default_args.len() - num_default_needed;
 
-        // TODO: This might be the right algorithm
-        let func_sig = if function.borrow().function.repeated.is_none() {
-            Signature::new(argtypes, None, rv.typ)
-        } else {
-            let num = function.borrow().function.argnames.len();
-            Signature::new(
-                argtypes.iter().take(num).cloned().collect(),
-                argtypes.last().cloned(),
-                rv.typ,
-            )
-        };
-
-        let idx = function.borrow().signatures.len();
-        function.borrow_mut().typed_bodies.push(rv.clone());
-        function.borrow_mut().signatures.push(func_sig.clone());
-
-        if let Some(name) = &function.borrow().function.name {
-            self.func_mangle_name_scope_insert(name, func_sig);
+        let mut def_args = Vec::new();
+        for i in 0..num_default_needed {
+            let expr = function.function.default_args[i + first_default].clone();
+            def_args.push(self.expr(expr));
         }
-        Ok((rv, Some(idx)))
+        for e in def_args {
+            args.push(e?);
+        }
+
+        let save = self.need_recheck;
+        self.need_recheck = false;
+        let (rv, num_locals) = self.call_function_single_check(function, args, calling_location)?;
+        function.locals = num_locals;
+
+        if self.need_recheck {
+            let (new_rv, num_locals) =
+                self.call_function_single_check(function, args, calling_location)?;
+            if new_rv.typ != rv.typ {
+                self.type_to_resolved_func.remove(&rv.typ);
+                todo!();
+                // return self.error_with_origin(ErrorType::MismatchedReturnTypes(
+                // self.system.typename(new_rv.typ),
+                // self.system.typename(rv.typ),
+                // ));
+            }
+            self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
+            debug_assert_eq!(function.locals, num_locals);
+            self.need_recheck = save;
+            Ok(new_rv)
+        } else {
+            self.need_recheck = save;
+            Ok(rv)
+        }
     }
 
     fn call_function_single_check(
         &mut self,
-        function: &TypedFunction,
+        function: &mut TypedFunctionInternal,
         args: &[TypedExpression],
         calling_location: &Location,
     ) -> Result<(TypedExpression, usize), ()> {
         self.openscope();
-        if let Some(name) = function.borrow().function.repeated.clone() {
-            if args.len() > function.borrow().function.argnames.len() {
+        if let Some(name) = function.function.repeated.clone() {
+            if args.len() > function.function.argnames.len() {
                 self.repeated_arg = Some((name, args.last().unwrap().typ));
             } else {
                 self.repeated_arg = Some((name, 0));
             }
         }
-        for (typ, name) in args.iter().zip(function.borrow().function.argnames.iter()) {
+        for (typ, name) in args.iter().zip(function.function.argnames.iter()) {
             self.insert_scope(name, typ.typ);
         }
-        let rv = self.call_single_check(
-            *function.borrow_mut().function.body.clone(),
-            calling_location,
-        )?;
+        let rv = self.call_single_check(*function.function.body.clone(), calling_location)?;
         Ok((rv, self.closescope()))
     }
 
@@ -1294,68 +1329,6 @@ impl TypeChecker {
             _ => (),
         }
         Ok(rv)
-    }
-
-    fn call_function_int(
-        &mut self,
-        function: TypedFunction,
-        mut args: Vec<TypedExpression>,
-        calling_location: &Location,
-    ) -> Result<TypedExpression, ()> {
-        let num_default_needed = if function.borrow().function.repeated.is_some() {
-            0
-        } else {
-            let argnamelen = function.borrow().function.argnames.len();
-            if argnamelen < args.len() {
-                return self.error(ErrorType::WrongNumberOfArguments(argnamelen, args.len()));
-            }
-            argnamelen - args.len()
-        };
-
-        if num_default_needed > function.borrow().function.default_args.len() {
-            return self.error(ErrorType::WrongNumberOfArgumentsWithDefault(
-                args.len(),
-                function.borrow().function.default_args.len(),
-                function.borrow().function.argnames.len(),
-            ));
-        }
-
-        let first_default = function.borrow().function.default_args.len() - num_default_needed;
-
-        let mut def_args = Vec::new();
-        for i in 0..num_default_needed {
-            let expr = function.borrow().function.default_args[i + first_default].clone();
-            def_args.push(self.expr(expr));
-        }
-        for e in def_args {
-            args.push(e?);
-        }
-
-        let save = self.need_recheck;
-        self.need_recheck = false;
-        let (rv, num_locals) =
-            self.call_function_single_check(&function, &args, calling_location)?;
-        function.borrow_mut().locals = num_locals;
-
-        if self.need_recheck {
-            let (new_rv, num_locals) =
-                self.call_function_single_check(&function, &args, calling_location)?;
-            if new_rv.typ != rv.typ {
-                self.type_to_resolved_func.remove(&rv.typ);
-                todo!();
-                // return self.error_with_origin(ErrorType::MismatchedReturnTypes(
-                // self.system.typename(new_rv.typ),
-                // self.system.typename(rv.typ),
-                // ));
-            }
-            self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
-            debug_assert_eq!(function.borrow_mut().locals, num_locals);
-            self.need_recheck = save;
-            Ok(new_rv)
-        } else {
-            self.need_recheck = save;
-            Ok(rv)
-        }
     }
 
     fn call_lambda_with_args(
