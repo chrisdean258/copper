@@ -254,6 +254,10 @@ impl Compiler {
         //TODO option types
         if b.op == Operation::BoolOr {
             self.code.dup();
+            if self.types.as_ref().unwrap().is_option(b.lhs.typ) {
+                self.code.push(Value::None(b.lhs.typ));
+                self.code.emit(MachineOperation::CmpNotEq);
+            }
             let from = self.code.jump_relative_if(0);
             self.code.pop();
             self.get_value(b.rhs.as_ref());
