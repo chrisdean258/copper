@@ -629,18 +629,9 @@ impl Compiler {
             self.code.emit(MachineOperation::Plus);
         } else {
             self.get_value(i.obj.as_ref()); // list
-
-            self.code.dup();  // list list
-            self.code.push(Value::PtrOffset(-1));  // list list -1
-            self.code.emit(MachineOperation::Plus);// list list-1
-            self.code.load(); // list list_len
             debug_assert!(i.args.len() == 1);
             self.get_value(&i.args[0]); // list list_len idx
-            self.code.dup(); // list list_len idx idx
-            self.code.rotate(3);// list idx list_len idx
-            self.code.emit(MachineOperation::CmpLT);// list idx bool
-            self.code.conditional_fail();// list idx 
-            self.code.emit(MachineOperation::Plus);// list idx 
+            self.code.emit(MachineOperation::Plus); // list idx
         }
         if !self.need_ref {
             self.code.load();
