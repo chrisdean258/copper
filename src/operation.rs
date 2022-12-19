@@ -46,7 +46,7 @@ pub enum Operation {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MachineOperation {
     Nop,
     Crash,
@@ -66,6 +66,7 @@ pub enum MachineOperation {
     LoadN(usize),
     Rotate(usize),
     Swap,
+    Cast(Value),
     Reserve(usize),
     RefFrame(isize),
     Jump(usize),
@@ -101,7 +102,6 @@ pub enum MachineOperation {
     BoolNot,
     BitNot,
     Negate,
-    ConcatLists,
 }
 
 impl Operation {
@@ -292,6 +292,7 @@ impl Display for MachineOperation {
             MachineOperation::Alloc => write!(f, "alloc"),
             MachineOperation::Rotate(n) => write!(f, "rotate ({n})"),
             MachineOperation::Swap => write!(f, "swap"),
+            MachineOperation::Cast(v) => write!(f, "cast ({v})"),
             MachineOperation::Reserve(n) => write!(f, "reserve ({n})"),
             MachineOperation::RefFrame(offset) => write!(f, "refframe ({})", hex(*offset)),
             MachineOperation::Jump(ip) => write!(f, "jmp (+0x{ip:x})"),
@@ -317,8 +318,8 @@ impl Display for MachineOperation {
             MachineOperation::BitAnd => write!(f, "&"),
             MachineOperation::CmpGE => write!(f, ">="),
             MachineOperation::CmpGT => write!(f, ">"),
-            MachineOperation::CmpLE => write!(f, "<"),
-            MachineOperation::CmpLT => write!(f, "<="),
+            MachineOperation::CmpLE => write!(f, "<="),
+            MachineOperation::CmpLT => write!(f, "<"),
             MachineOperation::CmpEq => write!(f, "=="),
             MachineOperation::CmpNotEq => write!(f, "!="),
             MachineOperation::BitShiftLeft => write!(f, "<<"),
@@ -331,7 +332,6 @@ impl Display for MachineOperation {
             MachineOperation::BoolNot => write!(f, "!"),
             MachineOperation::BitNot => write!(f, "~"),
             MachineOperation::Negate => write!(f, "-"),
-            MachineOperation::ConcatLists => write!(f, "concatlists"),
         }
     }
 }

@@ -271,9 +271,6 @@ impl Compiler {
             self.get_value(b.rhs.as_ref());
             let to = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(from, to as isize);
-        } else if self.types.as_ref().unwrap().is_list(b.lhs.typ) {
-            self.get_value(b.rhs.as_ref());
-            self.code.concat_lists();
         } else {
             self.get_value(b.rhs.as_ref());
             self.code.emit(b.op.as_machine_op());
@@ -604,23 +601,25 @@ impl Compiler {
         self.code.push(Value::Str(str_idx));
     }
 
-    fn new_list_with_len(&mut self, len: usize) {
-        self.code.alloc(3); // list struct
+    fn new_list_with_len_as_ptr(&mut self, len: usize) {
+        self.code.alloc(1 + len); // list struct
         self.code.dup();
-        self.code.alloc(len); // ptr
+        self.code.push(Value::PtrOffset(1));
+        self.code.emit(MachineOperation::Plus);
+        self.code.swap();
         self.code.push(Value::Int(len as i64)); // length
-        self.code.push(Value::Int(len as i64)); // capacity
-        self.code.store_n(3);
+        self.code.store();
+        self.code.pop();
     }
 
     fn list(&mut self, l: &TypedList) {
-        self.new_list_with_len(l.exprs.len());
+        self.new_list_with_len_as_ptr(l.exprs.len());
         self.code.dup();
-        self.code.load();
         for expr in l.exprs.iter() {
             self.get_value(expr);
         }
         self.code.store_n(l.exprs.len());
+        self.code.cast(Value::List(0));
     }
 
     fn index(&mut self, i: &TypedIndexExpr) {
@@ -629,21 +628,19 @@ impl Compiler {
             self.get_value(&i.args[0]);
             self.code.emit(MachineOperation::Plus);
         } else {
-            self.get_value(i.obj.as_ref());
-            self.code.dup();
-            self.code.push(Value::PtrOffset(1));
-            self.code.emit(MachineOperation::Plus);
-            self.code.load();
+            self.get_value(i.obj.as_ref()); // list
 
+            self.code.dup();  // list list
+            self.code.push(Value::PtrOffset(-1));  // list list -1
+            self.code.emit(MachineOperation::Plus);// list list-1
+            self.code.load(); // list list_len
             debug_assert!(i.args.len() == 1);
-            self.get_value(&i.args[0]);
-            self.code.dup();
-            self.code.rotate(3);
-            self.code.emit(MachineOperation::CmpLE);
-            self.code.conditional_fail();
-            self.code.swap();
-            self.code.load();
-            self.code.emit(MachineOperation::Plus);
+            self.get_value(&i.args[0]); // list list_len idx
+            self.code.dup(); // list list_len idx idx
+            self.code.rotate(3);// list idx list_len idx
+            self.code.emit(MachineOperation::CmpLT);// list idx bool
+            self.code.conditional_fail();// list idx 
+            self.code.emit(MachineOperation::Plus);// list idx 
         }
         if !self.need_ref {
             self.code.load();

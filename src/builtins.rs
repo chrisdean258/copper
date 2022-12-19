@@ -48,7 +48,7 @@ macro_rules! builtin_func {
 }
 
 impl BuiltinFunction {
-    pub fn get_table(_ts: &mut TypeSystem) -> Vec<BuiltinFunction> {
+    pub fn get_table(_ts: &TypeSystem) -> Vec<BuiltinFunction> {
         vec![
             builtin_func!(write, INT; ANY, ... => UNIT),
             builtin_func!(alloc, INT => PTR),
@@ -69,8 +69,8 @@ impl BuiltinFunction {
 
 pub fn write_list(fd: i32, eval: &Evaluator, p: usize, arg: usize) -> Result<(), std::io::Error> {
     let mut f = unsafe { File::from_raw_fd(fd) };
-    let elems = as_type!(eval.memory[p], Value::Ptr, "write", arg);
-    let size = as_type!(eval.memory[p + 1], Value::Int, "write", arg);
+    let elems = p;
+    let size = as_type!(eval.memory[p - 1], Value::Int, "write_list", arg);
     write!(f, "[")?;
     for ptr in elems..(elems + (size as usize)) {
         if ptr == elems {
@@ -93,8 +93,7 @@ fn write(eval: &mut Evaluator, first: usize, count: usize) -> Value {
     for arg in 1..count {
         let a = match eval.memory[first + arg] {
             Value::Str(p) => write!(&mut f, "{}", eval.memory.strings[p]),
-            // This is only a list right now
-            Value::Ptr(p) => write_list(fd, eval, p, arg),
+            Value::List(l) => write_list(fd, eval, l, arg),
             a => write!(&mut f, "{}", a),
         };
         match a {

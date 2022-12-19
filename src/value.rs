@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Value {
     Uninitialized,
     None(usize),
@@ -9,6 +9,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Ptr(usize),
+    List(usize),
     PtrOffset(isize),
     Count(usize),
     Str(usize),
@@ -24,6 +25,7 @@ impl Display for Value {
             Value::Char(c) => write!(f, "{}", *c as char),
             Value::Int(i) => write!(f, "{}", i),
             Value::Float(fl) => write!(f, "{}", fl),
+            Value::List(p) => write!(f, "0x{:x}", p),
             Value::Ptr(p) => write!(f, "0x{:x}", p),
             Value::Str(s) => write!(f, "0x{:x}", s),
             Value::StrIdx(s, i) => write!(f, "0x{:x}[{i}]", s),
@@ -48,6 +50,7 @@ impl Debug for Value {
             Value::Char(c) => write!(f, "Char({:?})", *c as char),
             Value::Int(i) => write!(f, "Int({i})"),
             Value::Float(fl) => write!(f, "Float({fl})"),
+            Value::List(p) => write!(f, "List(0x{p:x})"),
             Value::Ptr(p) => write!(f, "Ptr(0x{p:x})"),
             Value::Str(s) => write!(f, "Str(0x{s:x})"),
             Value::StrIdx(s, i) => write!(f, "StrIdx(0x{s:x},{i})"),

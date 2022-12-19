@@ -10,7 +10,7 @@ pub struct CodeBuilder {
     pub active_functions: Vec<Function>,
     pub finished_functions: Vec<MachineOperation>,
     pub functions: HashMap<String, usize>,
-    pub rev_functions: HashMap<usize, String>,
+    pub rev_functions: HashMap<usize, (String, usize)>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,10 +67,11 @@ impl CodeBuilder {
         }
 
         f.code = optimize(f.code);
+        let len = f.code.len();
         let addr = self.finished_functions.len();
         self.finished_functions.append(&mut f.code);
         self.functions.insert(f.name.clone(), addr);
-        self.rev_functions.insert(addr, f.name.clone());
+        self.rev_functions.insert(addr, (f.name.clone(), len));
         rv + memory::CODE
     }
 
@@ -186,6 +187,10 @@ impl CodeBuilder {
         self.emit(MachineOperation::Alloc)
     }
 
+    pub fn cast(&mut self, to: Value) -> usize {
+        self.emit(MachineOperation::Cast(to))
+    }
+
     pub fn _crash(&mut self) -> usize {
         self.emit(MachineOperation::Crash)
     }
@@ -194,11 +199,6 @@ impl CodeBuilder {
         self.emit(MachineOperation::ConditionalFail)
     }
 
-    pub fn concat_lists(&mut self) -> usize {
-        self.emit(MachineOperation::ConcatLists)
-    }
-
-    #[allow(dead_code)]
     pub fn backpatch_jump(&mut self, jump_addr: usize, to: usize) {
         debug_assert!(!self.active_functions.is_empty());
         match &mut self.active_functions.last_mut().unwrap().code[jump_addr] {

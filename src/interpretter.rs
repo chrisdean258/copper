@@ -3,7 +3,7 @@ use crate::{
     compiler::Compiler,
     eval::{Evaluator, ReturnState},
     lex::Lexer,
-    memory::CODE,
+    memory::{BUILTIN_CODE, CODE},
     operation::MachineOperation,
     parser,
     typecheck::TypeChecker,
@@ -38,7 +38,7 @@ impl Interpretter {
 
     pub fn print_code(&self, code: &[MachineOperation]) {
         for (i, instr) in code.iter().enumerate() {
-            if let Some(name) = self.compiler.code.rev_functions.get(&i) {
+            if let Some((name, _len)) = self.compiler.code.rev_functions.get(&i) {
                 eprintln!("{}:", name)
             }
             eprint!("\t0x{:08x}: {}", i + CODE, instr);
@@ -51,6 +51,7 @@ impl Interpretter {
                             .rev_functions
                             .get(&(addr - CODE))
                             .unwrap()
+                            .0
                     )
                 }
                 MachineOperation::CallKnownSize(addr, size) => {
@@ -60,11 +61,28 @@ impl Interpretter {
                             .code
                             .rev_functions
                             .get(&(addr - CODE))
-                            .unwrap(),
+                            .unwrap()
+                            .0,
                         size
                     )
                 }
-                MachineOperation::CallBuiltin(_addr) => {}
+                MachineOperation::CallBuiltin(addr) => {
+                    eprint!(
+                        " ({})",
+                        builtins::BuiltinFunction::get_table(&self.typechecker.system)
+                            [addr - BUILTIN_CODE]
+                            .name
+                    )
+                }
+                MachineOperation::CallBuiltinSize(addr, size) => {
+                    eprint!(
+                        " ({}, {})",
+                        builtins::BuiltinFunction::get_table(&self.typechecker.system)
+                            [addr - BUILTIN_CODE]
+                            .name,
+                        size
+                    )
+                }
                 _ => {}
             }
             eprintln!();
@@ -79,7 +97,7 @@ impl Interpretter {
         match value {
             Value::Uninitialized => (),
             Value::Str(idx) => println!("{}", self.get_string(idx)),
-            Value::Ptr(p) => {
+            Value::List(p) => {
                 builtins::write_list(1, &self.evaluator, p, 0xffffffffffffffff).unwrap()
             }
             _ => println!("{}", value),
