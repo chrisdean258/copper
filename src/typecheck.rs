@@ -104,7 +104,6 @@ pub struct TypeChecker {
     type_to_func: HashMap<Type, TypedFunction>,
     type_to_lambda: HashMap<Type, TypedLambda>,
     type_to_class: HashMap<Type, Rc<RefCell<ClassDecl>>>,
-    type_to_resolved_func: HashMap<Type, TypedExpression>,
 
     allow_insert: Option<Type>,
     lambda_args: Vec<TypedExpression>,
@@ -339,7 +338,6 @@ impl TypeChecker {
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
             type_to_class: HashMap::new(),
-            type_to_resolved_func: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
             location: None,
@@ -1157,6 +1155,8 @@ impl TypeChecker {
         let mut b = match f.try_borrow_mut() {
             Ok(a) => a,
             Err(_) => {
+                // This might already be borrowed if we are in a recurisive context
+                // This is ok but we can't derive the signature
                 return Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),
@@ -1164,7 +1164,7 @@ impl TypeChecker {
                         sig_idx: None,
                     }),
                     UNKNOWN_RETURN,
-                ))
+                ));
             }
         };
 
@@ -1185,9 +1185,8 @@ impl TypeChecker {
             }
         }
         let calling_location = self.location.clone().unwrap();
-        let te = self.call_function_int(&mut b, &mut args, &calling_location)?;
+        let te = self.call_function_int(&mut b, &args, &calling_location)?;
 
-        // TODO: This might be the right algorithm
         let func_sig = if b.function.repeated.is_none() {
             Signature::new(argtypes, None, te.typ)
         } else {
@@ -1254,7 +1253,7 @@ impl TypeChecker {
     fn call_function_int(
         &mut self,
         function: &mut TypedFunctionInternal,
-        args: &mut Vec<TypedExpression>,
+        args: &[TypedExpression],
         calling_location: &Location,
     ) -> Result<TypedExpression, ()> {
         let save = self.need_recheck;
@@ -1266,14 +1265,12 @@ impl TypeChecker {
             let (new_rv, num_locals) =
                 self.call_function_single_check(function, args, calling_location)?;
             if new_rv.typ != rv.typ {
-                self.type_to_resolved_func.remove(&rv.typ);
                 todo!();
                 // return self.error_with_origin(ErrorType::MismatchedReturnTypes(
                 // self.system.typename(new_rv.typ),
                 // self.system.typename(rv.typ),
                 // ));
             }
-            self.type_to_resolved_func.insert(rv.typ, new_rv.clone());
             debug_assert_eq!(function.locals, num_locals);
             self.need_recheck = save;
             Ok(new_rv)
