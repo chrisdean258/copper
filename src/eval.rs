@@ -484,9 +484,6 @@ impl Evaluator {
                         (Value::PtrOffset(aa), Value::Str(bb)) => {
                             reg = Value::StrIdx(*bb as u32, aa as u32)
                         }
-                        (Value::Int(aa), Value::Str(bb)) => {
-                            reg = Value::StrIdx(*bb as u32, aa as u32)
-                        }
                         (Value::Int(aa), Value::Ptr(ref mut bb)) => {
                             *bb = (*bb as isize + aa as isize) as usize;
                         }
@@ -512,12 +509,15 @@ impl Evaluator {
                             reg = Value::Ptr((*p as isize + aa) as usize);
                         }
                         (Value::Int(aa), Value::List(p)) => {
+                            let len = as_type!(self.memory[*p - 1], Value::Int);
+                            let mut idx = aa;
+                            if idx < 0 {
+                                idx += len;
+                            }
+                            if idx < 0 || idx >= len {
+                                return Err(format!("Trying to index list at index {aa} when list length is only length {len}"));
+                            }
                             reg = Value::Ptr((*p as i64 + aa) as usize);
-                        }
-                        (Value::Str(aa), Value::Str(bb)) => {
-                            let bb = *bb;
-                            let val = self.memory.strcat(bb, aa);
-                            reg = Value::Str(val);
                         }
                         (Value::List(aa), Value::List(bb)) => {
                             let aelems = aa;
@@ -530,6 +530,23 @@ impl Evaluator {
                             self.memory.memcpy(new_ptr + 1, belems, blen);
                             self.memory.memcpy(new_ptr + blen + 1, aelems, alen);
                             *bb = new_ptr + 1;
+                        }
+                        (Value::Int(aa), Value::Str(bb)) => {
+                            let len = self.memory.strings[*bb].len() as i64;
+                            let mut idx = aa;
+                            if idx < 0 {
+                                idx += len;
+                            }
+                            if idx < 0 || idx >= len {
+                                return Err(format!("Trying to index list at index {aa} when list length is only length {len}"));
+                            }
+
+                            reg = Value::StrIdx(*bb as u32, idx as u32)
+                        }
+                        (Value::Str(aa), Value::Str(bb)) => {
+                            let bb = *bb;
+                            let val = self.memory.strcat(bb, aa);
+                            reg = Value::Str(val);
                         }
                         (a, b) => {
                             unreachable!("Trying to apply binop {:?} + {:?}", a, b)
