@@ -265,12 +265,33 @@ impl Compiler {
             self.code.backpatch_jump_rel(from, to as isize);
         } else if b.op == Operation::BoolAnd {
             self.code.dup();
+            if self.types.as_ref().unwrap().is_option(b.lhs.typ) {
+                self.code.push(Value::None(b.lhs.typ));
+                self.code.emit(MachineOperation::CmpNotEq);
+            }
             self.code.emit(MachineOperation::BoolNot);
             let from = self.code.jump_relative_if(0);
             self.code.pop();
             self.get_value(b.rhs.as_ref());
             let to = self.code.next_function_relative_addr();
             self.code.backpatch_jump_rel(from, to as isize);
+        } else if b.op == Operation::BoolXor && self.types.as_ref().unwrap().is_option(b.lhs.typ) {
+            self.get_value(b.rhs.as_ref());
+            self.code.dup(); // lhs rhs rhs
+            self.code.push(Value::None(b.lhs.typ)); // lhs rhs rhs None
+            self.code.emit(MachineOperation::CmpEq); // lhs rhs rhs_is_None
+            let from1 = self.code.jump_relative_if(0); // go to the end
+            self.code.swap(); // Nonnull_rhs lhs
+            self.code.dup(); // Nonnull_rhs lhs lhs
+            self.code.push(Value::None(b.lhs.typ)); // Nonnull_rhs lhs lhs None
+            self.code.emit(MachineOperation::CmpEq); // Nonnull_rhs lhs lhs_is_None
+            let from2 = self.code.jump_relative_if(0); // go to the end
+            self.code.pop(); // Nonnull_rhs
+            self.code.push(Value::None(b.lhs.typ)); // Nonnull_rhs None
+            self.code.swap(); // Nonnull_rhs None
+            let end = self.code.pop();
+            self.code.backpatch_jump_rel(from1, end as isize);
+            self.code.backpatch_jump_rel(from2, end as isize);
         } else {
             self.get_value(b.rhs.as_ref());
             self.code.emit(b.op.as_machine_op());

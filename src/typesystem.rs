@@ -361,6 +361,8 @@ impl TypeSystem {
         self.add_signature(Operation::Extract, sig!(t, op_type => BOOL));
         self.add_signature(Operation::BoolOr, sig!(op_type, op_type => op_type));
         self.add_signature(Operation::BoolOr, sig!(op_type, t => t));
+        self.add_signature(Operation::BoolAnd, sig!(op_type, op_type => op_type));
+        self.add_signature(Operation::BoolXor, sig!(op_type, op_type => op_type));
 
         op_type
     }

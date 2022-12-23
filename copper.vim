@@ -47,6 +47,7 @@ syn match copperOperator '\*='
 syn match copperOperator '\/'
 syn match copperOperator '\/='
 syn match copperOperator '\~'
+syn match copperOperator '<-'
 syn keyword copperOperator in
 
 

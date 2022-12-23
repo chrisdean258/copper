@@ -157,9 +157,7 @@ should likely not be used yet except for `write`
 
 ### Near Future
 
-- Return values from eval
 - Methods and method calls
-- Move onto enums for error handling rather than strings
 - Rethink the `class_underlying` API
   - Can cause a panic in the following code
     ```copper
