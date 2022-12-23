@@ -191,11 +191,12 @@ impl Compiler {
         }
     }
 
-    fn classdecl(&mut self, c: &Rc<RefCell<ClassDecl>>) {
-        self.class_scopes
-            .last_mut()
-            .unwrap()
-            .insert(c.borrow().name.clone(), c.clone());
+    fn classdecl(&mut self, _c: &TypedClassDecl) {
+        todo!()
+        // self.class_scopes
+        // .last_mut()
+        // .unwrap()
+        // .insert(c.borrow().name.clone(), c.clone());
     }
 
     fn return_(&mut self, r: &TypedReturn) {

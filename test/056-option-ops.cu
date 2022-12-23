@@ -12,5 +12,10 @@ print(s ^^ n) # 1
 print(s ^^ s) # null
 print(n ^^ n) # null
 
+print(s == 1) # true
+print(s == 2) # false
+print(s == null) # false
 
-
+print(n == 1) # false
+print(n == 2) # false
+print(n == null) # true

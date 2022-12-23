@@ -2,15 +2,13 @@ use crate::{
     lex::*, location::Location, operation::Operation, typecheck::TypedExpression,
     typesystem::Signature, typesystem::Type, value::Value,
 };
-use std::{cell::RefCell, collections::HashMap, iter::Peekable, mem::swap, rc::Rc};
-
-// TODO: Unexpected should never be passed a `.peek()`ed token, only a `.next()`ed one
+use std::{collections::HashMap, iter::Peekable, mem::swap};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Statement {
     Expr(Expression),
-    ClassDecl(Rc<RefCell<ClassDecl>>),
+    ClassDecl(ClassDecl),
     Import(Import),
     FromImport(FromImport),
     Continue(Continue),
@@ -87,7 +85,7 @@ pub struct ClassDecl {
     pub location: Location,
     pub name: String,
     pub fields: HashMap<String, usize>,
-    pub methods: HashMap<String, Expression>,
+    pub methods: HashMap<String, (Function, Location)>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,7 +114,6 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-    pub alloc_before_call: Option<usize>,
     pub method_name: Option<String>,
 }
 
@@ -612,7 +609,7 @@ impl ParseTree {
         expect_stat!(self, lexer, TokenType::OpenBrace, "class declaration");
 
         let mut fields = HashMap::new();
-        let mut methods = HashMap::new();
+        let mut methods: HashMap<String, (Function, Location)> = HashMap::new();
         loop {
             let token = peek_handle_eof_stat!(self, lexer, "class declaration");
             match token.token_type {
@@ -621,15 +618,24 @@ impl ParseTree {
                     break;
                 }
                 TokenType::Function => {
-                    let fun = self.parse_function(lexer, true);
-                    let fname = match &fun.etype {
-                        ExpressionType::Function(f) => f.name.clone().unwrap(),
+                    let funexpr = self.parse_function(lexer, true);
+                    // TODO: need to do recovery here because we depend on the output
+                    let fun = match funexpr.etype {
+                        ExpressionType::Function(f) => f.clone(),
                         _ => unreachable!(),
                     };
+                    // Unwrap OK because parse_function required a name
+                    let methodname = fun.name.clone().unwrap();
+                    let location = funexpr.location;
                     // TODO: Change the way fields and methods are stored so I can do better errors when parsing
-                    if methods.insert(fname.clone(), fun.clone()).is_some() {
+                    if methods
+                        .insert(methodname.clone(), (fun, location.clone()))
+                        .is_some()
+                    {
                         recover_stat!(self, lexer, TokenType::CloseBrace, "class declaration" => |_,braces,_| braces == 0);
-                        return Statement::ParseError(Error::MethodRedefinition(location, fname));
+                        return Statement::ParseError(Error::MethodRedefinition(
+                            location, methodname,
+                        ));
                     }
                 }
                 TokenType::Field => {
@@ -665,12 +671,12 @@ impl ParseTree {
             }
         }
 
-        Statement::ClassDecl(Rc::new(RefCell::new(ClassDecl {
+        Statement::ClassDecl(ClassDecl {
             location,
             name,
             fields,
             methods,
-        })))
+        })
     }
 
     fn parse_block(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
@@ -923,7 +929,6 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
-                            alloc_before_call: None,
                             method_name: None,
                         }),
                     }
