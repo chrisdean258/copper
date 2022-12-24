@@ -702,14 +702,22 @@ impl Compiler {
             f.function.argnames.len(),
             sig
         );
-        let name = format!(
-            "{}{}",
-            f.function
-                .name
-                .clone()
-                .unwrap_or_else(|| "<anonymous>".to_string()),
-            self.types.as_ref().unwrap().format_signature(sig)
-        );
+        let name = if f.is_method {
+            //has to have name because its a signature
+            self.types
+                .as_ref()
+                .unwrap()
+                .format_method_sig(sig, f.function.name.clone().unwrap())
+        } else {
+            format!(
+                "{}{}",
+                f.function
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "<anonymous>".to_string()),
+                self.types.as_ref().unwrap().format_signature(sig)
+            )
+        };
         self.open_scope();
         self.code.open_function(name);
         for argname in f.function.argnames.iter() {

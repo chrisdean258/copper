@@ -592,6 +592,17 @@ impl TypeSystem {
         }
     }
 
+    pub fn format_method_sig(&self, sig: &Signature, name: String) -> String {
+        let inputs = sig.inputs.clone();
+        let first = inputs[0];
+        let sig = Signature::new(inputs, None, sig.output);
+        format!(
+            "{}.{name}{}",
+            self.typename(first),
+            self.format_signature(&sig)
+        )
+    }
+
     pub fn mangle(&self, name: &str, sig: &Signature) -> String {
         format!("{}({})", name, self.format_args_from_sig(sig))
     }

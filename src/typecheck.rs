@@ -315,6 +315,7 @@ pub struct TypedFunctionInternal {
     pub code_locations: RefCell<Vec<usize>>,
     pub locals: usize,
     pub typ: Type,
+    pub is_method: bool,
 }
 
 pub type TypedFunction = Rc<RefCell<TypedFunctionInternal>>;
@@ -589,7 +590,7 @@ impl TypeChecker {
         self.insert_class_scope(&c.name, typ);
         let mut methods: HashMap<String, (TypedFunction, Location)> = HashMap::new();
         for (name, (method, location)) in c.methods.iter() {
-            let (meth, _methtype) = self.function(method.clone())?;
+            let (meth, _methtype) = self.function(method.clone(), true)?;
             let fmeth = match meth {
                 TypedExpressionType::Function(f) => f,
                 _ => unreachable!(),
@@ -619,7 +620,7 @@ impl TypeChecker {
             ExpressionType::PreUnOp(p) => self.preunop(p),
             ExpressionType::PostUnOp(p) => self.postunop(p),
             ExpressionType::AssignExpr(a) => self.assignment(a),
-            ExpressionType::Function(f) => self.function(f),
+            ExpressionType::Function(f) => self.function(f, false),
             ExpressionType::Lambda(l) => self.lambda(l),
             ExpressionType::List(l) => self.list(l),
             ExpressionType::IndexExpr(i) => self.index(i),
@@ -980,7 +981,11 @@ impl TypeChecker {
         ))
     }
 
-    fn function(&mut self, f: parser::Function) -> Result<(TypedExpressionType, Type), ()> {
+    fn function(
+        &mut self,
+        f: parser::Function,
+        is_method: bool,
+    ) -> Result<(TypedExpressionType, Type), ()> {
         let name = f.name.clone();
         let default = "<anonymous function>".to_owned();
         let typ = self.system.function_type(name.clone().unwrap_or(default));
@@ -992,6 +997,7 @@ impl TypeChecker {
             code_locations: RefCell::new(Vec::new()),
             locals: 0,
             typ,
+            is_method,
         }));
         self.type_to_func.insert(typ, rv.clone());
         if let Some(s) = name {
