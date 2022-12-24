@@ -4,16 +4,13 @@ use crate::{
     code_builder::CodeBuilder,
     memory,
     operation::{MachineOperation, Operation},
-    parser::ClassDecl,
     typecheck::*,
     typesystem::{Type, TypeSystem, NULL, STR},
     value::Value,
 };
 use std::{
-    cell::RefCell,
     collections::HashMap,
     mem::{replace, swap, take},
-    rc::Rc,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +29,7 @@ pub struct Compiler {
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
     func_scopes: Vec<HashMap<String, TypedFunction>>,
-    class_scopes: Vec<HashMap<String, Rc<RefCell<ClassDecl>>>>,
+    class_scopes: Vec<HashMap<String, TypedClassDecl>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
@@ -191,12 +188,14 @@ impl Compiler {
         }
     }
 
-    fn classdecl(&mut self, _c: &TypedClassDecl) {
-        todo!()
-        // self.class_scopes
-        // .last_mut()
-        // .unwrap()
-        // .insert(c.borrow().name.clone(), c.clone());
+    fn classdecl(&mut self, c: &TypedClassDecl) {
+        self.class_scopes
+            .last_mut()
+            .unwrap()
+            .insert(c.borrow().classdecl.name.clone(), c.clone());
+        for (_name, (f, _l)) in c.borrow().methods.iter() {
+            self.function(f);
+        }
     }
 
     fn return_(&mut self, r: &TypedReturn) {
@@ -246,6 +245,12 @@ impl Compiler {
             TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
             TypedExpressionType::Function(f) => self.function(f),
             TypedExpressionType::Lambda(l) => self.lambda(l),
+            TypedExpressionType::InitExpr(i) => self.initexpr(i),
+            TypedExpressionType::ClassRefExpr(r) => self.classrefexpr(r),
+            TypedExpressionType::DirectFuncRef(d, idx) => {
+                let addr = self.single_function(d, *idx, false);
+                self.code.push(Value::Ptr(addr));
+            }
             e => todo!("{:?}", e),
         }
     }
@@ -477,6 +482,8 @@ impl Compiler {
         self.code.push(Value::Ptr(addr));
     }
 
+    fn classrefexpr(&mut self, _r: &TypedClassRefExpr) {}
+
     fn get_value_with_null_as(&mut self, e: &TypedExpression, null_type: Type) {
         let save = self.current_null;
         if self.types.as_ref().unwrap().is_option(null_type) {
@@ -682,6 +689,10 @@ impl Compiler {
         _alloc_before_call: bool,
     ) -> usize {
         let f = f.borrow();
+        let addr = f.code_locations.borrow()[sig_idx];
+        if addr != 0 {
+            return 0;
+        }
         let sig = &f.signatures[sig_idx];
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.function.argnames.len(),
@@ -724,7 +735,9 @@ impl Compiler {
         self.code.return_();
         self.num_args = old_num_args;
         self.close_scope();
-        self.code.close_function_and_patch(&self.recursive_calls)
+        let addr = self.code.close_function_and_patch(&self.recursive_calls);
+        f.code_locations.borrow_mut()[sig_idx] = addr;
+        addr
     }
 
     fn lambda(&mut self, l: &TypedLambda) {
@@ -757,6 +770,14 @@ impl Compiler {
     fn lambdaarg(&mut self, l: &TypedLambdaArg) {
         self.code.local_ref(l.number as isize);
         self.code.load();
+    }
+
+    fn initexpr(&mut self, i: &TypedInitExpr) {
+        self.code.alloc(i.alloc_before_call);
+        let Some(tce) = &i.callexpr else {
+            return;
+        };
+        self.call(tce);
     }
 
     fn call(&mut self, c: &TypedCallExpr) {

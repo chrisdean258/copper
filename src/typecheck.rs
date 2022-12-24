@@ -154,6 +154,7 @@ pub enum TypedExpressionType {
     ClassRefExpr(TypedClassRefExpr),
     FuncRefExpr(TypedFuncRefExpr),
     BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
+    DirectFuncRef(TypedFunction, usize),
     Immediate(TypedImmediate),
     BlockExpr(TypedBlockExpr),
     BinOp(TypedBinOp),
@@ -287,8 +288,8 @@ pub struct TypedCallExpr {
 
 #[derive(Debug, Clone)]
 pub struct TypedInitExpr {
-    pub call_expr: Option<TypedCallExpr>,
     pub alloc_before_call: usize,
+    pub callexpr: Option<TypedCallExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -311,7 +312,9 @@ pub struct TypedFunctionInternal {
     pub alloc_before_call: Option<usize>,
     pub signatures: Vec<Signature>,
     pub typed_bodies: Vec<TypedExpression>,
+    pub code_locations: RefCell<Vec<usize>>,
     pub locals: usize,
+    pub typ: Type,
 }
 
 pub type TypedFunction = Rc<RefCell<TypedFunctionInternal>>;
@@ -329,6 +332,7 @@ pub type TypedLambda = Rc<RefCell<TypedLambdaInternal>>;
 
 #[derive(Debug, Clone)]
 pub struct TypedClassDeclInternal {
+    pub typ: Type,
     pub classdecl: parser::ClassDecl,
     pub methods: HashMap<String, (TypedFunction, Location)>,
 }
@@ -357,7 +361,7 @@ impl TypeChecker {
             in_loop: false,
         };
         rv.openscope();
-        for f in BuiltinFunction::get_table(&mut rv.system) {
+        for f in BuiltinFunction::get_table(&rv.system) {
             rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
         }
         rv.openscope();
@@ -593,6 +597,7 @@ impl TypeChecker {
             methods.insert(name.clone(), (fmeth, location.clone()));
         }
         let rv = Rc::new(RefCell::new(TypedClassDeclInternal {
+            typ,
             classdecl: c,
             methods,
         }));
@@ -984,7 +989,9 @@ impl TypeChecker {
             alloc_before_call: None,
             signatures: Vec::new(),
             typed_bodies: Vec::new(),
+            code_locations: RefCell::new(Vec::new()),
             locals: 0,
+            typ,
         }));
         self.type_to_func.insert(typ, rv.clone());
         if let Some(s) = name {
@@ -1109,9 +1116,9 @@ impl TypeChecker {
         }
 
         if let TypedExpressionType::FuncRefExpr(f) = &subject.etype {
-            self.call_function(f.func.clone(), subject, args, argtypes)
+            self.call_function(f.func.clone(), subject, args, argtypes, true)
         } else if let Some(func) = self.type_to_func.get(&subject.typ) {
-            self.call_function(func.clone(), subject, args, argtypes)
+            self.call_function(func.clone(), subject, args, argtypes, true)
         } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
             self.call_lambda_with_args(lambda.clone(), subject, args)
         } else {
@@ -1127,49 +1134,41 @@ impl TypeChecker {
     ) -> Result<(TypedExpressionType, Type), ()> {
         let classdecl = self.type_to_class.get(&subject.typ).unwrap().clone();
         let to_alloc = classdecl.borrow().classdecl.fields.len();
-        let mut cd = classdecl.borrow_mut();
-        let Some((init, location)) = cd.methods.get_mut("__init__") else {
-            drop(cd);
+        let cd = classdecl.borrow();
+        let Some((init, location)) = cd.methods.get("__init__") else {
             return Ok((
                 TypedExpressionType::InitExpr(TypedInitExpr {
-                    call_expr: None,
                     alloc_before_call: to_alloc,
+                    callexpr: None,
                 }), subject.typ
             ));
         };
         argtypes.insert(0, subject.typ);
         args.insert(0, subject.clone());
+        let new_subject = TypedExpression {
+            location: location.clone(),
+            typ: UNIT,
+            etype: TypedExpressionType::DirectFuncRef(init.clone(), 0),
+        };
         let (tet, typ) = self.call_function(
             init.clone(),
-            subject.clone(),
+            new_subject,
             args.clone(),
             argtypes.clone(),
+            false,
         )?;
+
         if typ != UNIT {
             return self.error(ErrorType::InitReturnsVal(self.system.typename(typ)));
         }
-
-        let sig_idx = init.borrow().signatures.len();
-        let func_sig = Signature::new(argtypes.clone(), None, UNIT);
-        init.borrow_mut().typed_bodies.push(TypedExpression {
-            etype: tet.clone(),
-            location: location.clone(),
-            typ: UNIT,
-        });
-        init.borrow_mut().signatures.push(func_sig.clone());
+        let TypedExpressionType::CallExpr(tce) = tet else {
+            panic!("weird return type {:?}", tet);
+        };
 
         Ok((
             TypedExpressionType::InitExpr(TypedInitExpr {
-                call_expr: Some(TypedCallExpr {
-                    args,
-                    function: Box::new(TypedExpression {
-                        etype: tet,
-                        typ: UNIT,
-                        location: location.clone(),
-                    }),
-                    sig_idx: Some(sig_idx),
-                }),
                 alloc_before_call: to_alloc,
+                callexpr: Some(tce),
             }),
             subject.typ,
         ))
@@ -1178,9 +1177,10 @@ impl TypeChecker {
     fn call_function(
         &mut self,
         f: TypedFunction,
-        subject: TypedExpression,
+        mut subject: TypedExpression,
         mut args: Vec<TypedExpression>,
         mut argtypes: Vec<Type>,
+        insert_into_scope: bool,
     ) -> Result<(TypedExpressionType, Type), ()> {
         let mut b = match f.try_borrow_mut() {
             Ok(a) => a,
@@ -1230,10 +1230,16 @@ impl TypeChecker {
 
         let sig_idx = b.signatures.len();
         b.typed_bodies.push(te.clone());
+        b.code_locations.borrow_mut().push(0);
         b.signatures.push(func_sig.clone());
+        if let TypedExpressionType::DirectFuncRef(_f, ref mut si) = &mut subject.etype {
+            *si = sig_idx;
+        }
 
-        if let Some(name) = &b.function.name {
-            self.func_mangle_name_scope_insert(name, func_sig);
+        if insert_into_scope {
+            if let Some(name) = &b.function.name {
+                self.func_mangle_name_scope_insert(name, func_sig);
+            }
         }
         Ok((
             TypedExpressionType::CallExpr(TypedCallExpr {
