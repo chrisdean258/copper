@@ -19,6 +19,7 @@ pub enum TypeEntryType {
     Option(Type),
     Function(Function),
     Class(Class),
+    ClassVariant(Type),
     ResolvedFunction(ResolvedFunction),
 }
 
@@ -386,6 +387,16 @@ impl TypeSystem {
 
     pub fn class_type(&mut self, name: String, num_fields: usize) -> Type {
         let te_type = TypeEntryType::Class(Class { num_fields });
+        self.new_type(name, te_type)
+    }
+
+    pub fn class_variant(&mut self, base: Type) -> Type {
+        let name = if cfg!(debug_assertions) {
+            self.typename(base) + "-variant"
+        } else {
+            self.typename(base)
+        };
+        let te_type = TypeEntryType::ClassVariant(base);
         self.new_type(name, te_type)
     }
 

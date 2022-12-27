@@ -782,10 +782,12 @@ impl Compiler {
 
     fn initexpr(&mut self, i: &TypedInitExpr) {
         self.code.alloc(i.alloc_before_call);
+        self.code.dup();
         let Some(tce) = &i.callexpr else {
             return;
         };
         self.call(tce);
+        self.code.pop();
     }
 
     fn call(&mut self, c: &TypedCallExpr) {

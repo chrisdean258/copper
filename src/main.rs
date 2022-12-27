@@ -78,8 +78,11 @@ fn real_main() -> i64 {
             eprintln!("{}", s);
             1
         }
-        Ok((v, eval::ReturnState::Evaluated)) => {
+        Ok((v, eval::ReturnState::Evaluated)) if is_cmd => {
             intp.print_value(v);
+            0
+        }
+        Ok((v, eval::ReturnState::Evaluated)) => {
             0
         }
         Ok((value::Value::Int(b), eval::ReturnState::Exited)) => b,

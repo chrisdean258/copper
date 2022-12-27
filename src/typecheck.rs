@@ -104,6 +104,7 @@ pub struct TypeChecker {
     type_to_func: HashMap<Type, TypedFunction>,
     type_to_lambda: HashMap<Type, TypedLambda>,
     type_to_class: HashMap<Type, TypedClassDecl>,
+    type_to_obj: HashMap<Type, TypedObject>,
 
     allow_insert: Option<Type>,
     lambda_args: Vec<TypedExpression>,
@@ -151,6 +152,7 @@ pub enum TypedExpressionType {
     MethodCallExpr(TypedMethodCallExpr),
     PossibleMethodCall(PossibleMethodCall),
     VarRefExpr(TypedVarRefExpr),
+    ObjectRef(TypedObject),
     ClassRefExpr(TypedClassRefExpr),
     FuncRefExpr(TypedFuncRefExpr),
     BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
@@ -340,6 +342,12 @@ pub struct TypedClassDeclInternal {
 
 pub type TypedClassDecl = Rc<RefCell<TypedClassDeclInternal>>;
 
+#[derive(Debug, Clone)]
+pub struct TypedObject {
+    pub classdecl: TypedClassDecl,
+    pub fields: Vec<Option<Type>>,
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         let mut rv = Self {
@@ -350,6 +358,7 @@ impl TypeChecker {
             type_to_func: HashMap::new(),
             type_to_lambda: HashMap::new(),
             type_to_class: HashMap::new(),
+            type_to_obj: HashMap::new(),
             allow_insert: None,
             lambda_args: Vec::new(),
             location: None,
@@ -1134,13 +1143,14 @@ impl TypeChecker {
 
     fn alloc_and_initialize(
         &mut self,
-        subject: TypedExpression,
+        mut subject: TypedExpression,
         mut args: Vec<TypedExpression>,
         mut argtypes: Vec<Type>,
     ) -> Result<(TypedExpressionType, Type), ()> {
         let classdecl = self.type_to_class.get(&subject.typ).unwrap().clone();
         let to_alloc = classdecl.borrow().classdecl.fields.len();
-        let cd = classdecl.borrow();
+        let cdc = classdecl.clone();
+        let cd = cdc.borrow();
         let Some((init, location)) = cd.methods.get("__init__") else {
             return Ok((
                 TypedExpressionType::InitExpr(TypedInitExpr {
@@ -1149,8 +1159,18 @@ impl TypeChecker {
                 }), subject.typ
             ));
         };
+        let rvtype = self.system.class_variant(subject.typ);
+        subject.typ = rvtype;
+        let num_field = cd.classdecl.fields.len();
+        self.type_to_obj.insert(
+            subject.typ,
+            TypedObject {
+                classdecl,
+                fields: vec![None; num_field],
+            },
+        );
         argtypes.insert(0, subject.typ);
-        args.insert(0, subject.clone());
+        args.insert(0, subject);
         let new_subject = TypedExpression {
             location: location.clone(),
             typ: UNIT,
@@ -1164,9 +1184,6 @@ impl TypeChecker {
             false,
         )?;
 
-        if typ != UNIT {
-            return self.error(ErrorType::InitReturnsVal(self.system.typename(typ)));
-        }
         let TypedExpressionType::CallExpr(tce) = tet else {
             panic!("weird return type {:?}", tet);
         };
@@ -1176,7 +1193,7 @@ impl TypeChecker {
                 alloc_before_call: to_alloc,
                 callexpr: Some(tce),
             }),
-            subject.typ,
+            rvtype,
         ))
     }
 
@@ -1454,31 +1471,35 @@ impl TypeChecker {
         Ok((rv, Some(idx)))
     }
 
-    fn dotted_lookup(&mut self, mut _d: DottedLookup) -> Result<(TypedExpressionType, Type), ()> {
-        todo!();
-        // let lhs = self.expr(*d.lhs)?;
-        // let classdecltyp = self.system.class_underlying(lhs.typ);
-        // let classdecl = self.type_to_class.get(&classdecltyp).unwrap();
-        // let idx = *classdecl.borrow().fields.get(&d.rhs).unwrap();
-        // d.index = Some(idx);
-        // let field_type = self.system.class_query_field(lhs.typ, idx);
-        // let typ = match (field_type, self.allow_insert) {
-        // (Some(ft), _) => ft,
-        // (None, Some(ai)) => {
-        // self.system.set_field_type(lhs.typ, idx, ai);
-        // ai
-        // }
-        // (None, None) => {
-        // return self.error(ErrorType::UninitializedAssignment);
-        // }
-        // };
-        // Ok((
-        // TypedExpressionType::DottedLookup(TypedDottedLookup {
-        // lhs: Box::new(lhs),
-        // rhs: d.rhs,
-        // index: idx,
-        // }),
-        // typ,
-        // ))
+    fn dotted_lookup(&mut self, d: DottedLookup) -> Result<(TypedExpressionType, Type), ()> {
+        let lhs = self.expr(*d.lhs)?;
+        let Some(objref) = self.type_to_obj.get_mut(&lhs.typ) else {
+            return self.error(ErrorType::ClassHasNoFieldOrMethod(self.system.typename(lhs.typ) , d.rhs));
+        };
+        let cd = objref.classdecl.borrow();
+        let Some(obj_idx) = cd.classdecl.fields.get(&d.rhs).copied() else {
+            drop(cd);
+            return self.error(ErrorType::ClassHasNoFieldOrMethod(self.system.typename(lhs.typ) , d.rhs));
+        };
+        let field_type = objref.fields[obj_idx];
+        let typ = match (field_type, self.allow_insert) {
+            (Some(ft), _) => ft,
+            (None, Some(ai)) => {
+                objref.fields[obj_idx] = Some(ai);
+                ai
+            }
+            (None, None) => {
+                drop(cd);
+                return self.error(ErrorType::UninitializedAssignment);
+            }
+        };
+        Ok((
+            TypedExpressionType::DottedLookup(TypedDottedLookup {
+                lhs: Box::new(lhs),
+                rhs: d.rhs,
+                index: obj_idx,
+            }),
+            typ,
+        ))
     }
 }
