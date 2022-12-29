@@ -247,10 +247,7 @@ impl Compiler {
             TypedExpressionType::Lambda(l) => self.lambda(l),
             TypedExpressionType::InitExpr(i) => self.initexpr(i),
             TypedExpressionType::ClassRefExpr(r) => self.classrefexpr(r),
-            TypedExpressionType::DirectFuncRef(d, idx) => {
-                let addr = self.single_function(d, *idx);
-                self.code.push(Value::Ptr(addr));
-            }
+            TypedExpressionType::DirectFuncRef(d) => self.directfuncref(d),
             e => todo!("{:?}", e),
         }
     }
@@ -432,6 +429,21 @@ impl Compiler {
             unreachable!("Expected CodeLocation found {val:?}");
         };
         self.code.push(Value::Ptr(num + memory::BUILTIN_CODE));
+    }
+
+    fn directfuncref(&mut self, fr: &TypedFunction) {
+        let Some(sig_idx) = self.cur_sig_idx else {
+            panic!("No signature index");
+        };
+        let save_bp_list = take(&mut self.recursive_calls);
+        let addr = self.single_function(fr, sig_idx);
+        self.recursive_calls = save_bp_list;
+        if addr == 1 {
+            self.recursive_calls
+                .push(self.code.push(Value::Uninitialized));
+        } else {
+            self.code.push(Value::Ptr(addr));
+        }
     }
 
     fn funcrefexpr(&mut self, r: &TypedFuncRefExpr) {

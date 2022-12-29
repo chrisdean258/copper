@@ -156,7 +156,7 @@ pub enum TypedExpressionType {
     ClassRefExpr(TypedClassRefExpr),
     FuncRefExpr(TypedFuncRefExpr),
     BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
-    DirectFuncRef(TypedFunction, usize),
+    DirectFuncRef(TypedFunction),
     Immediate(TypedImmediate),
     BlockExpr(TypedBlockExpr),
     BinOp(TypedBinOp),
@@ -172,7 +172,6 @@ pub enum TypedExpressionType {
     IndexExpr(TypedIndexExpr),
     DottedLookup(TypedDottedLookup),
     LambdaArg(TypedLambdaArg),
-    // FuncRefExpr(FuncRefExpr),
     RepeatedArg,
     Null,
     UnknownReturn,
@@ -759,7 +758,7 @@ impl TypeChecker {
         }
         match self.scope_lookup_func(&r.name) {
             Some(func) if self.allow_raw_func => Ok((
-                TypedExpressionType::FuncRefExpr(TypedFuncRefExpr { name: r.name, func }),
+                TypedExpressionType::DirectFuncRef(func),
                 typesystem::UNKNOWN_RETURN,
             )),
             Some(_) => self.error(ErrorType::FuncTypeUnknown(r.name)),
@@ -1130,8 +1129,8 @@ impl TypeChecker {
             ));
         }
 
-        if let TypedExpressionType::FuncRefExpr(f) = &subject.etype {
-            self.call_function(f.func.clone(), subject, args, argtypes, true)
+        if let TypedExpressionType::DirectFuncRef(f) = &subject.etype {
+            self.call_function(f.clone(), subject, args, argtypes, true)
         } else if let Some(func) = self.type_to_func.get(&subject.typ) {
             self.call_function(func.clone(), subject, args, argtypes, true)
         } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
@@ -1174,7 +1173,7 @@ impl TypeChecker {
         let new_subject = TypedExpression {
             location: location.clone(),
             typ: UNIT,
-            etype: TypedExpressionType::DirectFuncRef(init.clone(), 0),
+            etype: TypedExpressionType::DirectFuncRef(init.clone()),
         };
         let (tet, typ) = self.call_function(
             init.clone(),
@@ -1255,9 +1254,6 @@ impl TypeChecker {
         b.typed_bodies.push(te.clone());
         b.code_locations.borrow_mut().push(0);
         b.signatures.push(func_sig.clone());
-        if let TypedExpressionType::DirectFuncRef(_f, ref mut si) = &mut subject.etype {
-            *si = sig_idx;
-        }
 
         if insert_into_scope {
             if let Some(name) = &b.function.name {
