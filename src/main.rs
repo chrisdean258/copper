@@ -82,9 +82,7 @@ fn real_main() -> i64 {
             intp.print_value(v);
             0
         }
-        Ok((v, eval::ReturnState::Evaluated)) => {
-            0
-        }
+        Ok((_v, eval::ReturnState::Evaluated)) => 0,
         Ok((value::Value::Int(b), eval::ReturnState::Exited)) => b,
         Ok((v, eval::ReturnState::Exited)) => unreachable!("{}", v),
     }
