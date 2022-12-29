@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction,
     code_builder::CodeBuilder,
@@ -16,10 +15,8 @@ use std::{
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
     BuiltinFunction(usize),
-    CodeLocation(usize),
     GlobalVariable(usize),
     LocalVariable(usize),
-    CurrentFunction,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +25,6 @@ pub struct Compiler {
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
-    func_scopes: Vec<HashMap<String, TypedFunction>>,
     class_scopes: Vec<HashMap<String, TypedClassDecl>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
@@ -58,7 +54,6 @@ impl Compiler {
                 },
                 HashMap::new(), //globals
             ],
-            func_scopes: vec![HashMap::new(), HashMap::new()],
             class_scopes: vec![HashMap::new(), HashMap::new()],
             types: None,
             num_args: 0,
@@ -101,7 +96,6 @@ impl Compiler {
     fn open_scope(&mut self) {
         self.num_locals.push(0);
         self.scopes.push(HashMap::new());
-        self.func_scopes.push(HashMap::new());
         self.class_scopes.push(HashMap::new());
     }
 
@@ -109,7 +103,6 @@ impl Compiler {
         debug_assert!(!self.scopes.is_empty());
         self.num_locals.pop();
         self.scopes.pop();
-        self.func_scopes.pop();
         self.class_scopes.pop();
     }
 
@@ -117,13 +110,6 @@ impl Compiler {
         debug_assert!(self.scopes.len() >= 2);
         let rv = self.scopes.last_mut().unwrap().insert(name, what);
         debug_assert!(rv.is_none());
-    }
-
-    fn replace_scope(&mut self, name: String, what: MemoryLocation) {
-        debug_assert!(self.scopes.len() >= 2);
-        let scope = self.scopes.last_mut().unwrap();
-        let rv = scope.insert(name, what);
-        debug_assert!(rv.is_some());
     }
 
     fn next_local(&mut self) -> MemoryLocation {
@@ -226,7 +212,6 @@ impl Compiler {
             TypedExpressionType::For(f) => todo!("{f:?}"), //self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
-            TypedExpressionType::FuncRefExpr(r) => self.funcrefexpr(r),
             TypedExpressionType::BuiltinFuncRefExpr(b) => self.builtinfuncrefexpr(b),
             TypedExpressionType::Immediate(i) => self.immediate(i),
             TypedExpressionType::BlockExpr(b) => self.block(b),
@@ -402,23 +387,12 @@ impl Compiler {
                 panic!("Should have been a funcrefexpr {u:?}\n{r:?}")
             }
             // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
-            MemoryLocation::CodeLocation(u) => panic!("Should have been a funcrefexpr {}", u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
             MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
-            MemoryLocation::CurrentFunction => panic!("UNKNOWN"),
         };
         if !self.need_ref {
             self.code.load();
         }
-    }
-
-    fn scope_lookup<T: Clone>(&self, key: &str, table: &[HashMap<String, T>]) -> Option<T> {
-        for scope in table.iter().rev() {
-            if let Some(f) = scope.get(key) {
-                return Some(f.clone());
-            }
-        }
-        None
     }
 
     fn builtinfuncrefexpr(&mut self, b: &TypedBuiltinFuncRefExpr) {
@@ -444,53 +418,6 @@ impl Compiler {
         } else {
             self.code.push(Value::Ptr(addr));
         }
-    }
-
-    fn funcrefexpr(&mut self, r: &TypedFuncRefExpr) {
-        let Some(sig_idx) = self.cur_sig_idx else {
-            panic!("No signature index");
-        };
-        let signature = &r.func.borrow().signatures[sig_idx];
-        let mangled_name = self.types.as_ref().unwrap().mangle(&r.name, signature);
-        if let Some(val) = self.lookup_scope_local_or_global_can_fail(&mangled_name) {
-            match val {
-                MemoryLocation::CodeLocation(a) => {
-                    self.code.push(Value::Ptr(a));
-                    return;
-                }
-                MemoryLocation::CurrentFunction => {
-                    self.recursive_calls
-                        .push(self.code.push(Value::Uninitialized));
-                    return;
-                }
-                t => unreachable!("Expected CodeLocation found {:?}", t),
-            }
-        }
-        let func = match self.scope_lookup(&r.name, &self.func_scopes) {
-            Some(f) => f,
-            None => match self.scope_lookup(&r.name, &self.class_scopes) {
-                None => panic!(
-                    "Could not find a func `{}` in func_scope or class_scope",
-                    r.name
-                ),
-                Some(_c) => {
-                    todo!();
-                    // is_init = true;
-                    // match &c.borrow().methods.get("__init__").unwrap().etype {
-                    // ExpressionType::Function(f) => f.clone(),
-                    // _ => unreachable!(),
-                    // }
-                }
-            },
-        };
-
-        self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
-
-        let save_bp_list = take(&mut self.recursive_calls);
-        let addr = self.single_function(&func, sig_idx);
-        self.recursive_calls = save_bp_list;
-        self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
-        self.code.push(Value::Ptr(addr));
     }
 
     fn classrefexpr(&mut self, _r: &TypedClassRefExpr) {}
@@ -680,14 +607,15 @@ impl Compiler {
 
     fn function(&mut self, f: &TypedFunction) {
         // names functions are rendered in accordance with FuncRefExprs so that more instances can be rendered when needed
-        if let Some(name) = f.borrow().function.name.clone() {
-            self.func_scopes.last_mut().unwrap().insert(name, f.clone());
+        if f.borrow().function.name.clone().is_some() {
             self.code.push(Value::Uninitialized);
         } else {
             // I think this is broken but it _might_ work
-            debug_assert_eq!(f.borrow().signatures.len(), 1);
+            // debug_assert_eq!(f.borrow().signatures.len(), 1);
             // for sig in f.borrow().signatures.iter() {
-            let addr = self.single_function(f, 0);
+            // TODO
+            let idx = self.cur_sig_idx.unwrap_or(0);
+            let addr = self.single_function(f, idx);
             self.code.push(Value::Ptr(addr));
             // }
         }

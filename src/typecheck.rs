@@ -154,7 +154,6 @@ pub enum TypedExpressionType {
     VarRefExpr(TypedVarRefExpr),
     ObjectRef(TypedObject),
     ClassRefExpr(TypedClassRefExpr),
-    FuncRefExpr(TypedFuncRefExpr),
     BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
     DirectFuncRef(TypedFunction),
     Immediate(TypedImmediate),
@@ -163,8 +162,6 @@ pub enum TypedExpressionType {
     PreUnOp(TypedPreUnOp),
     PostUnOp(TypedPostUnOp),
     AssignExpr(TypedAssignExpr),
-    // Functions/lambdas fundamentally don't have types until they are called
-    // So this requires looking in the scope table
     Function(TypedFunction),
     Lambda(TypedLambda),
     List(TypedList),
@@ -213,12 +210,6 @@ pub struct TypedVarRefExpr {
 #[derive(Debug, Clone)]
 pub struct TypedClassRefExpr {
     pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypedFuncRefExpr {
-    pub name: String,
-    pub func: TypedFunction,
 }
 
 #[derive(Debug, Clone)]
@@ -1175,7 +1166,7 @@ impl TypeChecker {
             typ: UNIT,
             etype: TypedExpressionType::DirectFuncRef(init.clone()),
         };
-        let (tet, typ) = self.call_function(
+        let (tet, _typ) = self.call_function(
             init.clone(),
             new_subject,
             args.clone(),
@@ -1199,7 +1190,7 @@ impl TypeChecker {
     fn call_function(
         &mut self,
         f: TypedFunction,
-        mut subject: TypedExpression,
+        subject: TypedExpression,
         mut args: Vec<TypedExpression>,
         mut argtypes: Vec<Type>,
         insert_into_scope: bool,

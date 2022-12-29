@@ -1,5 +1,4 @@
-s = if true 1 else null
-n = if false 1 else null
+a = fn(b, c) if b > c b else c
 
-print(n ^^ s) # 1
-
+print(a(1, 2))
+print(a(1.0, 2.0))
