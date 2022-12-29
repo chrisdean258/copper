@@ -691,8 +691,10 @@ impl Compiler {
         let f = f.borrow();
         let addr = f.code_locations.borrow()[sig_idx];
         if addr != 0 {
-            return 0;
+            return addr;
         }
+        f.code_locations.borrow_mut()[sig_idx] = 1;
+
         let sig = &f.signatures[sig_idx];
         debug_assert!(
             sig.repeated_inputs.is_some() || sig.inputs.len() == f.function.argnames.len(),
