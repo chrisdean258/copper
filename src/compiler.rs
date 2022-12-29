@@ -248,7 +248,7 @@ impl Compiler {
             TypedExpressionType::InitExpr(i) => self.initexpr(i),
             TypedExpressionType::ClassRefExpr(r) => self.classrefexpr(r),
             TypedExpressionType::DirectFuncRef(d, idx) => {
-                let addr = self.single_function(d, *idx, false);
+                let addr = self.single_function(d, *idx);
                 self.code.push(Value::Ptr(addr));
             }
             e => todo!("{:?}", e),
@@ -454,7 +454,6 @@ impl Compiler {
                 t => unreachable!("Expected CodeLocation found {:?}", t),
             }
         }
-        let is_init = false;
         let func = match self.scope_lookup(&r.name, &self.func_scopes) {
             Some(f) => f,
             None => match self.scope_lookup(&r.name, &self.class_scopes) {
@@ -476,7 +475,7 @@ impl Compiler {
         self.insert_scope(mangled_name.clone(), MemoryLocation::CurrentFunction);
 
         let save_bp_list = take(&mut self.recursive_calls);
-        let addr = self.single_function(&func, sig_idx, is_init);
+        let addr = self.single_function(&func, sig_idx);
         self.recursive_calls = save_bp_list;
         self.replace_scope(mangled_name, MemoryLocation::CodeLocation(addr));
         self.code.push(Value::Ptr(addr));
@@ -676,18 +675,13 @@ impl Compiler {
             // I think this is broken but it _might_ work
             debug_assert_eq!(f.borrow().signatures.len(), 1);
             // for sig in f.borrow().signatures.iter() {
-            let addr = self.single_function(f, 0, false);
+            let addr = self.single_function(f, 0);
             self.code.push(Value::Ptr(addr));
             // }
         }
     }
 
-    fn single_function(
-        &mut self,
-        f: &TypedFunction,
-        sig_idx: usize,
-        _alloc_before_call: bool,
-    ) -> usize {
+    fn single_function(&mut self, f: &TypedFunction, sig_idx: usize) -> usize {
         let f = f.borrow();
         let addr = f.code_locations.borrow()[sig_idx];
         if addr != 0 {
