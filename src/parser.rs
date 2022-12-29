@@ -114,7 +114,6 @@ pub struct If {
 pub struct CallExpr {
     pub function: Box<Expression>,
     pub args: Vec<Expression>,
-    pub method_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +121,6 @@ pub struct PossibleMethodCall {
     pub lhs: Box<Expression>,
     pub method_name: String,
     pub args: Vec<Expression>,
-    pub alloc_before_call: Option<usize>,
     pub location: Location,
 }
 
@@ -225,7 +223,6 @@ pub struct Str {
 pub struct DottedLookup {
     pub lhs: Box<Expression>,
     pub rhs: String,
-    pub index: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -929,7 +926,6 @@ impl ParseTree {
                         etype: ExpressionType::CallExpr(CallExpr {
                             function: Box::new(lhs),
                             args,
-                            method_name: None,
                         }),
                     }
                 }
@@ -1155,7 +1151,6 @@ impl ParseTree {
                     lhs: Box::new(lhs),
                     method_name: rhs,
                     args: self.parse_paren_cse(lexer, "function call"),
-                    alloc_before_call: None,
                     location,
                 }),
             },
@@ -1164,7 +1159,6 @@ impl ParseTree {
                 etype: ExpressionType::DottedLookup(DottedLookup {
                     lhs: Box::new(lhs),
                     rhs,
-                    index: None,
                 }),
             },
         }

@@ -1034,40 +1034,43 @@ impl TypeChecker {
 
     fn possible_method_call(
         &mut self,
-        _m: PossibleMethodCall,
+        m: PossibleMethodCall,
     ) -> Result<(TypedExpressionType, Type), ()> {
-        todo!()
-        // let lhs = self.expr(*m.lhs.clone())?;
-        // let lhs = self.system.class_underlying(lhs.typ);
-        // if let Some(classdecl) = self.type_to_class.get(&lhs).cloned() {
-        // let (function, method_name) = if classdecl.borrow().methods.contains_key(&m.method_name)
-        // {
-        // (m.lhs, Some(m.method_name))
-        // } else {
-        // (
-        // Box::new(Expression {
-        // etype: ExpressionType::DottedLookup(DottedLookup {
-        // lhs: m.lhs,
-        // rhs: m.method_name,
-        // index: None,
-        // }),
-        // location: m.location,
-        // }),
-        // None,
-        // )
-        // };
-        // self.call(CallExpr {
-        // function,
-        // args: m.args,
-        // alloc_before_call: None,
-        // method_name,
-        // })
-        // } else {
-        // self.error(ErrorType::ClassHasNoFieldOrMethod(
-        // self.system.typename(lhs),
-        // m.method_name,
-        // ))
-        // }
+        let save = self.allow_raw_func;
+        self.allow_raw_func = true;
+        let lhs = self.expr(*m.lhs.clone())?;
+        self.allow_raw_func = save;
+        let Some(objref) = self.type_to_obj.get_mut(&lhs.typ) else {
+            return self.error(ErrorType::ClassHasNoFieldOrMethod(self.system.typename(lhs.typ) , m.method_name));
+        };
+        let cd = objref.classdecl.borrow();
+        if let Some((func, _loc)) = cd.methods.get(&m.method_name).cloned() {
+            drop(cd);
+            let mut args = self.vec_of_exprs(m.args)?;
+            let mut argtypes: Vec<Type> = args.iter().map(|e| e.typ).collect();
+            argtypes.insert(0, lhs.typ);
+            args.insert(0, lhs.clone());
+            self.call_function(func, lhs, args, argtypes, false)
+        } else if cd.classdecl.fields.contains_key(&m.method_name) {
+            let expr = parser::CallExpr {
+                function: Box::new(parser::Expression {
+                    etype: parser::ExpressionType::DottedLookup(parser::DottedLookup {
+                        lhs: m.lhs,
+                        rhs: m.method_name,
+                    }),
+                    location: m.location,
+                }),
+                args: m.args,
+            };
+            drop(cd);
+            self.call(expr)
+        } else {
+            drop(cd);
+            return self.error(ErrorType::ClassHasNoFieldOrMethod(
+                self.system.typename(lhs.typ),
+                m.method_name,
+            ));
+        }
     }
 
     fn call(&mut self, c: CallExpr) -> Result<(TypedExpressionType, Type), ()> {
@@ -1083,13 +1086,7 @@ impl TypeChecker {
 
         // let mut override_return = None;
         if self.system.is_class(subject.typ) {
-            debug_assert!(
-                c.method_name.is_none(),
-                "Class fields/static methods not supported yet"
-            );
             return self.alloc_and_initialize(subject, args, argtypes);
-        } else if let Some(_name) = c.method_name {
-            todo!();
         }
 
         if !self.system.is_function(subject.typ) {
