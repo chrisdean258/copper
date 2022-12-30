@@ -1,4 +1,17 @@
-a = fn(b, c) if b > c b else c
+class test {
+	field a, b, c
 
-print(a(1, 2))
-print(a(1.0, 2.0))
+	fn __init__(self, a, b, c) {
+		self.a = a
+		self.b = b
+		self.c = c
+	}
+
+	fn print(self) {
+		print(self.a, self.b, self.c)
+	}
+}
+
+a = test("Hello", ", ", "World!")
+
+a.print()

@@ -105,6 +105,10 @@ fn optimize_basic_block(code: &[MachineOperation]) -> Vec<MachineOperation> {
                 code[i] = Nop;
                 code[i + 1] = LoadLocal(o);
             }
+            (Push(Value::Uninitialized), Push(Value::Uninitialized)) => {
+                code[i] = Nop;
+                code[i + 1] = Reserve(2);
+            }
             (Reserve(a), Push(Value::Uninitialized)) => {
                 code[i] = Nop;
                 code[i + 1] = Reserve(a + 1);

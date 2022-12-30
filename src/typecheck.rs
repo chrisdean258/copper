@@ -999,9 +999,11 @@ impl TypeChecker {
             is_method,
         }));
         self.type_to_func.insert(typ, rv.clone());
-        if let Some(s) = name {
-            self.insert_func_scope(&s, rv.clone());
-        };
+        if !is_method {
+            if let Some(s) = name {
+                self.insert_func_scope(&s, rv.clone());
+            };
+        }
         Ok((TypedExpressionType::Function(rv), typ))
     }
 
@@ -1044,13 +1046,19 @@ impl TypeChecker {
             return self.error(ErrorType::ClassHasNoFieldOrMethod(self.system.typename(lhs.typ) , m.method_name));
         };
         let cd = objref.classdecl.borrow();
-        if let Some((func, _loc)) = cd.methods.get(&m.method_name).cloned() {
+        if let Some((func, loc)) = cd.methods.get(&m.method_name).cloned() {
             drop(cd);
             let mut args = self.vec_of_exprs(m.args)?;
             let mut argtypes: Vec<Type> = args.iter().map(|e| e.typ).collect();
             argtypes.insert(0, lhs.typ);
             args.insert(0, lhs.clone());
-            self.call_function(func, lhs, args, argtypes, false)
+            let typ = func.borrow().typ;
+            let subject = TypedExpression {
+                etype: TypedExpressionType::DirectFuncRef(func.clone()),
+                location: loc,
+                typ,
+            };
+            self.call_function(func, subject, args, argtypes, false)
         } else if cd.classdecl.fields.contains_key(&m.method_name) {
             let expr = parser::CallExpr {
                 function: Box::new(parser::Expression {
