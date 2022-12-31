@@ -168,9 +168,6 @@ impl Compiler {
             TypedStatement::ClassDecl(c) => self.classdecl(c),
             TypedStatement::Import(i) => todo!("{:?}", i),
             TypedStatement::FromImport(f) => todo!("{:?}", f),
-            TypedStatement::Continue => self.continue_(),
-            TypedStatement::Break => self.break_(),
-            TypedStatement::Return(r) => self.return_(r),
         }
     }
 
@@ -185,7 +182,7 @@ impl Compiler {
     }
 
     fn return_(&mut self, r: &TypedReturn) {
-        match &r.body {
+        match r.body.as_ref() {
             Some(e) => self.get_value(e),
             None => {
                 self.code.push(Value::Uninitialized);
@@ -226,14 +223,15 @@ impl Compiler {
             TypedExpressionType::Str(s) => self.string(s),
             TypedExpressionType::RepeatedArg => self.repeated_arg(),
             TypedExpressionType::Null => self.null(e.typ),
-            TypedExpressionType::PossibleMethodCall(m) => todo!("{:?}", m),
             TypedExpressionType::VarRefExpr(v) => self.varrefexpr(v),
             TypedExpressionType::Function(f) => self.function(f),
             TypedExpressionType::Lambda(l) => self.lambda(l),
             TypedExpressionType::InitExpr(i) => self.initexpr(i),
             TypedExpressionType::ClassRefExpr(r) => self.classrefexpr(r),
             TypedExpressionType::DirectFuncRef(d) => self.directfuncref(d),
-            e => todo!("{:?}", e),
+            TypedExpressionType::Continue => self.continue_(),
+            TypedExpressionType::Break => self.break_(),
+            TypedExpressionType::Return(r) => self.return_(r),
         }
     }
 

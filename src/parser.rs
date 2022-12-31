@@ -5,15 +5,11 @@ use crate::{
 use std::{collections::HashMap, iter::Peekable, mem::swap};
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Statement {
     Expr(Expression),
     ClassDecl(ClassDecl),
     Import(Import),
     FromImport(FromImport),
-    Continue(Continue),
-    Return(Return),
-    Break(Break),
     ExpressionError(Expression),
     ParseError(Error),
 }
@@ -48,6 +44,9 @@ pub enum ExpressionType {
     RepeatedArg,
     Null,
     ParseError(Error),
+    Return(Return),
+    Break,
+    Continue,
 }
 
 impl Expression {
@@ -233,7 +232,6 @@ pub struct Break {
 
 #[derive(Debug, Clone)]
 pub struct Return {
-    pub location: Location,
     pub body: Option<Box<Expression>>,
     pub from_function: bool,
 }
@@ -539,9 +537,6 @@ impl ParseTree {
             TokenType::Class => self.parse_class_decl(lexer),
             TokenType::Import => self.parse_import(lexer),
             TokenType::From => self.parse_from_import(lexer),
-            TokenType::Break => self.parse_break(lexer),
-            TokenType::Continue => self.parse_continue(lexer),
-            TokenType::Return => self.parse_return(lexer),
             _ => Statement::Expr(self.parse_expr(lexer)),
         };
         if self.needs_recovery {
@@ -555,13 +550,16 @@ impl ParseTree {
         rv
     }
 
-    fn parse_continue(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
-        let location = expect_stat!(self, lexer, TokenType::Continue, "continue").location;
-        Statement::Continue(Continue { location })
+    fn parse_continue(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
+        let location = expect!(self, lexer, TokenType::Continue, "continue").location;
+        Expression {
+            etype: ExpressionType::Continue,
+            location,
+        }
     }
 
-    fn parse_return(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
-        let location = expect_stat!(self, lexer, TokenType::Return, "return").location;
+    fn parse_return(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
+        let location = expect!(self, lexer, TokenType::Return, "return").location;
         let body = if lexer
             .next_if(|t| matches!(t.token_type, TokenType::Semicolon))
             .is_some()
@@ -570,16 +568,21 @@ impl ParseTree {
         } else {
             Some(Box::new(self.parse_expr(lexer)))
         };
-        Statement::Return(Return {
+        Expression {
+            etype: ExpressionType::Return(Return {
+                body,
+                from_function: true,
+            }),
             location,
-            body,
-            from_function: true,
-        })
+        }
     }
 
-    fn parse_break(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
-        let location = expect_stat!(self, lexer, TokenType::Break, "break").location;
-        Statement::Break(Break { location })
+    fn parse_break(&mut self, lexer: &mut Peekable<Lexer>) -> Expression {
+        let location = expect!(self, lexer, TokenType::Break, "break").location;
+        Expression {
+            etype: ExpressionType::Break,
+            location,
+        }
     }
 
     fn parse_import(&mut self, lexer: &mut Peekable<Lexer>) -> Statement {
@@ -1129,6 +1132,9 @@ impl ParseTree {
             TokenType::While => self.parse_while(lexer),
             TokenType::For => self.parse_for(lexer),
             TokenType::If => self.parse_if(lexer),
+            TokenType::Break => self.parse_break(lexer),
+            TokenType::Continue => self.parse_continue(lexer),
+            TokenType::Return => self.parse_return(lexer),
             _ => unexpected(lexer.next().unwrap()),
         };
         while let Some(TokenType::Dot) = lexer.peek().map(|x| &x.token_type) {

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction, error::ErrorCollection, location::Location, operation::Operation,
     parser, parser::*, typesystem, typesystem::*, value::Value,
@@ -33,7 +32,6 @@ pub enum ErrorType {
     IfConditionNotBool(String),
     IncorrectTypesForBuiltin(String, String),
     IndexNotInt,
-    InitReturnsVal(String),
     ListTypeMismatch(String, String),
     LoopConditionNotBool(String),
     MismatchedReturnTypes(String, String),
@@ -77,7 +75,6 @@ impl std::fmt::Display for ErrorType {
             Self::IfConditionNotBool(t) => write!(f, "if condition must be bool. This one is `{t}`"),
             Self::IncorrectTypesForBuiltin(e, fo) => write!(f, "Functions inputs didnt match. Exepcted `{e}` found `{fo}`"),
             Self::IndexNotInt => write!(f,  "Index expression requires 1 argument of type `int`"),
-            Self::InitReturnsVal(t) => write!(f,  "`__init__` return a `{t}` when is should not return anything"),
             Self::ListTypeMismatch(t1, t2) => write!(f,  "List established to contain type `{t1}` but this element was of type `{t2}`",),
             Self::LoopConditionNotBool(t) => write!(f, "While loop condition must be bool. This one is `{t}`"),
             Self::MismatchedReturnTypes(t1, t2) => write!(f,  "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",),
@@ -124,15 +121,13 @@ pub struct TypedParseTree {
     pub globals: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TypedStatement {
     Expr(TypedExpression),
     ClassDecl(TypedClassDecl),
     Import(Import),
     FromImport(FromImport),
-    Break,
-    Continue,
-    Return(TypedReturn),
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +137,7 @@ pub struct TypedExpression {
     pub typ: Type,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TypedExpressionType {
     While(TypedWhile),
@@ -149,10 +145,7 @@ pub enum TypedExpressionType {
     If(TypedIf),
     CallExpr(TypedCallExpr),
     InitExpr(TypedInitExpr),
-    MethodCallExpr(TypedMethodCallExpr),
-    PossibleMethodCall(PossibleMethodCall),
     VarRefExpr(TypedVarRefExpr),
-    ObjectRef(TypedObject),
     ClassRefExpr(TypedClassRefExpr),
     BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr),
     DirectFuncRef(TypedFunction),
@@ -171,12 +164,14 @@ pub enum TypedExpressionType {
     LambdaArg(TypedLambdaArg),
     RepeatedArg,
     Null,
-    UnknownReturn,
+    Break,
+    Continue,
+    Return(TypedReturn),
 }
 
 #[derive(Debug, Clone)]
 pub struct TypedReturn {
-    pub body: Option<TypedExpression>,
+    pub body: Box<Option<TypedExpression>>,
     pub from_function: bool,
 }
 
@@ -527,15 +522,12 @@ impl TypeChecker {
             Statement::ClassDecl(c) => self.classdecl(c)?,
             Statement::Import(i) => todo!("{:?}", i),
             Statement::FromImport(f) => todo!("{:?}", f),
-            Statement::Continue(_) => self.continue_()?,
-            Statement::Break(_) => self.break_()?,
-            Statement::Return(r) => self.return_(r)?,
             Statement::ParseError(e) => self.error(ErrorType::ParseError(e))?,
             Statement::ExpressionError(e) => TypedStatement::Expr(self.expr(e)?),
         })
     }
 
-    fn return_(&mut self, r: Return) -> Result<TypedStatement, ()> {
+    fn return_(&mut self, r: Return) -> Result<(TypedExpressionType, Type), ()> {
         let body = match r.body {
             Some(e) => Some(self.expr(*e)?),
             None => None,
@@ -564,24 +556,27 @@ impl TypeChecker {
             ))?,
         }
 
-        Ok(TypedStatement::Return(TypedReturn {
-            body,
-            from_function,
-        }))
+        Ok((
+            TypedExpressionType::Return(TypedReturn {
+                body: Box::new(body),
+                from_function,
+            }),
+            UNREACHABLE,
+        ))
     }
 
-    fn break_(&mut self) -> Result<TypedStatement, ()> {
+    fn break_(&mut self) -> Result<(TypedExpressionType, Type), ()> {
         if !self.in_loop {
             return self.error(ErrorType::BreakNotAllowed);
         }
-        Ok(TypedStatement::Break)
+        Ok((TypedExpressionType::Break, UNREACHABLE))
     }
 
-    fn continue_(&mut self) -> Result<TypedStatement, ()> {
+    fn continue_(&mut self) -> Result<(TypedExpressionType, Type), ()> {
         if !self.in_loop {
-            return self.error(ErrorType::BreakNotAllowed);
+            return self.error(ErrorType::ContinueNotAllowed);
         }
-        Ok(TypedStatement::Continue)
+        Ok((TypedExpressionType::Continue, UNREACHABLE))
     }
 
     fn classdecl(&mut self, c: ClassDecl) -> Result<TypedStatement, ()> {
@@ -609,7 +604,7 @@ impl TypeChecker {
         self.location = Some(e.location.clone());
         let (typedexpressiontype, typ) = match e.etype {
             ExpressionType::While(w) => self.whileexpr(w),
-            ExpressionType::For(f) => todo!("{f:?}"),
+            ExpressionType::For(f) => self.forexpr(f),
             ExpressionType::If(i) => self.ifexpr(i),
             ExpressionType::CallExpr(c) => self.call(c),
             ExpressionType::RefExpr(r) => self.refexpr(r),
@@ -630,6 +625,9 @@ impl TypeChecker {
             ExpressionType::Null => self.null(),
             ExpressionType::PossibleMethodCall(m) => self.possible_method_call(m),
             ExpressionType::ParseError(e) => self.error(ErrorType::ParseError(e))?,
+            ExpressionType::Continue => self.continue_(),
+            ExpressionType::Break => self.break_(),
+            ExpressionType::Return(r) => self.return_(r),
         }?;
         // if rv == UNKNOWN_RETURN {
         // self.need_recheck = true;
@@ -854,8 +852,8 @@ impl TypeChecker {
         ))
     }
 
-    fn forexpr(&mut self, _w: &mut For) -> Result<(TypedExpressionType, Type), ()> {
-        todo!("Havent worked out the details of iteration yet")
+    fn forexpr(&mut self, f: For) -> Result<(TypedExpressionType, Type), ()> {
+        todo!("Havent worked out the details of iteration yet: {f:?}")
     }
 
     fn ifexpr(&mut self, i: If) -> Result<(TypedExpressionType, Type), ()> {

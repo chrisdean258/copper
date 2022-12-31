@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::{
     builtins::BuiltinFunction,
     memory::{Memory, BUILTIN_CODE, CODE, STACK},
