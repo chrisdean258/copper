@@ -206,7 +206,7 @@ impl Compiler {
     fn expr_dont_call_without_handling_needs_ref(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
-            TypedExpressionType::For(f) => todo!("{f:?}"), //self.forexpr(f),
+            TypedExpressionType::For(f) => self.forexpr(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
             TypedExpressionType::BuiltinFuncRefExpr(b) => self.builtinfuncrefexpr(b),
@@ -496,7 +496,43 @@ impl Compiler {
         }
     }
 
-    // fn forexpr(&mut self, _f: &For) {}
+    fn forexpr(&mut self, f: &TypedFor) {
+        if !f.is_list {
+            todo!();
+        }
+        self.get_value(&f.items);
+        self.code.cast(Value::Ptr(0)); // L
+        self.code.dup(); // L L
+        self.code.dup(); // L L L
+        self.code.push(Value::PtrOffset(-1)); // L L L -1
+        self.code.emit(MachineOperation::Plus); // L L L-1
+        self.code.load(); // L L len
+        self.code.emit(MachineOperation::Plus); // L E
+        let start = self.code.next_function_relative_addr(); // P E
+        self.code.dup(); // P E E
+        self.code.rotate(3); // E P E
+        self.code.swap(); // E E P
+        self.code.dup(); // E E P P
+        self.code.push(Value::PtrOffset(1)); // E E P P 1
+        self.code.emit(MachineOperation::Plus); // E E P N
+        self.code.rotate(4); // N E E P
+        self.code.dup(); // N E E P P
+        self.code.rotate(3); // N E P E P
+        self.code.emit(MachineOperation::CmpEq); // N E P at_end
+        let skip = self.code.jump_relative_if(0);
+        self.code.load(); // N E V
+        self.get_ref(&f.reference); // N E V R
+        self.code.swap(); // N E V R
+        self.code.store(); // N E V
+        self.code.pop(); // N E
+        self.get_value(&f.body);
+        self.code.pop();
+        self.code.jump_relative(start as isize);
+        let end = self.code.pop(); // E N
+        self.code.backpatch_jump_rel(skip, end as isize);
+        self.code.pop(); // E
+        self.code.pop(); //
+    }
 
     fn ifexpr(&mut self, i: &TypedIf) {
         let save = self.current_null;

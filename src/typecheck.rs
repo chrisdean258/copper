@@ -25,6 +25,7 @@ pub enum ErrorType {
     CannotExtractFromNonOption(String),
     CannotIndexType(String),
     CannotIndirectlyCallBuiltins,
+    CannotIterateOverType(String),
     CannotReturnTypeFromNonFunction(String),
     ClassHasNoFieldOrMethod(String, String),
     EmptyBlock,
@@ -67,6 +68,7 @@ impl std::fmt::Display for ErrorType {
             Self::CannotExtractFromNonOption(t) => write!(f, "Cannot extract value from type `{t}`"),
             Self::CannotIndexType(t) => write!(f,  "Cannot index into type `{t}`"),
             Self::CannotIndirectlyCallBuiltins => write!(f, "Cannot indirectly call buitins yet"),
+            Self::CannotIterateOverType(t) => write!(f, "Cannot iterate over type `{t}`"),
             Self::CannotReturnTypeFromNonFunction(t) => write!(f,  "Cannot return type `{t}` from outside a function"),
             Self::ClassHasNoFieldOrMethod(t, fm) => write!(f,  "Class `{t}` has no field or method `{fm}`",),
             Self::ContinueNotAllowed => write!(f, "`continue` not allowed outside of loops"),
@@ -141,7 +143,7 @@ pub struct TypedExpression {
 #[derive(Debug, Clone)]
 pub enum TypedExpressionType {
     While(TypedWhile),
-    For(For),
+    For(TypedFor),
     If(TypedIf),
     CallExpr(TypedCallExpr),
     InitExpr(TypedInitExpr),
@@ -234,6 +236,15 @@ pub struct TypedBlockExpr {
 pub struct TypedWhile {
     pub condition: Box<TypedExpression>,
     pub body: Box<TypedExpression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedFor {
+    pub reference: Box<TypedExpression>,
+    pub items: Box<TypedExpression>,
+    pub body: Box<TypedExpression>,
+    pub is_list: bool,
+    pub internal_type: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -838,7 +849,38 @@ impl TypeChecker {
     }
 
     fn forexpr(&mut self, f: For) -> Result<(TypedExpressionType, Type), ()> {
-        todo!("Havent worked out the details of iteration yet: {f:?}")
+        let items = self.expr(*f.items);
+        let mut is_list = false;
+        let mut internal_type = UNKNOWN_RETURN;
+        if !f.reference.is_lval() {
+            let _ = self.error::<()>(ErrorType::NotAssignable);
+        }
+        let items = items?;
+        if let Some(typ) = self.system.get_typeof_list_type(items.typ) {
+            internal_type = typ;
+            is_list = true;
+        } else if self.system.is_class(items.typ) {
+            todo!()
+        } else {
+            let _ = self.error::<()>(ErrorType::CannotIterateOverType(
+                self.system.typename(items.typ),
+            ));
+        }
+        let save = self.allow_insert;
+        self.allow_insert = Some(internal_type);
+        let reference = self.expr(*f.reference);
+        self.allow_insert = save;
+        let body = self.expr(*f.body)?;
+        Ok((
+            TypedExpressionType::For(TypedFor {
+                body: Box::new(body),
+                items: Box::new(items),
+                reference: Box::new(reference?),
+                is_list,
+                internal_type,
+            }),
+            UNIT,
+        ))
     }
 
     fn ifexpr(&mut self, i: If) -> Result<(TypedExpressionType, Type), ()> {
@@ -1407,21 +1449,12 @@ impl TypeChecker {
         ))
     }
 
-    #[allow(dead_code)]
     fn call_lambda(
         &mut self,
         lambda: TypedLambda,
         mut args: Vec<TypedExpression>,
         funcloc: &Location,
     ) -> Result<(TypedExpression, Option<usize>), ()> {
-        // There may be a systen where we can cache the results of these expressions
-        // But currently I'm not 100% sure on the relationship between functions and types
-        // And it seems like I should move the the resolved/unresolved system I use for classes
-        // But this should work
-        // if let Some(t) = self.system.match_signature(functype, &args) {
-        // return Ok(t);
-        // }
-
         swap(&mut self.lambda_args, &mut args);
         let argtypes = args.iter().map(|a| a.typ).collect();
         self.openscope();

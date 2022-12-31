@@ -484,8 +484,11 @@ impl TypeSystem {
         matches!(self.types[opt].te_type, TypeEntryType::Option(_))
     }
 
-    pub fn is_list(&self, list: Type) -> bool {
-        matches!(self.types[list].te_type, TypeEntryType::List(_))
+    pub fn get_typeof_list_type(&self, list: Type) -> Option<Type> {
+        match self.types[list].te_type {
+            TypeEntryType::List(t) => Some(t),
+            _ => None,
+        }
     }
 
     pub fn function_get_resolved(&self, func: Type, args: &[Type]) -> Option<Type> {

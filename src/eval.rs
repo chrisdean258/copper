@@ -393,6 +393,7 @@ impl Evaluator {
                     let b = reg;
                     reg = Value::Bool(0);
                     reg = match (a, b) {
+                        (Value::Ptr(aa), Value::Ptr(bb)) => Value::Bool(u8::from(bb == aa)),
                         (Value::Count(aa), Value::Count(bb)) => Value::Bool(u8::from(bb == aa)),
                         (Value::Float(aa), Value::Float(bb)) => Value::Bool(u8::from(bb == aa)),
                         (Value::Int(aa), Value::Int(bb)) => Value::Bool(u8::from(bb == aa)),
