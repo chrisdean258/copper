@@ -485,21 +485,6 @@ impl TypeChecker {
         place
     }
 
-    fn func_mangle_name_scope_insert(&mut self, name: &str, sig: Signature) {
-        let mut idx = None;
-        for (i, scope) in self.func_scopes.iter().rev().enumerate() {
-            if scope.borrow().get(name).is_some() {
-                idx = Some(self.scopes.len() - i - 1);
-                break;
-            }
-        }
-        let idx = idx.expect("If not this is bug");
-        let typ = self.system.func_type_from_sig(&sig);
-        self.scopes[idx]
-            .borrow_mut()
-            .insert(self.system.mangle(name, &sig), typ);
-    }
-
     fn openscope(&mut self) {
         self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
         self.func_scopes.push(Rc::new(RefCell::new(HashMap::new())));
@@ -1056,7 +1041,7 @@ impl TypeChecker {
                 location: loc,
                 typ,
             };
-            self.call_function(func, subject, args, argtypes, false)
+            self.call_function(func, subject, args, argtypes)
         } else if cd.classdecl.fields.contains_key(&m.method_name) {
             let expr = parser::CallExpr {
                 function: Box::new(parser::Expression {
@@ -1124,9 +1109,9 @@ impl TypeChecker {
         }
 
         if let TypedExpressionType::DirectFuncRef(f) = &subject.etype {
-            self.call_function(f.clone(), subject, args, argtypes, true)
+            self.call_function(f.clone(), subject, args, argtypes)
         } else if let Some(func) = self.type_to_func.get(&subject.typ) {
-            self.call_function(func.clone(), subject, args, argtypes, true)
+            self.call_function(func.clone(), subject, args, argtypes)
         } else if let Some(lambda) = self.type_to_lambda.get(&subject.typ) {
             self.call_lambda_with_args(lambda.clone(), subject, args)
         } else {
@@ -1169,13 +1154,8 @@ impl TypeChecker {
             typ: UNIT,
             etype: TypedExpressionType::DirectFuncRef(init.clone()),
         };
-        let (tet, _typ) = self.call_function(
-            init.clone(),
-            new_subject,
-            args.clone(),
-            argtypes.clone(),
-            false,
-        )?;
+        let (tet, _typ) =
+            self.call_function(init.clone(), new_subject, args.clone(), argtypes.clone())?;
 
         let TypedExpressionType::CallExpr(tce) = tet else {
             panic!("weird return type {:?}", tet);
@@ -1196,7 +1176,6 @@ impl TypeChecker {
         subject: TypedExpression,
         mut args: Vec<TypedExpression>,
         mut argtypes: Vec<Type>,
-        insert_into_scope: bool,
     ) -> Result<(TypedExpressionType, Type), ()> {
         let mut b = match f.try_borrow_mut() {
             Ok(a) => a,
@@ -1247,13 +1226,8 @@ impl TypeChecker {
         let sig_idx = b.signatures.len();
         b.typed_bodies.push(te.clone());
         b.code_locations.borrow_mut().push(0);
-        b.signatures.push(func_sig.clone());
+        b.signatures.push(func_sig);
 
-        if insert_into_scope {
-            if let Some(name) = &b.function.name {
-                self.func_mangle_name_scope_insert(name, func_sig);
-            }
-        }
         Ok((
             TypedExpressionType::CallExpr(TypedCallExpr {
                 function: Box::new(subject),

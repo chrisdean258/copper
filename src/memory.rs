@@ -4,7 +4,7 @@ use crate::value::Value;
 use std::ops::{Index, IndexMut};
 
 pub const HEAP: usize = 0x10000000;
-pub const STACK: usize = 0x6000000;
+pub const STACK: usize = 0x6000001;
 pub const CODE: usize = 0x100000;
 pub const BUILTIN_CODE: usize = 0x10000;
 
@@ -19,7 +19,7 @@ pub struct Memory {
 impl Memory {
     pub fn new() -> Self {
         Self {
-            stack: Vec::new(),
+            stack: vec![Value::Uninitialized],
             heap: vec![
                 (HEAP, Allocator::new(1 << 0)),
                 (HEAP * 2, Allocator::new(1 << 1)),
