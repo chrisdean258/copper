@@ -51,8 +51,18 @@ pub enum ExpressionType {
 
 impl Expression {
     pub fn is_lval(&self) -> bool {
-        use ExpressionType::*;
-        matches!(self.etype, RefExpr(_) | IndexExpr(_) | DottedLookup(_))
+        self.etype.is_lval()
+    }
+}
+
+impl ExpressionType {
+    pub fn is_lval(&self) -> bool {
+        matches!(
+            self,
+            ExpressionType::RefExpr(_)
+                | ExpressionType::IndexExpr(_)
+                | ExpressionType::DottedLookup(_)
+        )
     }
 }
 
@@ -782,35 +792,30 @@ impl ParseTree {
             Equal => {
                 lexer.next();
                 allow_decl = true;
-                match lhs.etype {
-                    ExpressionType::RefExpr(_) => lhs,
-                    ExpressionType::IndexExpr(_) => lhs,
-                    ExpressionType::DottedLookup(_) => lhs,
-                    _ => return unexpected(token),
+                if lhs.is_lval() {
+                    lhs
+                } else {
+                    return unexpected(token);
                 }
             }
             LeftArrow => {
                 lexer.next();
                 allow_decl = true;
-                match lhs.etype {
-                    ExpressionType::RefExpr(_) => lhs,
-                    ExpressionType::IndexExpr(_) => lhs,
-                    ExpressionType::DottedLookup(_) => lhs,
-                    _ => return unexpected(token),
+                if lhs.is_lval() {
+                    lhs
+                } else {
+                    return unexpected(token);
                 }
             }
             AndEq | XorEq | OrEq | PlusEq | MinusEq | TimesEq | DivEq | ModEq | BitShiftLeftEq
-            | BitShiftRightEq => match lhs.etype {
-                ExpressionType::RefExpr(_) => {
+            | BitShiftRightEq => {
+                if lhs.is_lval() {
                     lexer.next();
                     lhs
+                } else {
+                    return unexpected(token);
                 }
-                ExpressionType::IndexExpr(_) => {
-                    lexer.next();
-                    lhs
-                }
-                _ => return unexpected(token),
-            },
+            }
             _ => return lhs,
         };
         let rhs = self.parse_eq(lexer);
