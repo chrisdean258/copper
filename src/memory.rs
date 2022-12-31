@@ -19,7 +19,7 @@ pub struct Memory {
 impl Memory {
     pub fn new() -> Self {
         Self {
-            stack: vec![Value::Uninitialized],
+            stack: vec![Value::Sentinel],
             heap: vec![
                 (HEAP, Allocator::new(1 << 0)),
                 (HEAP * 2, Allocator::new(1 << 1)),
@@ -33,7 +33,7 @@ impl Memory {
                 (HEAP * 10, Allocator::new(1 << 9)),
             ],
             strings: Vec::new(),
-            oob: Value::Uninitialized,
+            oob: Value::Sentinel,
         }
     }
 
@@ -123,6 +123,7 @@ impl Memory {
 }
 
 impl IndexMut<usize> for Memory {
+    #[inline(always)]
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
         self.stack
             .get_mut(addr - STACK)
@@ -133,6 +134,7 @@ impl IndexMut<usize> for Memory {
 
 impl Index<usize> for Memory {
     type Output = Value;
+    #[inline(always)]
     fn index(&self, addr: usize) -> &Self::Output {
         self.stack
             .get(addr - STACK)

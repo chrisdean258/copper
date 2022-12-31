@@ -898,6 +898,7 @@ impl TypeChecker {
                 make_option = true;
             } else if rvtyp == UNKNOWN_RETURN {
                 rvtyp = typ;
+            } else if typ == UNKNOWN_RETURN {
             } else if rvtyp != typ {
                 return_unit = true;
             }

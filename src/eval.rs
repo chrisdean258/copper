@@ -163,11 +163,7 @@ impl Evaluator {
                 }
                 MachineOperation::Load => match reg {
                     Value::Ptr(addr) => {
-                        if let Some(v) = self.memory.get(addr) {
-                            reg = *v
-                        } else if cfg!(debug_assertions) {
-                            panic!("Reading out of bounds 0x{:x}", addr);
-                        }
+                        reg = self.memory[addr];
                     }
                     Value::StrIdx(s, i) => {
                         let s = self.memory.strings[s as usize].as_bytes();
@@ -181,40 +177,22 @@ impl Evaluator {
                     a => panic!("Trying to deref `{a:?}`"),
                 },
                 MachineOperation::LoadAddr(addr) => {
-                    if let Some(v) = self.memory.get(*addr) {
-                        let v = *v;
-                        push!(v);
-                    } else if cfg!(debug_assertions) {
-                        panic!("Reading out of bounds 0x{:x}", addr);
-                    }
+                    push!(self.memory[*addr]);
                 }
                 MachineOperation::LoadLocal(o) => {
                     let ptr = (self.bp as isize + o) as usize;
                     self.memory.push(reg);
-                    if let Some(v) = self.memory.get(ptr) {
-                        reg = *v;
-                    }
+                    reg = self.memory[ptr];
                 }
                 MachineOperation::Store => {
                     // intentional direct stack manipulation for optiization
                     let addr = as_type!(self.memory.pop(), Value::Ptr);
-                    if let Some(v) = self.memory.get_mut(addr) {
-                        *v = reg;
-                    } else if cfg!(debug_assertions) {
-                        panic!("Writing out of bounds 0x{:x}", addr);
-                    }
+                    self.memory[addr] = reg;
                 }
                 MachineOperation::FastStore => {
                     let addr = as_type!(self.memory.pop(), Value::Ptr);
                     self.memory[addr] = reg;
                     reg = self.memory.pop();
-
-                    // This is the old impl. Haven't worked out if this new one is 100% yet
-                    //let value = pop!();
-                    // do not try to optimize to a pop! as we might write to that spot in memory
-                    //let addr = as_type!(reg, Value::Ptr);
-                    //self.memory[addr] = value;
-                    //reg = self.memory.pop();
                 }
                 MachineOperation::StoreN(num) => {
                     //intentional direct stack manipulation
@@ -303,6 +281,8 @@ impl Evaluator {
                     let num_args = inplace!(Value::Count);
                     let bp = self.memory.stack_top() - num_args;
 
+                    // This may be a bug with a path thats never hit yet
+                    // Should be using bp in the following not self.bp
                     if newip < CODE {
                         let builtin_idx = newip - BUILTIN_CODE;
                         let rv = (self.builtin_table[builtin_idx].func)(self, self.bp, num_args);
@@ -418,12 +398,7 @@ impl Evaluator {
                         (Value::Int(aa), Value::Int(bb)) => Value::Bool(u8::from(bb == aa)),
                         (Value::Char(aa), Value::Char(bb)) => Value::Bool(u8::from(bb == aa)),
                         (Value::Bool(aa), Value::Bool(bb)) => Value::Bool(u8::from(bb == aa)),
-                        // (Value::Null, Value::Null) => Value::Bool(1),
-                        // (Value::Null, Value::None(_)) => Value::Bool(1),
-                        // (Value::None(_), Value::Null) => Value::Bool(1),
                         (Value::None(aa), Value::None(bb)) => Value::Bool(u8::from(bb == aa)),
-                        // (Value::Null, _) => Value::Bool(0),
-                        // (_, Value::Null) => Value::Bool(0),
                         (Value::None(_), _) => Value::Bool(0),
                         (_, Value::None(_)) => Value::Bool(0),
                         (Value::Str(aa), Value::Str(bb)) => Value::Bool(u8::from(
@@ -446,7 +421,8 @@ impl Evaluator {
                         (Value::None(_), _) => Value::Bool(1),
                         (_, Value::None(_)) => Value::Bool(1),
                         (Value::Str(aa), Value::Str(bb)) => Value::Bool(u8::from(
-                            bb != aa || self.memory.strings[bb] != self.memory.strings[aa],
+                            // Check identity before doing full string comparison
+                            bb != aa && self.memory.strings[bb] != self.memory.strings[aa],
                         )),
                         (_, b) => {
                             unreachable!("Trying to apply binop {:?} != {:?}", a, b)

@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Value {
+    Sentinel,
     Uninitialized,
     None(usize),
     Bool(u8),
@@ -19,6 +20,7 @@ pub enum Value {
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
+            Value::Sentinel => write!(f, "sentinel"),
             Value::Uninitialized => write!(f, "uninit"),
             Value::None(_) => write!(f, "null"),
             Value::Bool(b) => write!(f, "{}", if *b == 0 { "false" } else { "true" }),
@@ -44,6 +46,7 @@ impl Display for Value {
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
+            Value::Sentinel => write!(f, "Sentinel"),
             Value::Uninitialized => write!(f, "Uninit"),
             Value::None(t) => write!(f, "None({t})"),
             Value::Bool(b) => write!(f, "Bool({self} = {b})"),
