@@ -243,6 +243,10 @@ impl Compiler {
             if self.types.as_ref().unwrap().is_option(b.lhs.typ) {
                 self.code.push(Value::None(b.lhs.typ));
                 self.code.emit(MachineOperation::CmpNotEq);
+            } else if b.lhs.typ == NULL {
+                // TODO: Figure out what this is actually supposed to be value wise
+                self.code.push(Value::None(NULL));
+                self.code.emit(MachineOperation::CmpNotEq);
             }
             let from = self.code.jump_relative_if(0);
             self.code.pop();

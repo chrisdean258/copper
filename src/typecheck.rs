@@ -708,6 +708,16 @@ impl TypeChecker {
 
     fn refexpr(&mut self, r: RefExpr) -> Result<(TypedExpressionType, Type), ()> {
         match (self.scope_lookup(&r.name), self.allow_insert) {
+            (Some(UNREACHABLE), Some(typ)) | (None, Some(typ)) => {
+                self.insert_scope(&r.name, typ);
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: true,
+                    }),
+                    typ,
+                ));
+            }
             (Some(t), _) => {
                 return Ok((
                     if t == BUILTIN_FUNCTION {
@@ -721,16 +731,6 @@ impl TypeChecker {
                         })
                     },
                     t,
-                ));
-            }
-            (None, Some(typ)) => {
-                self.insert_scope(&r.name, typ);
-                return Ok((
-                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
-                        name: r.name,
-                        is_decl: true,
-                    }),
-                    typ,
                 ));
             }
             (None, None) => (),
@@ -762,12 +762,16 @@ impl TypeChecker {
         }
         self.allow_insert = Some(rhs.typ);
         if a.op == Operation::Extract {
-            if !self.system.is_option(rhs.typ) {
+            if rhs.typ != NULL && !self.system.is_option(rhs.typ) {
                 return self.error(ErrorType::CannotExtractFromNonOption(
                     self.system.typename(rhs.typ),
                 ));
             }
-            self.allow_insert = self.system.underlying_type(rhs.typ);
+            if rhs.typ == NULL {
+                self.allow_insert = Some(UNREACHABLE);
+            } else {
+                self.allow_insert = self.system.underlying_type(rhs.typ);
+            }
         }
         let lhs = self.expr(*a.lhs);
         self.allow_insert = None;
@@ -891,7 +895,12 @@ impl TypeChecker {
     fn ifexpr_int(&mut self, i: If, is_and_if: bool) -> Result<(TypedIf, Type), ()> {
         let mut make_option = false;
         let mut return_unit = i.else_body.is_none();
-        let cond = self.expr(*i.condition);
+        let cond = self.expr(*i.condition)?;
+        if cond.typ != BOOL && cond.typ != UNKNOWN_RETURN {
+            self.error(ErrorType::IfConditionNotBool(
+                self.system.typename(cond.typ),
+            ))?;
+        }
 
         let body = self.expr(*i.body);
         let and_bodies_res: Vec<(_, Location)> = i
@@ -901,12 +910,6 @@ impl TypeChecker {
             .collect();
         let else_body_opt_res = i.else_body.map(|b| self.expr(*b));
 
-        let cond = cond?;
-        if cond.typ != BOOL && cond.typ != UNKNOWN_RETURN {
-            self.error(ErrorType::IfConditionNotBool(
-                self.system.typename(cond.typ),
-            ))?;
-        }
         let else_body = if let Some(r) = else_body_opt_res {
             Some(r?)
         } else {
@@ -1313,6 +1316,20 @@ impl TypeChecker {
             argtypes.push(e.typ);
             args.push(e);
         }
+
+        let len = argtypes.len();
+        let def_args_all = self.vec_of_exprs(f.function.default_args.clone())?;
+        for (i, def) in def_args_all.iter().rev().enumerate() {
+            if (def.typ == NULL || self.system.is_option(def.typ))
+                && argtypes[len - 1 - i] != def.typ
+            {
+                let typ = argtypes[len - 1 - i];
+                let newtype = self.system.option_type(typ);
+                argtypes[len - 1 - i] = newtype;
+                args[len - 1 - i].typ = newtype;
+            }
+        }
+
         Ok(())
     }
 
@@ -1481,11 +1498,11 @@ impl TypeChecker {
         };
         let field_type = objref.fields[obj_idx];
         let typ = match (field_type, self.allow_insert) {
-            (Some(ft), _) => ft,
-            (None, Some(ai)) => {
+            (None, Some(ai)) | (Some(UNREACHABLE), Some(ai)) => {
                 objref.fields[obj_idx] = Some(ai);
                 ai
             }
+            (Some(ft), _) => ft,
             (None, None) => {
                 drop(cd);
                 return self.error(ErrorType::UninitializedAssignment);

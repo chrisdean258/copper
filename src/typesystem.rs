@@ -237,6 +237,10 @@ impl TypeSystem {
             STR, STR => BOOL,
         );
 
+        make_op!(CmpEq, CmpNotEq |
+            NULL, NULL => BOOL
+        );
+
         make_op!(BitShiftLeft, BitShiftRight |
             CHAR, CHAR => CHAR,
             CHAR, INT => CHAR,
@@ -298,8 +302,9 @@ impl TypeSystem {
             FLOAT => FLOAT,
         );
 
-        self.ensure_op(Operation::Deref);
-        self.ensure_op(Operation::Extract);
+        make_op!(Deref |
+            NULL => UNREACHABLE,
+        );
     }
 
     pub fn ensure_op(&mut self, operation: Operation) {
@@ -319,6 +324,10 @@ impl TypeSystem {
         });
         let rv = self.types.len() - 1;
         self.types_by_name.insert(name, rv);
+        // This is mainly for default args
+        // But also a little hacky because we have no gaurantee that NULL exists yet
+        self.add_signature(Operation::BoolOr, sig!(NULL, rv => rv));
+        self.add_signature(Operation::Extract, sig!(rv, NULL => BOOL));
         rv
     }
 
@@ -401,6 +410,7 @@ impl TypeSystem {
     }
 
     pub fn add_signature(&mut self, op: Operation, sig: Signature) {
+        self.ensure_op(op);
         self.operations.get_mut(&op).unwrap().signatures.push(sig);
     }
 
@@ -423,6 +433,13 @@ impl TypeSystem {
 
     pub fn lookup_assign(&self, aop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
         debug_assert!(aop.is_assignop());
+        if lhs == UNREACHABLE {
+            return if aop == Operation::Extract {
+                Some(BOOL)
+            } else {
+                Some(rhs)
+            };
+        }
         if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
             return Some(UNKNOWN_RETURN);
         }
