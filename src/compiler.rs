@@ -206,7 +206,8 @@ impl Compiler {
     fn expr_dont_call_without_handling_needs_ref(&mut self, e: &TypedExpression) {
         match &e.etype {
             TypedExpressionType::While(w) => self.whileexpr(w),
-            TypedExpressionType::For(f) => self.forexpr(f),
+            TypedExpressionType::ForList(f) => self.forlist(f),
+            TypedExpressionType::ForClass(f) => self.forclass(f),
             TypedExpressionType::If(i) => self.ifexpr(i),
             TypedExpressionType::CallExpr(c) => self.call(c),
             TypedExpressionType::BuiltinFuncRefExpr(b) => self.builtinfuncrefexpr(b),
@@ -500,10 +501,60 @@ impl Compiler {
         }
     }
 
-    fn forexpr(&mut self, f: &TypedFor) {
-        if !f.is_list {
-            todo!();
+    fn forclass(&mut self, f: &TypedForClass) {
+        self.get_value(&f.items);
+        self.code.push(Value::Count(1));
+        let arg_types = replace(&mut self.arg_types, Some(vec![f.items.typ]));
+        let save_sig_idx = replace(&mut self.cur_sig_idx, Some(f.iter_func_sig_idx));
+        let addr = self.single_function(&f.iter_func, f.iter_func_sig_idx);
+        self.code.push(Value::Ptr(addr));
+        self.cur_sig_idx = save_sig_idx;
+        self.arg_types = arg_types;
+        self.code.call(); // iter
+
+        let top = self.code.dup(); // iter iter
+        self.get_ref(&f.reference); // iter iter ref
+        self.code.swap(); // iter ref iter
+        self.code.push(Value::Count(1)); // iter ref iter 1
+        let arg_types = replace(&mut self.arg_types, Some(vec![f.mid_typ]));
+        let save_sig_idx = replace(&mut self.cur_sig_idx, Some(f.next_func_sig_idx));
+        let addr = self.single_function(&f.next_func, f.next_func_sig_idx);
+        self.code.push(Value::Ptr(addr));
+        self.cur_sig_idx = save_sig_idx;
+        self.arg_types = arg_types;
+        self.code.call(); // iter ref item
+        let mut goto_end = None;
+        if self.types.as_ref().unwrap().is_option(f.none_type) {
+            self.code.dup(); // iter ref item item
+            self.code.push(Value::None(f.none_type)); // iter ref item item None
+            self.code.emit(MachineOperation::CmpEq); // iter ref item is_null
+            goto_end = Some(self.code.jump_relative_if(0));
         }
+
+        self.code.store(); // iter item
+        self.code.pop(); // iter
+        let mut breaks = take(&mut self.breaks);
+        let mut continues = take(&mut self.continues);
+        self.get_value(&f.body); // iter junk
+        swap(&mut self.breaks, &mut breaks);
+        swap(&mut self.continues, &mut continues);
+        self.code.pop(); // iter
+        self.code.jump_relative(top as isize);
+
+        let end = self.code.next_function_relative_addr();
+
+        if let Some(ge) = goto_end {
+            self.code.backpatch_jump_rel(ge, end as isize);
+        }
+        for addr in breaks {
+            self.code.backpatch_jump_rel(addr, end as isize);
+        }
+        for addr in continues {
+            self.code.backpatch_jump_rel(addr, top as isize);
+        }
+    }
+
+    fn forlist(&mut self, f: &TypedForList) {
         self.get_value(&f.items);
         self.code.cast(Value::Ptr(0)); // L
         self.code.dup(); // L L
@@ -591,8 +642,11 @@ impl Compiler {
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
             } else {
-                self.code.emit(MachineOperation::BoolNot);
-                let jump_to_end = self.code.jump_relative_if(0);
+                let true_branch = self.code.jump_relative_if(0);
+                self.code.push(Value::Uninitialized);
+                let jump_to_end = self.code.jump_relative(0);
+                let true_loc = self.code.next_function_relative_addr();
+                self.code.backpatch_jump_rel(true_branch, true_loc as isize);
                 self.get_value(i.body.as_ref());
                 let end = self.code.next_function_relative_addr();
                 self.code.backpatch_jump_rel(jump_to_end, end as isize);
@@ -767,13 +821,10 @@ impl Compiler {
     fn call(&mut self, c: &TypedCallExpr) {
         let save_extra = self.extra_args;
         self.extra_args = 0;
-        let alloc_before_call_num = 0;
         for arg in c.args.iter() {
             self.get_value(arg);
         }
-        self.code.push(Value::Count(
-            c.args.len() + self.extra_args + alloc_before_call_num,
-        ));
+        self.code.push(Value::Count(c.args.len() + self.extra_args));
         self.extra_args = save_extra;
 
         let mut arg_types = Some(c.args.iter().map(|a| a.typ).collect());

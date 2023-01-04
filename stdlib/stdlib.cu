@@ -16,6 +16,10 @@ class range {
 	}
 
 	fn __iter__(self) {
+		self
+	}
+
+	fn __next__(self) {
 		val = self.current
 		if (self.stride > 0 && val >= self.stop) || (self.stride < 0 && val <= self.stop)
 			null

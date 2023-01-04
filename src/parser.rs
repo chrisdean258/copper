@@ -632,6 +632,7 @@ impl ParseTree {
                     // TODO: need to do recovery here because we depend on the output
                     let fun = match funexpr.etype {
                         ExpressionType::Function(f) => f.clone(),
+                        ExpressionType::ParseError(pe) => return Statement::ParseError(pe),
                         _ => unreachable!(),
                     };
                     // Unwrap OK because parse_function required a name

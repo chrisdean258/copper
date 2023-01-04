@@ -2,12 +2,12 @@ a = range(0, 10, 1)
 b = range(0, 10)
 c = range(10)
 
-while i <- a.__iter__() {
+while i <- a.__next__() {
 	print(i)
 }
-while i <- b.__iter__() {
+while i <- b.__next__() {
 	print(i)
 }
-while i <- c.__iter__() {
+while i <- c.__next__() {
 	print(i)
 }

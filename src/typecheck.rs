@@ -26,6 +26,8 @@ pub enum ErrorType {
     CannotIndexType(String),
     CannotIndirectlyCallBuiltins,
     CannotIterateOverType(String),
+    CannotIterateOverTypeLacksInit(String),
+    CannotIterateOverTypeLacksNext(String),
     CannotReturnTypeFromNonFunction(String),
     ClassHasNoFieldOrMethod(String, String),
     EmptyBlock,
@@ -69,6 +71,8 @@ impl std::fmt::Display for ErrorType {
             Self::CannotIndexType(t) => write!(f,  "Cannot index into type `{t}`"),
             Self::CannotIndirectlyCallBuiltins => write!(f, "Cannot indirectly call buitins yet"),
             Self::CannotIterateOverType(t) => write!(f, "Cannot iterate over type `{t}`"),
+            Self::CannotIterateOverTypeLacksInit(t) => write!(f, "Cannot iterate over class `{t}` as it lacks the __init__ method"),
+            Self::CannotIterateOverTypeLacksNext(t) => write!(f, "Cannot iterate over class `{t}` as it lacks the __next__ method"),
             Self::CannotReturnTypeFromNonFunction(t) => write!(f,  "Cannot return type `{t}` from outside a function"),
             Self::ClassHasNoFieldOrMethod(t, fm) => write!(f,  "Class `{t}` has no field or method `{fm}`",),
             Self::ContinueNotAllowed => write!(f, "`continue` not allowed outside of loops"),
@@ -143,7 +147,8 @@ pub struct TypedExpression {
 #[derive(Debug, Clone)]
 pub enum TypedExpressionType {
     While(TypedWhile),
-    For(TypedFor),
+    ForList(TypedForList),
+    ForClass(TypedForClass),
     If(TypedIf),
     CallExpr(TypedCallExpr),
     InitExpr(TypedInitExpr),
@@ -239,12 +244,24 @@ pub struct TypedWhile {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypedFor {
+pub struct TypedForList {
     pub reference: Box<TypedExpression>,
     pub items: Box<TypedExpression>,
     pub body: Box<TypedExpression>,
-    pub is_list: bool,
     pub internal_type: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedForClass {
+    pub reference: Box<TypedExpression>,
+    pub items: Box<TypedExpression>,
+    pub body: Box<TypedExpression>,
+    pub iter_func: TypedFunction,
+    pub iter_func_sig_idx: usize,
+    pub next_func: TypedFunction,
+    pub next_func_sig_idx: usize,
+    pub mid_typ: Type,
+    pub none_type: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -850,37 +867,114 @@ impl TypeChecker {
 
     fn forexpr(&mut self, f: For) -> Result<(TypedExpressionType, Type), ()> {
         let items = self.expr(*f.items);
-        let mut is_list = false;
-        let mut internal_type = UNKNOWN_RETURN;
         if !f.reference.is_lval() {
             let _ = self.error::<()>(ErrorType::NotAssignable);
         }
         let items = items?;
         if let Some(typ) = self.system.get_typeof_list_type(items.typ) {
-            internal_type = typ;
-            is_list = true;
-        } else if self.system.is_class(items.typ) {
-            todo!()
+            let save = self.allow_insert;
+            self.allow_insert = Some(typ);
+            let reference = self.expr(*f.reference);
+            self.allow_insert = save;
+            let save_in_loop = replace(&mut self.in_loop, true);
+            let body = self.expr(*f.body)?;
+            self.in_loop = save_in_loop;
+            Ok((
+                TypedExpressionType::ForList(TypedForList {
+                    body: Box::new(body),
+                    items: Box::new(items),
+                    reference: Box::new(reference?),
+                    internal_type: typ,
+                }),
+                UNIT,
+            ))
+        } else if self.system.is_object(items.typ) {
+            let classdecl = self.type_to_obj.get(&items.typ).unwrap();
+            let classdecl2 = classdecl.clone();
+            let cd = classdecl2.classdecl.borrow();
+            let Some((iter, loc)) = cd.methods.get("__iter__") else {
+                drop(cd);
+                return self.error(ErrorType::CannotIterateOverTypeLacksInit(
+                        self.system.typename(items.typ),
+                ));
+            };
+            let (middle, mid_typ) = self.call_function(
+                iter.clone(),
+                TypedExpression {
+                    etype: TypedExpressionType::DirectFuncRef(iter.clone()),
+                    location: loc.clone(),
+                    typ: UNKNOWN_RETURN,
+                },
+                vec![items.clone()],
+                vec![items.typ],
+            )?;
+
+            let TypedExpressionType::CallExpr(ce) = &middle else {
+                panic!("call_function did not return a TypedCallExpr");
+            };
+            let iter_sig_idx = ce.sig_idx.unwrap();
+
+            let iterclassdecl = match self.type_to_obj.get(&mid_typ) {
+                Some(cd) => cd.clone(),
+                None => {
+                    return self.error(ErrorType::CannotIterateOverTypeLacksNext(
+                        self.system.typename(mid_typ),
+                    ))
+                }
+            };
+            let iterclassdecl2 = iterclassdecl;
+            let cd = iterclassdecl2.classdecl.borrow();
+            let Some((next, loc)) = cd.methods.get("__next__") else {
+                return self.error(ErrorType::CannotIterateOverTypeLacksNext(
+                        self.system.typename(mid_typ),
+                ))
+            };
+
+            let (item, item_typ) = self.call_function(
+                next.clone(),
+                TypedExpression {
+                    etype: TypedExpressionType::DirectFuncRef(next.clone()),
+                    location: loc.clone(),
+                    typ: UNKNOWN_RETURN,
+                },
+                vec![TypedExpression {
+                    etype: middle,
+                    location: loc.clone(),
+                    typ: mid_typ,
+                }],
+                vec![mid_typ],
+            )?;
+            let TypedExpressionType::CallExpr(ce) = &item else {
+                panic!("call_function did not return a TypedCallExpr");
+            };
+            let next_sig_idx = ce.sig_idx.unwrap();
+
+            let save = self.allow_insert;
+            self.allow_insert = Some(item_typ);
+            let reference = self.expr(*f.reference);
+            self.allow_insert = save;
+            let save_in_loop = replace(&mut self.in_loop, true);
+            let body = self.expr(*f.body)?;
+            self.in_loop = save_in_loop;
+            Ok((
+                TypedExpressionType::ForClass(TypedForClass {
+                    items: Box::new(items),
+                    body: Box::new(body),
+                    reference: Box::new(reference?),
+                    iter_func: iter.clone(),
+                    iter_func_sig_idx: iter_sig_idx,
+                    next_func: next.clone(),
+                    next_func_sig_idx: next_sig_idx,
+                    mid_typ,
+                    none_type: item_typ,
+                }),
+                UNIT,
+            ))
         } else {
-            let _ = self.error::<()>(ErrorType::CannotIterateOverType(
+            self.error(ErrorType::CannotIterateOverType(
                 self.system.typename(items.typ),
-            ));
+            ))
         }
-        let save = self.allow_insert;
-        self.allow_insert = Some(internal_type);
-        let reference = self.expr(*f.reference);
-        self.allow_insert = save;
-        let body = self.expr(*f.body)?;
-        Ok((
-            TypedExpressionType::For(TypedFor {
-                body: Box::new(body),
-                items: Box::new(items),
-                reference: Box::new(reference?),
-                is_list,
-                internal_type,
-            }),
-            UNIT,
-        ))
     }
 
     fn ifexpr(&mut self, i: If) -> Result<(TypedExpressionType, Type), ()> {
@@ -1177,10 +1271,10 @@ impl TypeChecker {
         let cd = cdc.borrow();
         let Some((init, location)) = cd.methods.get("__init__") else {
             return Ok((
-                TypedExpressionType::InitExpr(TypedInitExpr {
-                    alloc_before_call: to_alloc,
-                    callexpr: None,
-                }), subject.typ
+                    TypedExpressionType::InitExpr(TypedInitExpr {
+                        alloc_before_call: to_alloc,
+                        callexpr: None,
+                    }), subject.typ
             ));
         };
         let rvtype = self.system.class_variant(subject.typ);

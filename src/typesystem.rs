@@ -497,6 +497,10 @@ impl TypeSystem {
         matches!(&self.types[func].te_type, TypeEntryType::Class(_))
     }
 
+    pub fn is_object(&self, func: Type) -> bool {
+        matches!(&self.types[func].te_type, TypeEntryType::ClassVariant(_))
+    }
+
     pub fn is_option(&self, opt: Type) -> bool {
         matches!(self.types[opt].te_type, TypeEntryType::Option(_))
     }
