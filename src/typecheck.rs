@@ -762,16 +762,12 @@ impl TypeChecker {
         }
         self.allow_insert = Some(rhs.typ);
         if a.op == Operation::Extract {
-            if rhs.typ != NULL && !self.system.is_option(rhs.typ) {
+            if !self.system.is_option(rhs.typ) {
                 return self.error(ErrorType::CannotExtractFromNonOption(
                     self.system.typename(rhs.typ),
                 ));
             }
-            if rhs.typ == NULL {
-                self.allow_insert = Some(UNREACHABLE);
-            } else {
-                self.allow_insert = self.system.underlying_type(rhs.typ);
-            }
+            self.allow_insert = self.system.underlying_type(rhs.typ);
         }
         let lhs = self.expr(*a.lhs);
         self.allow_insert = None;
@@ -962,6 +958,10 @@ impl TypeChecker {
         if return_unit {
             rvtyp = UNIT;
         } else if make_option {
+            // TODO: This can cause some awkwardness with else if statements
+            // e.g
+            // `if false null else if true null else 1`
+            // will return an Option<Option<int>> rather than an Option<int>
             rvtyp = self.system.option_type(rvtyp);
             ti.makes_option = Some(rvtyp);
         }
@@ -1320,9 +1320,7 @@ impl TypeChecker {
         let len = argtypes.len();
         let def_args_all = self.vec_of_exprs(f.function.default_args.clone())?;
         for (i, def) in def_args_all.iter().rev().enumerate() {
-            if (def.typ == NULL || self.system.is_option(def.typ))
-                && argtypes[len - 1 - i] != def.typ
-            {
+            if self.system.is_option(def.typ) && argtypes[len - 1 - i] != def.typ {
                 let typ = argtypes[len - 1 - i];
                 let newtype = self.system.option_type(typ);
                 argtypes[len - 1 - i] = newtype;

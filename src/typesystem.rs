@@ -204,13 +204,13 @@ impl TypeSystem {
             TypeEntryType::Basic,
             BUILTIN_FUNCTION,
         );
-        self.new_type_with_num(String::from("null"), TypeEntryType::Basic, NULL);
-        self.new_type_with_num(String::from("ptr"), TypeEntryType::Basic, PTR);
-        self.new_type_with_num(String::from("bool"), TypeEntryType::Basic, BOOL);
-        self.new_type_with_num(String::from("char"), TypeEntryType::Basic, CHAR);
-        self.new_type_with_num(String::from("int"), TypeEntryType::Basic, INT);
-        self.new_type_with_num(String::from("float"), TypeEntryType::Basic, FLOAT);
-        self.new_type_with_num(String::from("str"), TypeEntryType::List(CHAR), STR);
+        self.option_type_with_name(UNREACHABLE, "null".into());
+        self.new_type_with_num("ptr".into(), TypeEntryType::Basic, PTR);
+        self.new_type_with_num("bool".into(), TypeEntryType::Basic, BOOL);
+        self.new_type_with_num("char".into(), TypeEntryType::Basic, CHAR);
+        self.new_type_with_num("int".into(), TypeEntryType::Basic, INT);
+        self.new_type_with_num("float".into(), TypeEntryType::Basic, FLOAT);
+        self.new_type_with_num("str".into(), TypeEntryType::List(CHAR), STR);
     }
 
     fn add_default_ops(&mut self) {
@@ -237,10 +237,6 @@ impl TypeSystem {
             STR, STR => BOOL,
         );
 
-        make_op!(CmpEq, CmpNotEq |
-            NULL, NULL => BOOL
-        );
-
         make_op!(BitShiftLeft, BitShiftRight |
             CHAR, CHAR => CHAR,
             CHAR, INT => CHAR,
@@ -263,9 +259,6 @@ impl TypeSystem {
         );
 
         make_op!(Equal |
-           NULL, NULL => NULL,
-           BOOL, BOOL => BOOL,
-           CHAR, CHAR => CHAR,
            INT, INT => INT,
            FLOAT, FLOAT => FLOAT,
            STR, STR => STR,
@@ -332,8 +325,8 @@ impl TypeSystem {
     }
 
     fn new_type_with_num(&mut self, name: String, te_type: TypeEntryType, expected: Type) -> Type {
-        let typ = self.new_type(name, te_type);
-        debug_assert_eq!(typ, expected);
+        let typ = self.new_type(name.clone(), te_type);
+        debug_assert_eq!(typ, expected, "{name}");
         typ
     }
 
@@ -352,10 +345,14 @@ impl TypeSystem {
     }
 
     pub fn option_type(&mut self, t: Type) -> Type {
+        let new_name = format!("option<{}>", self.typename(t));
+        self.option_type_with_name(t, new_name)
+    }
+
+    fn option_type_with_name(&mut self, t: Type, new_name: String) -> Type {
         if let Some(t) = self.types[t].option_type {
             return t;
         }
-        let new_name = format!("option<{}>", self.typename(t));
         let op_type = self.new_type(new_name, TypeEntryType::Option(t));
         self.types[t].option_type = Some(op_type);
 
@@ -420,8 +417,11 @@ impl TypeSystem {
 
     pub fn lookup_binop(&self, binop: Operation, lhs: Type, rhs: Type) -> Option<Type> {
         debug_assert!(binop.is_binop());
-        if lhs == UNKNOWN_RETURN || rhs == UNKNOWN_RETURN {
-            return Some(UNKNOWN_RETURN);
+        let shortcut_types = [UNKNOWN_RETURN, UNREACHABLE];
+        for st in shortcut_types {
+            if lhs == st || rhs == st {
+                return Some(st);
+            }
         }
         for sig in self.operations.get(&binop).unwrap().signatures.iter() {
             if sig.inputs == [lhs, rhs] {

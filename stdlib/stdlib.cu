@@ -4,22 +4,20 @@ fn prints(*args) write(1, *args)
 class range {
 	field current, stop, stride
 
-	fn __init__(self, start, stop=null, stride=null) {
-		if sstop <- stop {
+	fn __init__(self, start, stop=null, stride=1) {
+		self.stride = stride
+		if self.stop <- stop {
 			self.current = start
-			self.stop = sstop
-			self.stride = stride || 1
 		}
 		else {
 			self.current = 0
 			self.stop = start
-			self.stride = 1
 		}
 	}
 
 	fn __iter__(self) {
 		val = self.current
-		if val >= self.stop
+		if (self.stride > 0 && val >= self.stop) || (self.stride < 0 && val <= self.stop)
 			null
 		else {
 			self.current += self.stride
