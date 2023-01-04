@@ -15,9 +15,7 @@ class range {
 		}
 	}
 
-	fn __iter__(self) {
-		self
-	}
+	fn __iter__(self) self
 
 	fn __next__(self) {
 		val = self.current
@@ -28,4 +26,17 @@ class range {
 			val
 		}
 	}
+}
+
+class count {
+	field current, stride
+
+	fn __init__(self, start=0, stride=1) {
+		self.current = start
+		self.stride = stride
+	}
+
+	fn __iter__(self) self
+
+	fn __next__(self) self.current += self.stride
 }
