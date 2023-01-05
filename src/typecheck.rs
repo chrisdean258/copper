@@ -732,6 +732,17 @@ impl TypeChecker {
                     typ,
                 ));
             }
+            (Some(NULL), Some(typ)) => {
+                let typ = self.system.option_type(typ);
+                self.insert_scope(&r.name, typ);
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: true,
+                    }),
+                    typ,
+                ));
+            }
             (Some(EMPTYLIST), Some(typ)) if self.system.is_list(typ) => {
                 self.insert_scope(&r.name, typ);
                 return Ok((
@@ -766,10 +777,9 @@ impl TypeChecker {
             ));
         }
         match self.scope_lookup_func(&r.name) {
-            Some(func) if self.allow_raw_func => Ok((
-                TypedExpressionType::DirectFuncRef(func.clone()),
-                UNKNOWN_RETURN,
-            )),
+            Some(func) if self.allow_raw_func => {
+                Ok((TypedExpressionType::DirectFuncRef(func), UNKNOWN_RETURN))
+            }
             Some(_) => self.error(ErrorType::FuncTypeUnknown(r.name)),
             None => self.error(ErrorType::NoSuchNameInScope(r.name)),
         }
@@ -1600,6 +1610,10 @@ impl TypeChecker {
         let typ = match (field_type, self.allow_insert) {
             (None, Some(ai)) | (Some(UNREACHABLE), Some(ai)) => {
                 objref.fields[obj_idx] = Some(ai);
+                ai
+            }
+            (Some(NULL), Some(ai)) => {
+                objref.fields[obj_idx] = Some(self.system.option_type(ai));
                 ai
             }
             (Some(EMPTYLIST), Some(ai)) if self.system.is_list(ai) => {
