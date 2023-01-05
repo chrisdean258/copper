@@ -722,7 +722,17 @@ impl TypeChecker {
 
     fn refexpr(&mut self, r: RefExpr) -> Result<(TypedExpressionType, Type), ()> {
         match (self.scope_lookup(&r.name), self.allow_insert) {
-            (Some(UNREACHABLE), Some(typ)) | (None, Some(typ)) => {
+            (None, Some(typ)) => {
+                self.insert_scope(&r.name, typ);
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: true,
+                    }),
+                    typ,
+                ));
+            }
+            (Some(UNREACHABLE), Some(typ)) => {
                 self.insert_scope(&r.name, typ);
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
@@ -738,7 +748,7 @@ impl TypeChecker {
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
                         name: r.name,
-                        is_decl: true,
+                        is_decl: false,
                     }),
                     typ,
                 ));
@@ -748,7 +758,7 @@ impl TypeChecker {
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
                         name: r.name,
-                        is_decl: true,
+                        is_decl: false,
                     }),
                     typ,
                 ));

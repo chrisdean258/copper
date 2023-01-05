@@ -306,11 +306,13 @@ impl TypeSystem {
 
         self.add_signature(Operation::Equal, sig!(list_type, list_type => list_type));
         self.add_signature(Operation::Plus, sig!(list_type, list_type => list_type));
+        self.add_signature(Operation::PlusEq, sig!(list_type, list_type => list_type));
         self.add_signature(Operation::Plus, sig!(EMPTYLIST, list_type => list_type));
         self.add_signature(Operation::Plus, sig!(list_type, EMPTYLIST => list_type));
 
         self.add_signature(Operation::PlusEq, sig!(EMPTYLIST, list_type => list_type));
         self.add_signature(Operation::Equal, sig!(EMPTYLIST, list_type => list_type));
+        self.add_signature(Operation::Equal, sig!(list_type, EMPTYLIST => list_type));
 
         list_type
     }
