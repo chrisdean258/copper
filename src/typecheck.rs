@@ -732,6 +732,16 @@ impl TypeChecker {
                     typ,
                 ));
             }
+            (Some(EMPTYLIST), Some(typ)) if self.system.is_list(typ) => {
+                self.insert_scope(&r.name, typ);
+                return Ok((
+                    TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        name: r.name,
+                        is_decl: true,
+                    }),
+                    typ,
+                ));
+            }
             (Some(t), _) => {
                 return Ok((
                     if t == BUILTIN_FUNCTION {
@@ -1060,11 +1070,11 @@ impl TypeChecker {
     }
 
     fn list(&mut self, l: List) -> Result<(TypedExpressionType, Type), ()> {
-        let mut interior_type = UNIT;
+        let mut interior_type = UNREACHABLE;
         let exprs = self.vec_of_exprs(l.exprs)?;
 
         for te in exprs.iter() {
-            if interior_type == UNIT {
+            if interior_type == UNREACHABLE {
                 interior_type = te.typ;
             } else if te.typ != interior_type {
                 let _ = self.error::<()>(ErrorType::ListTypeMismatch(
@@ -1194,10 +1204,10 @@ impl TypeChecker {
             self.call(expr)
         } else {
             drop(cd);
-            return self.error(ErrorType::ClassHasNoFieldOrMethod(
+            self.error(ErrorType::ClassHasNoFieldOrMethod(
                 self.system.typename(lhs.typ),
                 m.method_name,
-            ));
+            ))
         }
     }
 
@@ -1589,6 +1599,10 @@ impl TypeChecker {
         let field_type = objref.fields[obj_idx];
         let typ = match (field_type, self.allow_insert) {
             (None, Some(ai)) | (Some(UNREACHABLE), Some(ai)) => {
+                objref.fields[obj_idx] = Some(ai);
+                ai
+            }
+            (Some(EMPTYLIST), Some(ai)) if self.system.is_list(ai) => {
                 objref.fields[obj_idx] = Some(ai);
                 ai
             }

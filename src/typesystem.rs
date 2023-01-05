@@ -113,6 +113,7 @@ pub const INT: Type = 9;
 pub const FLOAT: Type = 10;
 pub const STR: Type = 11;
 pub const OPT_STR: Type = 12;
+pub const EMPTYLIST: Type = 13;
 
 trait TypeMatch {
     fn matches(&self, other: &Type) -> bool;
@@ -133,10 +134,6 @@ impl TypeSystem {
         };
         rv.add_default_types();
         rv.add_default_ops();
-        // This is somewhat of a hack because getline returns an option string so we need to to be
-        // determinable.
-        let opt_str = rv.option_type(STR);
-        debug_assert_eq!(opt_str, OPT_STR);
         rv
     }
 
@@ -165,13 +162,18 @@ impl TypeSystem {
             TypeEntryType::Basic,
             BUILTIN_FUNCTION,
         );
-        self.option_type_with_name(UNREACHABLE, "null".into());
+        let null = self.option_type_with_name(UNREACHABLE, "null".into());
+        debug_assert_eq!(null, NULL);
         self.new_type_with_num("ptr".into(), TypeEntryType::Basic, PTR);
         self.new_type_with_num("bool".into(), TypeEntryType::Basic, BOOL);
         self.new_type_with_num("char".into(), TypeEntryType::Basic, CHAR);
         self.new_type_with_num("int".into(), TypeEntryType::Basic, INT);
         self.new_type_with_num("float".into(), TypeEntryType::Basic, FLOAT);
         self.new_type_with_num("str".into(), TypeEntryType::List(CHAR), STR);
+        let opt_str = self.option_type(STR);
+        debug_assert_eq!(opt_str, OPT_STR);
+        let emptylist = self.list_type_with_name(UNREACHABLE, "[]".into());
+        debug_assert_eq!(emptylist, EMPTYLIST);
     }
 
     fn add_default_ops(&mut self) {
@@ -292,21 +294,29 @@ impl TypeSystem {
     }
 
     pub fn list_type(&mut self, t: Type) -> Type {
+        let new_name = format!("[{}]", self.typename(t));
+        self.list_type_with_name(t, new_name)
+    }
+    pub fn list_type_with_name(&mut self, t: Type, new_name: String) -> Type {
         if let Some(t) = self.types[t].list_type {
             return t;
         }
-        let new_name = format!("list<{}>", self.typename(t));
         let list_type = self.new_type(new_name, TypeEntryType::List(t));
         self.types[t].list_type = Some(list_type);
 
         self.add_signature(Operation::Equal, sig!(list_type, list_type => list_type));
         self.add_signature(Operation::Plus, sig!(list_type, list_type => list_type));
+        self.add_signature(Operation::Plus, sig!(EMPTYLIST, list_type => list_type));
+        self.add_signature(Operation::Plus, sig!(list_type, EMPTYLIST => list_type));
+
+        self.add_signature(Operation::PlusEq, sig!(EMPTYLIST, list_type => list_type));
+        self.add_signature(Operation::Equal, sig!(EMPTYLIST, list_type => list_type));
 
         list_type
     }
 
     pub fn option_type(&mut self, t: Type) -> Type {
-        let new_name = format!("option<{}>", self.typename(t));
+        let new_name = format!("{}?", self.typename(t));
         self.option_type_with_name(t, new_name)
     }
 
@@ -459,6 +469,10 @@ impl TypeSystem {
 
     pub fn is_option(&self, opt: Type) -> bool {
         matches!(self.types[opt].te_type, TypeEntryType::Option(_))
+    }
+
+    pub fn is_list(&self, opt: Type) -> bool {
+        matches!(self.types[opt].te_type, TypeEntryType::List(_))
     }
 
     pub fn get_typeof_list_type(&self, list: Type) -> Option<Type> {

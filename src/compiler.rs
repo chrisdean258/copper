@@ -108,8 +108,7 @@ impl Compiler {
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
         debug_assert!(self.scopes.len() >= 2);
-        let rv = self.scopes.last_mut().unwrap().insert(name, what);
-        debug_assert!(rv.is_none());
+        self.scopes.last_mut().unwrap().insert(name, what);
     }
 
     fn next_local(&mut self) -> MemoryLocation {
