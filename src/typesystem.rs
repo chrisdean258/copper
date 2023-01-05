@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::operation::Operation;
 use std::collections::HashMap;
 
@@ -7,7 +6,6 @@ pub struct TypeSystem {
     pub types: Vec<TypeEntry>,
     types_by_name: HashMap<String, Type>,
     operations: HashMap<Operation, GenericOperation>,
-    func_type_cache: HashMap<Signature, Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -17,10 +15,9 @@ pub enum TypeEntryType {
     Basic,
     List(Type),
     Option(Type),
-    Function(Function),
-    Class(Class),
+    Function,
+    Class,
     ClassVariant(Type),
-    ResolvedFunction(ResolvedFunction),
 }
 
 #[derive(Debug, Clone)]
@@ -34,41 +31,6 @@ pub struct TypeEntry {
 #[derive(Debug, Clone)]
 struct GenericOperation {
     signatures: Vec<Signature>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Class {
-    // resolved_types: HashSet<Type>,
-    // unresolved_types: HashSet<Type>,
-    num_fields: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct UnresolvedClass {
-    fields: Vec<Option<Type>>,
-    class: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResolvedClass {
-    fields: Vec<Type>,
-    class: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct Function {
-    resolved_types: Vec<Type>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResolvedFunction {
-    signature: Signature,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct BoundFunction {
-    signature: Signature,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -168,7 +130,6 @@ impl TypeSystem {
             types: Vec::new(),
             types_by_name: HashMap::new(),
             operations: HashMap::new(),
-            func_type_cache: HashMap::new(),
         };
         rv.add_default_types();
         rv.add_default_ops();
@@ -385,15 +346,12 @@ impl TypeSystem {
     }
 
     pub fn function_type(&mut self, name: String) -> Type {
-        let te_type = TypeEntryType::Function(Function {
-            resolved_types: Vec::new(),
-        });
+        let te_type = TypeEntryType::Function;
         self.new_type(name, te_type)
     }
 
-    pub fn class_type(&mut self, name: String, num_fields: usize) -> Type {
-        let te_type = TypeEntryType::Class(Class { num_fields });
-        self.new_type(name, te_type)
+    pub fn class_type(&mut self, name: String) -> Type {
+        self.new_type(name, TypeEntryType::Class)
     }
 
     pub fn class_variant(&mut self, base: Type) -> Type {
@@ -487,14 +445,12 @@ impl TypeSystem {
         }
         matches!(
             &self.types[func].te_type,
-            TypeEntryType::UnknownReturn
-                | TypeEntryType::Function(_)
-                | TypeEntryType::ResolvedFunction(_)
+            TypeEntryType::UnknownReturn | TypeEntryType::Function
         )
     }
 
     pub fn is_class(&self, func: Type) -> bool {
-        matches!(&self.types[func].te_type, TypeEntryType::Class(_))
+        matches!(&self.types[func].te_type, TypeEntryType::Class)
     }
 
     pub fn is_object(&self, func: Type) -> bool {
@@ -509,93 +465,6 @@ impl TypeSystem {
         match self.types[list].te_type {
             TypeEntryType::List(t) => Some(t),
             _ => None,
-        }
-    }
-
-    pub fn function_get_resolved(&self, func: Type, args: &[Type]) -> Option<Type> {
-        let ft = match &self.types[func].te_type {
-            TypeEntryType::Function(ft) => ft,
-            _ => panic!("trying to match a signatures with a non function"),
-        };
-        for typ in ft.resolved_types.iter() {
-            if let TypeEntryType::ResolvedFunction(rft) = &self.types[*typ].te_type {
-                if rft.signature.inputs == args {
-                    return Some(*typ);
-                }
-            } else {
-                unreachable!()
-            }
-        }
-        None
-    }
-
-    pub fn match_signature(&self, func: Type, inputs: &[Type]) -> Option<Type> {
-        if inputs.iter().any(|&a| a == UNKNOWN_RETURN) {
-            return Some(UNKNOWN_RETURN);
-        }
-        match self.function_get_resolved(func, inputs) {
-            None => None,
-            Some(t) => {
-                if let TypeEntryType::ResolvedFunction(rft) = &self.types[t].te_type {
-                    Some(rft.signature.output)
-                } else {
-                    unreachable!()
-                }
-            }
-        }
-    }
-
-    pub fn func_type_from_sig(&mut self, sig: &Signature) -> Type {
-        if let Some(val) = self.func_type_cache.get(sig) {
-            return *val;
-        }
-        let name = format!("function{}", self.format_signature(sig));
-        let rv = self.new_type(
-            name,
-            TypeEntryType::ResolvedFunction(ResolvedFunction {
-                signature: sig.clone(),
-            }),
-        );
-        self.func_type_cache.insert(sig.clone(), rv);
-        rv
-    }
-
-    pub fn add_function_signature(&mut self, func: Type, sig: Signature) -> Type {
-        let typ = self.func_type_from_sig(&sig);
-        match &mut self.types[func].te_type {
-            TypeEntryType::Function(ft) => ft.resolved_types.push(typ),
-            _ => panic!("trying to signature resolve a non function"),
-        };
-        let typename = format!("{}({})", self.typename(func), self.format_args(&sig.inputs));
-        self.new_type(
-            typename,
-            TypeEntryType::ResolvedFunction(ResolvedFunction { signature: sig }),
-        )
-    }
-
-    pub fn get_signatures_for_func(&self, typ: Type) -> Vec<Signature> {
-        let rtfs = match &self.types[typ].te_type {
-            TypeEntryType::Function(s) => s.resolved_types.clone(),
-            t => panic!("Trying to look for concrete type but found {:?}", t),
-        };
-        let mut rv = Vec::new();
-        for typ in rtfs {
-            rv.push(self.get_resolved_func_sig(typ))
-        }
-        rv
-    }
-
-    pub fn get_resolved_func_sig_can_fail(&self, typ: Type) -> Option<Signature> {
-        match &self.types[typ].te_type {
-            TypeEntryType::ResolvedFunction(r) => Some(r.signature.clone()),
-            _ => None,
-        }
-    }
-
-    pub fn get_resolved_func_sig(&self, typ: Type) -> Signature {
-        match &self.types[typ].te_type {
-            TypeEntryType::ResolvedFunction(r) => r.signature.clone(),
-            t => unreachable!("Expected ResolvedFunction found {:?}", t),
         }
     }
 
@@ -636,9 +505,5 @@ impl TypeSystem {
             self.typename(first),
             self.format_signature(&sig)
         )
-    }
-
-    pub fn mangle(&self, name: &str, sig: &Signature) -> String {
-        format!("{}({})", name, self.format_args_from_sig(sig))
     }
 }

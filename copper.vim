@@ -6,6 +6,7 @@
 if exists("b:current_syntax")
   finish
 endif
+let b:current_syntax = "copper"
 
 syn keyword copperKeyword fn global class field nonlocal break continue return
 syn keyword copperConditional while if else and for
@@ -59,7 +60,6 @@ syn match copperComment '#.*$'
 
 syn match copperFunction "\<\k\+\ze("
 
-let b:current_syntax = "copper"
 hi def link copperConditional Conditional
 hi def link copperKeyword Keyword
 hi def link copperBuiltin Function

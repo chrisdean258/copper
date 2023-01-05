@@ -593,7 +593,7 @@ impl TypeChecker {
     }
 
     fn classdecl(&mut self, c: ClassDecl) -> Result<TypedStatement, ()> {
-        let typ = self.system.class_type(c.name.clone(), c.fields.len());
+        let typ = self.system.class_type(c.name.clone());
         self.insert_class_scope(&c.name, typ);
         let mut methods: HashMap<String, (TypedFunction, Location)> = HashMap::new();
         for (name, (method, location)) in c.methods.iter() {
@@ -642,9 +642,6 @@ impl TypeChecker {
             ExpressionType::Break => self.break_(),
             ExpressionType::Return(r) => self.return_(r),
         }?;
-        // if rv == UNKNOWN_RETURN {
-        // self.need_recheck = true;
-        // }
         Ok(TypedExpression {
             typ,
             etype: typedexpressiontype,
@@ -760,8 +757,8 @@ impl TypeChecker {
         }
         match self.scope_lookup_func(&r.name) {
             Some(func) if self.allow_raw_func => Ok((
-                TypedExpressionType::DirectFuncRef(func),
-                typesystem::UNKNOWN_RETURN,
+                TypedExpressionType::DirectFuncRef(func.clone()),
+                UNKNOWN_RETURN,
             )),
             Some(_) => self.error(ErrorType::FuncTypeUnknown(r.name)),
             None => self.error(ErrorType::NoSuchNameInScope(r.name)),
@@ -1322,6 +1319,7 @@ impl TypeChecker {
             Err(_) => {
                 // This might already be borrowed if we are in a recurisive context
                 // This is ok but we can't derive the signature
+                self.need_recheck = true;
                 return Ok((
                     TypedExpressionType::CallExpr(TypedCallExpr {
                         function: Box::new(subject),

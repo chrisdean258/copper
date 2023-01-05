@@ -777,7 +777,7 @@ impl Compiler {
     }
 
     fn lambda(&mut self, l: &TypedLambda) {
-        debug_assert_eq!(l.borrow().signatures.len(), 1);
+        debug_assert_eq!(l.borrow().signatures.len(), 1, "{:?}", &l.borrow());
         let addr = self.single_lambda(l, 0);
         self.code.push(Value::Ptr(addr));
     }
