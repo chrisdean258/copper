@@ -25,7 +25,6 @@ pub struct Compiler {
     need_ref: bool,
     types: Option<TypeSystem>,
     scopes: Vec<HashMap<String, MemoryLocation>>,
-    class_scopes: Vec<HashMap<String, TypedClassDecl>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
@@ -54,7 +53,6 @@ impl Compiler {
                 },
                 HashMap::new(), //globals
             ],
-            class_scopes: vec![HashMap::new(), HashMap::new()],
             types: None,
             num_args: 0,
             arg_types: None,
@@ -96,14 +94,12 @@ impl Compiler {
     fn open_scope(&mut self) {
         self.num_locals.push(0);
         self.scopes.push(HashMap::new());
-        self.class_scopes.push(HashMap::new());
     }
 
     fn close_scope(&mut self) {
         debug_assert!(!self.scopes.is_empty());
         self.num_locals.pop();
         self.scopes.pop();
-        self.class_scopes.pop();
     }
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
@@ -164,19 +160,9 @@ impl Compiler {
                     self.code.emit(MachineOperation::Pop);
                 }
             }
-            TypedStatement::ClassDecl(c) => self.classdecl(c),
+            TypedStatement::ClassDecl(_) => (),
             TypedStatement::Import(i) => todo!("{:?}", i),
             TypedStatement::FromImport(f) => todo!("{:?}", f),
-        }
-    }
-
-    fn classdecl(&mut self, c: &TypedClassDecl) {
-        self.class_scopes
-            .last_mut()
-            .unwrap()
-            .insert(c.borrow().classdecl.name.clone(), c.clone());
-        for (_name, (f, _l)) in c.borrow().methods.iter() {
-            self.function(f);
         }
     }
 
