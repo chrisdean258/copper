@@ -846,8 +846,10 @@ impl Compiler {
 
     fn dotted_lookup(&mut self, d: &TypedDottedLookup) {
         self.get_value(d.lhs.as_ref());
-        self.code.push(Value::PtrOffset(d.index as isize));
-        self.code.emit(MachineOperation::Plus);
+        if d.index != 0 {
+            self.code.push(Value::PtrOffset(d.index as isize));
+            self.code.emit(MachineOperation::Plus);
+        }
         if !self.need_ref {
             self.code.load();
         }
