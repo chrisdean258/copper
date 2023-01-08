@@ -119,6 +119,8 @@ pub struct TypeChecker {
     repeated_arg: Option<(String, Type)>,
     errors: ErrorCollection<Error>,
     in_loop: bool,
+
+    builtins: HashMap<String, BuiltinFunction>,
 }
 
 #[derive(Debug, Clone)]
@@ -216,7 +218,7 @@ pub struct TypedClassRefExpr {
 
 #[derive(Debug, Clone)]
 pub struct TypedBuiltinFuncRefExpr {
-    pub name: String,
+    pub idx: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -382,9 +384,10 @@ impl TypeChecker {
             repeated_arg: None,
             errors: ErrorCollection::new(),
             in_loop: false,
+            builtins: BuiltinFunction::get_hashmap(),
         };
         rv.openscope();
-        for f in BuiltinFunction::get_table(&rv.system) {
+        for f in BuiltinFunction::get_table() {
             rv.insert_scope(&f.name, typesystem::BUILTIN_FUNCTION);
         }
         rv.openscope();
@@ -767,7 +770,7 @@ impl TypeChecker {
                 return Ok((
                     if t == BUILTIN_FUNCTION {
                         TypedExpressionType::BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr {
-                            name: r.name,
+                            idx: self.builtins[&r.name].idx,
                         })
                     } else {
                         TypedExpressionType::VarRefExpr(TypedVarRefExpr {
@@ -1256,7 +1259,7 @@ impl TypeChecker {
                 return self.error(ErrorType::CannotIndirectlyCallBuiltins);
             };
             let funcname = refexpr.name.clone();
-            let builtins = BuiltinFunction::get_hashmap(&mut self.system);
+            let builtins = BuiltinFunction::get_hashmap();
             // Ok to unwrap here because we have already verified that this is a builtin function
             let func = builtins.get(&funcname).unwrap();
             let outtyp = func.signature.match_inputs(&argtypes).ok_or_else(|| {

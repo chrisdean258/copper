@@ -29,6 +29,7 @@ pub struct BuiltinFunction {
     pub func: fn(&mut Evaluator, usize, usize) -> Value,
     pub name: String,
     pub signature: Signature,
+    pub idx: usize,
 }
 
 impl Debug for BuiltinFunction {
@@ -38,27 +39,28 @@ impl Debug for BuiltinFunction {
 }
 
 macro_rules! builtin_func {
-    ($name:ident, $($toks:tt)* ) => {
+    ($idx:expr, $name:ident, $($toks:tt)* ) => {
         BuiltinFunction {
             name: stringify!($name).to_string(),
             func: $name,
             signature: sig!($($toks)*),
+            idx: $idx,
         }
     };
 }
 
 impl BuiltinFunction {
-    pub fn get_table(_ts: &TypeSystem) -> Vec<BuiltinFunction> {
+    pub fn get_table() -> Vec<BuiltinFunction> {
         vec![
-            builtin_func!(write, INT; ANY, ... => UNIT),
-            builtin_func!(alloc, INT => PTR),
-            builtin_func!(len, ANY => INT),
-            builtin_func!(getline, => OPT_STR),
+            builtin_func!(0, write, INT; ANY, ... => UNIT),
+            builtin_func!(1, alloc, INT => PTR),
+            builtin_func!(2, len, ANY => INT),
+            builtin_func!(3, getline, => OPT_STR),
         ]
     }
 
-    pub fn get_hashmap(ts: &mut TypeSystem) -> HashMap<String, BuiltinFunction> {
-        let funcs = Self::get_table(ts);
+    pub fn get_hashmap() -> HashMap<String, BuiltinFunction> {
+        let funcs = Self::get_table();
         let mut hm = HashMap::with_capacity(funcs.len());
         for func in funcs {
             hm.insert(func.name.clone(), func);

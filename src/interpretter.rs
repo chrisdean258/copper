@@ -69,17 +69,13 @@ impl Interpretter {
                 MachineOperation::CallBuiltin(addr) => {
                     eprint!(
                         " ({})",
-                        builtins::BuiltinFunction::get_table(&self.typechecker.system)
-                            [addr - BUILTIN_CODE]
-                            .name
+                        builtins::BuiltinFunction::get_table()[addr - BUILTIN_CODE].name
                     )
                 }
                 MachineOperation::CallBuiltinSize(addr, size) => {
                     eprint!(
                         " ({}, {})",
-                        builtins::BuiltinFunction::get_table(&self.typechecker.system)
-                            [addr - BUILTIN_CODE]
-                            .name,
+                        builtins::BuiltinFunction::get_table()[addr - BUILTIN_CODE].name,
                         size
                     )
                 }

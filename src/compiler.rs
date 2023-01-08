@@ -1,5 +1,4 @@
 use crate::{
-    builtins::BuiltinFunction,
     code_builder::CodeBuilder,
     memory,
     operation::{MachineOperation, Operation},
@@ -14,7 +13,6 @@ use std::{
 
 #[derive(Debug, Clone, Copy)]
 enum MemoryLocation {
-    BuiltinFunction(usize),
     GlobalVariable(usize),
     LocalVariable(usize),
 }
@@ -38,19 +36,11 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(types: &mut TypeSystem) -> Self {
+    pub fn new(_types: &mut TypeSystem) -> Self {
         Self {
             code: CodeBuilder::new(),
             need_ref: false,
             scopes: vec![
-                {
-                    // Builtins
-                    let mut b = HashMap::new();
-                    for (i, func) in BuiltinFunction::get_table(types).iter().enumerate() {
-                        b.insert(func.name.clone(), MemoryLocation::BuiltinFunction(i));
-                    }
-                    b
-                },
                 HashMap::new(), //globals
             ],
             types: None,
@@ -76,7 +66,7 @@ impl Compiler {
         self.types = Some(types.clone());
         self.code.open_function(name);
         if p.globals > 0 {
-            self.code.reserve(p.globals - self.scopes[1].len());
+            self.code.reserve(p.globals - self.scopes[0].len());
         }
         for (i, statement) in p.statements.iter().enumerate() {
             self.statement(statement, true, i == p.statements.len() - 1);
@@ -103,14 +93,14 @@ impl Compiler {
     }
 
     fn insert_scope(&mut self, name: String, what: MemoryLocation) {
-        debug_assert!(self.scopes.len() >= 2);
+        debug_assert!(!self.scopes.is_empty());
         self.scopes.last_mut().unwrap().insert(name, what);
     }
 
     fn next_local(&mut self) -> MemoryLocation {
         // Actually local == global so we will write out a global
         *self.num_locals.last_mut().unwrap() += 1;
-        if self.scopes.len() == 2 {
+        if self.scopes.len() == 1 {
             MemoryLocation::GlobalVariable(*self.num_locals.last().unwrap() - 1)
         } else {
             MemoryLocation::LocalVariable(*self.num_locals.last().unwrap() - 1)
@@ -118,7 +108,7 @@ impl Compiler {
     }
 
     fn lookup_scope_local_or_global_can_fail(&mut self, name: &str) -> Option<MemoryLocation> {
-        debug_assert!(self.scopes.len() >= 2);
+        debug_assert!(!self.scopes.is_empty());
         let scope = self.scopes.last().unwrap();
         if let Some(a) = scope.get(name) {
             return Some(*a);
@@ -371,10 +361,6 @@ impl Compiler {
             self.lookup_scope_local_or_global(&r.name)
         };
         match mem {
-            MemoryLocation::BuiltinFunction(u) => {
-                panic!("Should have been a funcrefexpr {u:?}\n{r:?}")
-            }
-            // MemoryLocation::CodeLocation(u) if !self.need_ref => self.code.code_ref(u),
             MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
             MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
         };
@@ -384,13 +370,7 @@ impl Compiler {
     }
 
     fn builtinfuncrefexpr(&mut self, b: &TypedBuiltinFuncRefExpr) {
-        let Some(val) = self.lookup_scope_local_or_global_can_fail(&b.name) else {
-            unreachable!("Cannot find builtin function `{}`", b.name);
-        };
-        let MemoryLocation::BuiltinFunction(num) = val else {
-            unreachable!("Expected CodeLocation found {val:?}");
-        };
-        self.code.push(Value::Ptr(num + memory::BUILTIN_CODE));
+        self.code.push(Value::Ptr(b.idx + memory::BUILTIN_CODE));
     }
 
     fn directfuncref(&mut self, fr: &TypedFunction) {

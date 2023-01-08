@@ -28,7 +28,7 @@ impl Evaluator {
         Self {
             code: Vec::new(),
             memory: Memory::new(),
-            builtin_table: BuiltinFunction::get_table(types),
+            builtin_table: BuiltinFunction::get_table(),
             bp: STACK,
             reg: Value::Uninitialized,
         }
