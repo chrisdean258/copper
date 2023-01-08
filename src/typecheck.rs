@@ -465,7 +465,10 @@ impl TypeChecker {
         Err(())
     }
 
-    fn scope_lookup_general<T>(&self, name: &str, scopes: &[HashMap<String, T>]) -> Option<T> {
+    fn scope_lookup_general<T>(&self, name: &str, scopes: &[HashMap<String, T>]) -> Option<T>
+    where
+        T: Copy,
+    {
         for scope in scopes.iter().rev() {
             if let Some(t) = scope.get(name) {
                 return Some(*t);
