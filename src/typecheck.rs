@@ -98,9 +98,15 @@ impl std::fmt::Display for ErrorType {
     }
 }
 
+#[derive(Clone, Debug, Copy)]
+pub enum VarLoc {
+    Global(usize),
+    Local(usize),
+}
+
 pub struct TypeChecker {
     pub system: TypeSystem,
-    scopes: Vec<HashMap<String, Type>>,
+    scopes: Vec<HashMap<String, (Type, VarLoc)>>,
     func_scopes: Vec<HashMap<String, TypedFunction>>,
     class_scopes: Vec<HashMap<String, Type>>,
 
@@ -478,7 +484,7 @@ impl TypeChecker {
     }
 
     fn scope_lookup(&self, name: &str) -> Option<Type> {
-        self.scope_lookup_general(name, &self.scopes)
+        self.scope_lookup_general(name, &self.scopes).map(|v| v.0)
     }
 
     fn scope_lookup_func(&self, name: &str) -> Option<TypedFunction> {
@@ -495,9 +501,14 @@ impl TypeChecker {
     }
 
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
+        let is_global = self.scopes.len() == 1;
         let scope = self.scopes.last_mut().unwrap();
         let place = scope.len();
-        scope.insert(String::from(name), t);
+        if is_global {
+            scope.insert(String::from(name), (t, VarLoc::Global(place)));
+        } else {
+            scope.insert(String::from(name), (t, VarLoc::Local(place)));
+        }
         place
     }
 
