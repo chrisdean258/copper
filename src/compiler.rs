@@ -19,6 +19,7 @@ pub struct Compiler {
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
+    num_locals: Vec<usize>,
     recursive_calls: Vec<usize>,
     breaks: Vec<usize>,
     continues: Vec<usize>,
@@ -36,6 +37,7 @@ impl Compiler {
             num_args: 0,
             arg_types: None,
             strings: HashMap::new(),
+            num_locals: vec![0, 0],
             recursive_calls: Vec::new(),
             breaks: Vec::new(),
             continues: Vec::new(),
@@ -229,12 +231,9 @@ impl Compiler {
 
     fn repeated_arg(&mut self) {
         let num_repeated = self.arg_types.as_ref().unwrap().len() - self.num_args;
-        // eprintln!( "num_args: {:?}\nnum_repeated: {:?}\narg_types: {:?}\nnum_locals: {:?}", self.num_args, self.num_repeated, self.arg_types, self.num_locals,);
         if num_repeated == 0 {
             return;
         }
-        // first_arg
-        // eprintln!( "repeated arg! {}", self.code .local_ref(self.num_args as isize - num_repeated as isize));
         self.code.local_ref(self.num_args as isize);
         self.code.load_n(num_repeated);
         self.extra_args = num_repeated - 1;
