@@ -213,6 +213,7 @@ pub struct TypedPostUnOp {
 // references separately
 #[derive(Debug, Clone)]
 pub struct TypedVarRefExpr {
+    pub place: VarLoc,
     pub name: String,
     pub is_decl: bool,
 }
@@ -483,8 +484,8 @@ impl TypeChecker {
         None
     }
 
-    fn scope_lookup(&self, name: &str) -> Option<Type> {
-        self.scope_lookup_general(name, &self.scopes).map(|v| v.0)
+    fn scope_lookup(&self, name: &str) -> Option<(Type, VarLoc)> {
+        self.scope_lookup_general(name, &self.scopes)
     }
 
     fn scope_lookup_func(&self, name: &str) -> Option<TypedFunction> {
@@ -500,16 +501,23 @@ impl TypeChecker {
         self.scope_lookup_general(name, &self.class_scopes)
     }
 
-    fn insert_scope(&mut self, name: &str, t: Type) -> usize {
-        let is_global = self.scopes.len() == 1;
+    fn insert_scope(&mut self, name: &str, t: Type) -> VarLoc {
+        let is_global = self.scopes.len() == 2;
         let scope = self.scopes.last_mut().unwrap();
-        let place = scope.len();
-        if is_global {
-            scope.insert(String::from(name), (t, VarLoc::Global(place)));
+        let place = if is_global {
+            VarLoc::Global(scope.len())
         } else {
-            scope.insert(String::from(name), (t, VarLoc::Local(place)));
-        }
+            VarLoc::Local(scope.len())
+        };
+        scope.insert(String::from(name), (t, place));
         place
+    }
+
+    // TODO: This should likely be replaced with a function that looks up scope then replaces it in
+    // that particular scope
+    fn replace_cur_scope(&mut self, name: String, t: Type, place: VarLoc) {
+        let scope = self.scopes.last_mut().unwrap();
+        scope.entry(name).and_modify(|e| *e = (t, place));
     }
 
     fn insert_func_scope(&mut self, name: &str, f: TypedFunction) -> usize {
@@ -735,47 +743,51 @@ impl TypeChecker {
     fn refexpr(&mut self, r: RefExpr) -> Result<(TypedExpressionType, Type), ()> {
         match (self.scope_lookup(&r.name), self.allow_insert) {
             (None, Some(typ)) => {
-                self.insert_scope(&r.name, typ);
+                let place = self.insert_scope(&r.name, typ);
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        place,
                         name: r.name,
                         is_decl: true,
                     }),
                     typ,
                 ));
             }
-            (Some(UNREACHABLE), Some(typ)) => {
-                self.insert_scope(&r.name, typ);
+            (Some((UNREACHABLE, place)), Some(typ)) => {
+                self.replace_cur_scope(r.name.clone(), typ, place);
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        place,
                         name: r.name,
                         is_decl: true,
                     }),
                     typ,
                 ));
             }
-            (Some(NULL), Some(typ)) => {
+            (Some((NULL, place)), Some(typ)) => {
                 let typ = self.system.option_type(typ);
-                self.insert_scope(&r.name, typ);
+                self.replace_cur_scope(r.name.clone(), typ, place);
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        place,
                         name: r.name,
                         is_decl: false,
                     }),
                     typ,
                 ));
             }
-            (Some(EMPTYLIST), Some(typ)) if self.system.is_list(typ) => {
-                self.insert_scope(&r.name, typ);
+            (Some((EMPTYLIST, place)), Some(typ)) if self.system.is_list(typ) => {
+                self.replace_cur_scope(r.name.clone(), typ, place);
                 return Ok((
                     TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                        place,
                         name: r.name,
                         is_decl: false,
                     }),
                     typ,
                 ));
             }
-            (Some(t), _) => {
+            (Some((t, place)), _) => {
                 return Ok((
                     if t == BUILTIN_FUNCTION {
                         TypedExpressionType::BuiltinFuncRefExpr(TypedBuiltinFuncRefExpr {
@@ -783,6 +795,7 @@ impl TypeChecker {
                         })
                     } else {
                         TypedExpressionType::VarRefExpr(TypedVarRefExpr {
+                            place,
                             name: r.name,
                             is_decl: r.is_decl,
                         })

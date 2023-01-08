@@ -11,22 +11,14 @@ use std::{
     mem::{replace, swap, take},
 };
 
-#[derive(Debug, Clone, Copy)]
-enum MemoryLocation {
-    GlobalVariable(usize),
-    LocalVariable(usize),
-}
-
 #[derive(Debug, Clone)]
 pub struct Compiler {
     pub code: CodeBuilder,
     need_ref: bool,
     types: Option<TypeSystem>,
-    scopes: Vec<HashMap<String, MemoryLocation>>,
     num_args: usize,
     arg_types: Option<Vec<Type>>,
     strings: HashMap<String, usize>,
-    num_locals: Vec<usize>,
     recursive_calls: Vec<usize>,
     breaks: Vec<usize>,
     continues: Vec<usize>,
@@ -40,14 +32,10 @@ impl Compiler {
         Self {
             code: CodeBuilder::new(),
             need_ref: false,
-            scopes: vec![
-                HashMap::new(), //globals
-            ],
             types: None,
             num_args: 0,
             arg_types: None,
             strings: HashMap::new(),
-            num_locals: vec![0, 0],
             recursive_calls: Vec::new(),
             breaks: Vec::new(),
             continues: Vec::new(),
@@ -66,7 +54,7 @@ impl Compiler {
         self.types = Some(types.clone());
         self.code.open_function(name);
         if p.globals > 0 {
-            self.code.reserve(p.globals - self.scopes[0].len());
+            self.code.reserve(p.globals);
         }
         for (i, statement) in p.statements.iter().enumerate() {
             self.statement(statement, true, i == p.statements.len() - 1);
@@ -79,59 +67,6 @@ impl Compiler {
         }
 
         (self.code.code(), strings, entry)
-    }
-
-    fn open_scope(&mut self) {
-        self.num_locals.push(0);
-        self.scopes.push(HashMap::new());
-    }
-
-    fn close_scope(&mut self) {
-        debug_assert!(!self.scopes.is_empty());
-        self.num_locals.pop();
-        self.scopes.pop();
-    }
-
-    fn insert_scope(&mut self, name: String, what: MemoryLocation) {
-        debug_assert!(!self.scopes.is_empty());
-        self.scopes.last_mut().unwrap().insert(name, what);
-    }
-
-    fn next_local(&mut self) -> MemoryLocation {
-        // Actually local == global so we will write out a global
-        *self.num_locals.last_mut().unwrap() += 1;
-        if self.scopes.len() == 1 {
-            MemoryLocation::GlobalVariable(*self.num_locals.last().unwrap() - 1)
-        } else {
-            MemoryLocation::LocalVariable(*self.num_locals.last().unwrap() - 1)
-        }
-    }
-
-    fn lookup_scope_local_or_global_can_fail(&mut self, name: &str) -> Option<MemoryLocation> {
-        debug_assert!(!self.scopes.is_empty());
-        let scope = self.scopes.last().unwrap();
-        if let Some(a) = scope.get(name) {
-            return Some(*a);
-        }
-        if let Some(a) = self.scopes[1].get(name) {
-            return Some(*a);
-        }
-        if let Some(a) = self.scopes[0].get(name) {
-            return Some(*a);
-        }
-        None
-    }
-
-    fn lookup_scope_local_or_global(&mut self, name: &str) -> MemoryLocation {
-        if let Some(a) = self.lookup_scope_local_or_global_can_fail(name) {
-            a
-        } else {
-            unreachable!(
-                // self.arg_types.is_some(),
-                "Looking up `{}` failed with scopes = {:?}",
-                name, self.scopes
-            )
-        }
     }
 
     fn entomb_string(&mut self, string: String) -> usize {
@@ -353,16 +288,9 @@ impl Compiler {
     }
 
     fn varrefexpr(&mut self, r: &TypedVarRefExpr) {
-        let mem: MemoryLocation = if r.is_decl {
-            let new_var = self.next_local();
-            self.insert_scope(r.name.clone(), new_var);
-            new_var
-        } else {
-            self.lookup_scope_local_or_global(&r.name)
-        };
-        match mem {
-            MemoryLocation::GlobalVariable(u) => self.code.global_ref(u),
-            MemoryLocation::LocalVariable(u) => self.code.local_ref(u as isize),
+        match r.place {
+            VarLoc::Global(u) => self.code.global_ref(u),
+            VarLoc::Local(u) => self.code.local_ref(u as isize),
         };
         if !self.need_ref {
             self.code.load();
@@ -711,12 +639,7 @@ impl Compiler {
                 self.types.as_ref().unwrap().format_signature(sig)
             )
         };
-        self.open_scope();
         self.code.open_function(name);
-        for argname in f.function.argnames.iter() {
-            let var = self.next_local();
-            self.insert_scope(argname.clone(), var);
-        }
         let old_num_args = self.num_args;
         self.num_args = sig.inputs.len();
         if f.locals > f.function.argnames.len() {
@@ -735,7 +658,6 @@ impl Compiler {
 
         self.code.return_();
         self.num_args = old_num_args;
-        self.close_scope();
         let addr = self.code.close_function_and_patch(&self.recursive_calls);
         f.code_locations.borrow_mut()[sig_idx] = addr;
         addr
@@ -754,7 +676,6 @@ impl Compiler {
             "<lambda>{}",
             self.types.as_ref().unwrap().format_signature(sig)
         );
-        self.open_scope();
         self.code.open_function(name);
         let old_num_args = self.num_args;
         self.num_args = sig.inputs.len();
@@ -764,7 +685,6 @@ impl Compiler {
         self.get_value(&l.typed_bodies[sig_idx]);
         self.code.return_();
         self.num_args = old_num_args;
-        self.close_scope();
         self.code.close_function()
     }
 
