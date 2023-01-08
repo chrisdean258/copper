@@ -100,9 +100,9 @@ impl std::fmt::Display for ErrorType {
 
 pub struct TypeChecker {
     pub system: TypeSystem,
-    scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
-    func_scopes: Vec<Rc<RefCell<HashMap<String, TypedFunction>>>>,
-    class_scopes: Vec<Rc<RefCell<HashMap<String, Type>>>>,
+    scopes: Vec<HashMap<String, Type>>,
+    func_scopes: Vec<HashMap<String, TypedFunction>>,
+    class_scopes: Vec<HashMap<String, Type>>,
 
     type_to_func: HashMap<Type, TypedFunction>,
     type_to_lambda: HashMap<Type, TypedLambda>,
@@ -402,8 +402,8 @@ impl TypeChecker {
             Ok(types) => types,
             Err(()) => return Err(take(&mut self.errors)),
         };
-        self.globals += self.scopes[1].borrow().len();
-        p.globals = Some(self.scopes[1].borrow().len());
+        self.globals += self.scopes[1].len();
+        p.globals = Some(self.scopes[1].len());
 
         Ok(TypedParseTree {
             statements: results,
@@ -465,13 +465,9 @@ impl TypeChecker {
         Err(())
     }
 
-    fn scope_lookup_general(
-        &self,
-        name: &str,
-        scopes: &[Rc<RefCell<HashMap<String, Type>>>],
-    ) -> Option<Type> {
+    fn scope_lookup_general(&self, name: &str, scopes: &[HashMap<String, Type>]) -> Option<Type> {
         for scope in scopes.iter().rev() {
-            if let Some(t) = scope.borrow().get(name) {
+            if let Some(t) = scope.get(name) {
                 return Some(*t);
             }
         }
@@ -484,7 +480,7 @@ impl TypeChecker {
 
     fn scope_lookup_func(&self, name: &str) -> Option<TypedFunction> {
         for scope in self.func_scopes.iter().rev() {
-            if let Some(t) = scope.borrow().get(name) {
+            if let Some(t) = scope.get(name) {
                 return Some(t.clone());
             }
         }
@@ -496,38 +492,37 @@ impl TypeChecker {
     }
 
     fn insert_scope(&mut self, name: &str, t: Type) -> usize {
-        let mut scope = self.scopes.last().unwrap().borrow_mut();
+        let scope = self.scopes.last_mut().unwrap();
         let place = scope.len();
         scope.insert(String::from(name), t);
         place
     }
 
     fn insert_func_scope(&mut self, name: &str, f: TypedFunction) -> usize {
-        let mut scope = self.func_scopes.last().unwrap().borrow_mut();
+        let scope = self.func_scopes.last_mut().unwrap();
         let place = scope.len();
         scope.insert(String::from(name), f);
         place
     }
 
     fn insert_class_scope(&mut self, name: &str, t: Type) -> usize {
-        let mut scope = self.class_scopes.last().unwrap().borrow_mut();
+        let scope = self.class_scopes.last_mut().unwrap();
         let place = scope.len();
         scope.insert(String::from(name), t);
         place
     }
 
     fn openscope(&mut self) {
-        self.scopes.push(Rc::new(RefCell::new(HashMap::new())));
-        self.func_scopes.push(Rc::new(RefCell::new(HashMap::new())));
-        self.class_scopes
-            .push(Rc::new(RefCell::new(HashMap::new())));
+        self.scopes.push(HashMap::new());
+        self.func_scopes.push(HashMap::new());
+        self.class_scopes.push(HashMap::new());
     }
 
     fn closescope(&mut self) -> usize {
         self.func_scopes.pop();
         self.class_scopes.pop();
         debug_assert!(!self.scopes.is_empty());
-        let rv = self.scopes.last().unwrap().borrow().len();
+        let rv = self.scopes.last().unwrap().len();
         self.scopes.pop();
         rv
     }
