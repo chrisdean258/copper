@@ -37,7 +37,6 @@ impl Memory {
         }
     }
 
-    // #[inline(always)]
     pub fn add_strings(&mut self, strings: &mut Vec<String>) {
         self.strings.append(strings);
     }
@@ -51,22 +50,18 @@ impl Memory {
         self.alloc_string(format!("{}{}", self.strings[idx1], self.strings[idx2]))
     }
 
-    // #[inline(always)]
     pub fn push(&mut self, val: Value) {
         self.stack.push(val);
     }
 
-    // #[inline(always)]
     pub fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
     }
 
-    // #[inline(always)]
     pub fn last_mut(&mut self) -> &mut Value {
         self.stack.last_mut().unwrap()
     }
 
-    // #[inline(always)]
     pub fn reserve(&mut self, count: usize) {
         self.stack
             .resize(self.stack.len() + count, Value::Uninitialized)
@@ -108,22 +103,9 @@ impl Memory {
         }
         self.heap[idx].1.alloc() + self.heap[idx].0
     }
-
-    pub fn get(&self, addr: usize) -> Option<&Value> {
-        self.stack
-            .get(addr - STACK)
-            .or_else(|| self.heap[addr / HEAP - 1].1.get(addr % HEAP))
-    }
-
-    pub fn get_mut(&mut self, addr: usize) -> Option<&mut Value> {
-        self.stack
-            .get_mut(addr - STACK)
-            .or_else(|| self.heap[addr / HEAP - 1].1.get_mut(addr % HEAP))
-    }
 }
 
 impl IndexMut<usize> for Memory {
-    #[inline(always)]
     fn index_mut(&mut self, addr: usize) -> &mut Self::Output {
         self.stack
             .get_mut(addr - STACK)
@@ -134,7 +116,6 @@ impl IndexMut<usize> for Memory {
 
 impl Index<usize> for Memory {
     type Output = Value;
-    #[inline(always)]
     fn index(&self, addr: usize) -> &Self::Output {
         self.stack
             .get(addr - STACK)

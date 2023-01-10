@@ -26,7 +26,7 @@ impl Interpretter {
     pub fn new(typecheck_only: bool, debug: bool) -> Self {
         let mut typechecker = TypeChecker::new();
         let compiler = Compiler::new(&mut typechecker.system);
-        let evaluator = Evaluator::new(&mut typechecker.system);
+        let evaluator = Evaluator::new();
         Self {
             typechecker,
             evaluator,

@@ -2,7 +2,6 @@ use crate::{
     builtins::BuiltinFunction,
     memory::{Memory, BUILTIN_CODE, CODE, STACK},
     operation::MachineOperation,
-    typesystem::TypeSystem,
     value::Value,
 };
 use std::mem::{replace, swap};
@@ -24,7 +23,7 @@ pub enum ReturnState {
 }
 
 impl Evaluator {
-    pub fn new(types: &mut TypeSystem) -> Self {
+    pub fn new() -> Self {
         Self {
             code: Vec::new(),
             memory: Memory::new(),
