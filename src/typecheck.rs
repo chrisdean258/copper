@@ -827,6 +827,7 @@ impl TypeChecker {
         }
         let rhs = rhs?;
         if rhs.typ == UNIT {
+            eprintln!("{rhs:?}");
             return self.error(ErrorType::CannotAssignUnit);
         }
         self.allow_insert = Some(rhs.typ);

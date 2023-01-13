@@ -2,51 +2,28 @@ fn print(*args) write(1, *args, '\n')
 fn prints(*args) write(1, *args)
 
 fn range(start, stop=null, stride=1) {
-	if !sstop <- stop {
-		sstop = start
-		start = 0
-	}
 	if stride >= 0 ForwardRange(start, stop, stride)
 	else ReverseRange(start, stop, stride)
 
 }
 
-class ForwardRange {
+class range {
 	field current, stop, stride
 
-	fn __init__(self, start, stop, stride) {
-		self.current = start
-		self.stop = stop
+	fn __init__(self, start, stop=null, stride=1) {
 		self.stride = stride
-	}
-
-	fn __iter__(self) self
-
-	fn __next__(self) {
-		val = self.current
-		if val >= self.stop
-			null
-		else {
-			self.current += self.stride
-			val
+		self.current = start
+		if !(self.stop <- stop) {
+			self.stop = start
+			self.current = 0
 		}
 	}
-}
-
-class ReverseRange {
-	field current, stop, stride
-
-	fn __init__(self, start, stop, stride) {
-		self.current = start
-		self.stop = stop
-		self.stride = stride
-	}
 
 	fn __iter__(self) self
 
 	fn __next__(self) {
 		val = self.current
-		if val <= self.stop
+		if (val >= self.stop && self.stride >= 0) || (val <= self.stop && self.stride < 0)
 			null
 		else {
 			self.current += self.stride
