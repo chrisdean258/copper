@@ -143,6 +143,7 @@ impl Compiler {
             TypedExpressionType::Continue => self.continue_(),
             TypedExpressionType::Break => self.break_(),
             TypedExpressionType::Return(r) => self.return_(r),
+            TypedExpressionType::Unreachable => unreachable!(),
         }
     }
 

@@ -86,7 +86,7 @@ impl std::fmt::Display for ErrorType {
             Self::MismatchedReturnTypes(t1, t2) => write!(f,  "Cannot return type `{t1}` from function. Return type already encountered is `{t2}`",),
             Self::NoDefinedBinOp(t1, op, t2) => write!(f,  "Cannot apply binary operation `{t1}` {op} `{t2}`. No operation has been defined between these types",),
             Self::NoDefinedUnOp(t, op) => write!(f,  "Cannot apply binary operation {op} to `{t}`. No operation has been defined",),
-            Self::NoSuchNameInScope(s) => write!(f,  "`no name `{s}` in scope",),
+            Self::NoSuchNameInScope(s) => write!(f,  "No variable, class, or function `{s}` in scope",),
             Self::NotAssignable => write!(f, "LHS of assignment is not assignable"),
             Self::NotCallable(t) => write!(f, "`{t}` is not callable"),
             Self::Originating => write!(f, "Originating here"),
@@ -182,6 +182,7 @@ pub enum TypedExpressionType {
     Break,
     Continue,
     Return(TypedReturn),
+    Unreachable,
 }
 
 #[derive(Debug, Clone)]
@@ -821,16 +822,28 @@ impl TypeChecker {
     }
 
     fn assignment(&mut self, a: AssignExpr) -> Result<(TypedExpressionType, Type), ()> {
+        let rhsloc = a.rhs.location.clone();
         let rhs = self.expr(*a.rhs);
         if !a.lhs.is_lval() {
             let _ = self.error::<()>(ErrorType::NotAssignable);
         }
-        let rhs = rhs?;
-        if rhs.typ == UNIT {
-            eprintln!("{rhs:?}");
-            return self.error(ErrorType::CannotAssignUnit);
-        }
-        self.allow_insert = Some(rhs.typ);
+        let rhs = match rhs {
+            Ok(r) => {
+                if r.typ == UNIT {
+                    let _ = self.error::<()>(ErrorType::CannotAssignUnit);
+                }
+                self.allow_insert = Some(r.typ);
+                r
+            }
+            Err(()) => {
+                self.allow_insert = Some(UNREACHABLE);
+                TypedExpression {
+                    etype: TypedExpressionType::Unreachable,
+                    location: rhsloc,
+                    typ: UNREACHABLE,
+                }
+            }
+        };
         if a.op == Operation::Extract {
             if !self.system.is_option(rhs.typ) {
                 return self.error(ErrorType::CannotExtractFromNonOption(
