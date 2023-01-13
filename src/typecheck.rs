@@ -827,6 +827,7 @@ impl TypeChecker {
         if !a.lhs.is_lval() {
             let _ = self.error::<()>(ErrorType::NotAssignable);
         }
+        let mut has_error = false;
         let rhs = match rhs {
             Ok(r) => {
                 if r.typ == UNIT {
@@ -836,6 +837,7 @@ impl TypeChecker {
                 r
             }
             Err(()) => {
+                has_error = true;
                 self.allow_insert = Some(UNREACHABLE);
                 TypedExpression {
                     etype: TypedExpressionType::Unreachable,
@@ -855,7 +857,7 @@ impl TypeChecker {
         let lhs = self.expr(*a.lhs);
         self.allow_insert = None;
         let lhs = lhs?;
-        match self.system.lookup_assign(a.op, lhs.typ, rhs.typ) {
+        let rv = match self.system.lookup_assign(a.op, lhs.typ, rhs.typ) {
             Some(typ) => Ok((
                 TypedExpressionType::AssignExpr(TypedAssignExpr {
                     lhs: Box::new(lhs),
@@ -870,6 +872,11 @@ impl TypeChecker {
                 a.op,
                 self.system.typename(rhs.typ),
             )),
+        };
+        if has_error {
+            Err(())
+        } else {
+            rv
         }
     }
 
