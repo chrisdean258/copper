@@ -1003,7 +1003,11 @@ impl TypeChecker {
             let next_sig_idx = ce.sig_idx.unwrap();
 
             let save = self.allow_insert;
-            self.allow_insert = Some(item_typ);
+            if let Some(ityp) = self.system.get_typeof_option_type(item_typ) {
+                self.allow_insert = Some(ityp);
+            } else {
+                self.allow_insert = Some(item_typ);
+            }
             let reference = self.expr(*f.reference);
             self.allow_insert = save;
             let save_in_loop = replace(&mut self.in_loop, true);

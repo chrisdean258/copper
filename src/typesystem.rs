@@ -484,6 +484,13 @@ impl TypeSystem {
         }
     }
 
+    pub fn get_typeof_option_type(&self, list: Type) -> Option<Type> {
+        match self.types[list].te_type {
+            TypeEntryType::Option(t) => Some(t),
+            _ => None,
+        }
+    }
+
     pub fn format_signature(&self, sig: &Signature) -> String {
         let arg_types = self.format_args_from_sig(sig);
         format!("({}) -> {}", arg_types, self.typename(sig.output))
